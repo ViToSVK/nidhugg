@@ -40,7 +40,8 @@ public:
     ARM,
     POWER,
     PSO,
-    TSO
+    TSO,
+    VC // value centric    
   };
   enum DPORAlgorithm{
     SOURCE,

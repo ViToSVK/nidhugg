@@ -37,7 +37,13 @@ libnidhugg_a_SOURCES = \
   TSOPSOTraceBuilder.h \
   TSOTraceBuilder.cpp TSOTraceBuilder.h \
   VClock.cpp VClock.h VClock.tcc \
-  vecset.h vecset.tcc
+  vecset.h vecset.tcc \
+  VCEvent.h \
+  VCTrace.h \
+  VCInterpreter.cpp VCInterpreter.h \
+  VCTraceBuilder.cpp VCTraceBuilder.h \
+  VCExplorer.cpp VCExplorer.h
+
 libnidhugg_a_CXXFLAGS = -fno-rtti
 
 EXTRA_PROGRAMS = nidhuggc
