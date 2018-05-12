@@ -144,6 +144,12 @@ protected:
     /* Indices in prefix of the events of this process.
      */
     std::vector<unsigned> event_indices;
+		/* Number of instructions executed in this process.
+		 */
+		unsigned executed_instructions = 0;
+		/* Number of events executed in this process.
+		 */
+		unsigned executed_events = 0;
     /* The store buffer of this thread. The store buffer is kept in
      * the Thread object for the real thread, not for the auxiliary.
      *

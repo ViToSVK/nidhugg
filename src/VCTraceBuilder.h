@@ -71,11 +71,12 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* *************************** */  
   
   // This event works as the global's initialization event
+	// It 'writes' initial value 0 to all global variables
   // We could always put it into the prefix, but then
   // we would need to change the whole code that works
   // with prefix, so it is better here... We need this
   // event when creating well-formed annotations
-  const VCEvent initial_event = IID<IPid>(0,0);
+  const VCEvent initial_event = VCEvent(IID<IPid>(0,0));
 
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
@@ -161,8 +162,8 @@ class VCTraceBuilder : public TSOTraceBuilder {
   virtual IID<CPid> get_iid() const; // called from Interpreter::callFree   
   virtual void spawn();
   virtual void join(int tgt_proc);
-  virtual void atomic_store(const SymData &sd);
-  virtual void load(const SymAddrSize &ml);
+  virtual void atomic_store(const SymData &sd, int val); // added val argument
+  virtual void load(const SymAddrSize &ml, int val); // added val argument
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);  
@@ -170,7 +171,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
   //virtual void mutex_lock_fail(const SymAddrSize &ml); // inheriting from TSOTB, it detects an error for us
   virtual void mutex_trylock(const SymAddrSize &ml);
   virtual void mutex_unlock(const SymAddrSize &ml);
-  //void setValue(int v) { curnode().val = v; } // for debugging
   virtual void full_memory_conflict() {
     llvm::errs() << "No support for full memory conflict\n";
     abort();

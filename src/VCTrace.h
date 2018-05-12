@@ -23,18 +23,24 @@
 
 #include <vector>
 
-#include "VCEvent.h"
+#include "VCBasis.h"
+#include "VCAnnotation.h"
+//#include "VCHappensBeforeGraph.h"
 
-struct VCTrace {
+class VCTrace {
+ public:
 
   /* *************************** */
   /* INFORMATION                 */
   /* *************************** */
   
-  //PositiveAnnotation positive_annotation; // todo: replace with VCpos
-  //NegativeAnnotation negative_annotation; // todo: replace with VCneg
-  
   std::vector<VCEvent> trace;
+
+	VCBasis basis;
+	VCAnnotation annotation;
+	//VCAnnotationNeg annotationNeg;
+	//VCHappensBeforeGraph graph;
+	
 
   /* *************************** */
   /* CONSTRUCTORS                */

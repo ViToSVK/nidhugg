@@ -30,7 +30,8 @@ bool VCTraceBuilder::reset()
 {
   // Construct the explorer with the initial trace
   VCExplorer explorer = VCExplorer(std::move(prefix));
-
+	// prefix is empty now (as desired)
+	
   // Call the main method
   explorer.explore();
 
@@ -94,12 +95,17 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		threads[p].event_indices.push_back(prefix_idx);
 		// Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
-																	threads[p].cpid, prefix.size());
+												threads[p].cpid,
+												threads[p].executed_instructions + 1, // +1 so that first will be 1
+												threads[p].executed_events, // so that first will be 0
+												prefix.size());
+		// Mark that thread executes a new event
+		++threads[p].executed_events;
     assert(prefix.back().id == prefix.size() - 1);
 	} else {
 		// Next instruction is a continuation of the current event
 		assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
-		// increase the size of current event, it will be scheduled
+		// Increase the size of the current event, it will be scheduled
 		++prefix[prefix_idx].size;
 	}
 
@@ -113,7 +119,9 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
   // threads[p].event_indices.push_back(prefix_idx);
   // But I don't know why here, I would suspect to
   // run this only when we have a new event
-
+	// Mark that thread p executes a new instruction
+	++threads[p].executed_instructions;
+	
   bool ret = schedule_thread(proc, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
 
@@ -167,6 +175,7 @@ void VCTraceBuilder::update_prefix(unsigned p)
   // threads[p].event_indices.push_back(prefix_idx);
   // But I don't know why here, I would suspect to
   // run this only when we have a new event
+	++threads[p].executed_instructions;
   
   if (prefix_idx != -1 && (int) p == curnode().iid.get_pid() &&
 			!curnode().may_conflict) {
@@ -183,7 +192,11 @@ void VCTraceBuilder::update_prefix(unsigned p)
 		threads[p].event_indices.push_back(prefix_idx);
 		// Create the new event
 		prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
-																	threads[p].cpid, prefix.size());
+												threads[p].cpid,
+												threads[p].executed_instructions, // first will be 1
+												threads[p].executed_events, // first will be 0
+												prefix.size());
+		++threads[p].executed_events;
 		assert(prefix.back().id == prefix.size() - 1);
 		assert((unsigned) prefix_idx == prefix.size() - 1);
   }
@@ -279,7 +292,7 @@ void VCTraceBuilder::join(int tgt_proc)
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
 }
 
-void VCTraceBuilder::atomic_store(const SymData &sd)
+void VCTraceBuilder::atomic_store(const SymData &sd, int val)
 {	
 	// std::cout << "STORE" << std::flush;
   // stores to local memory on stack may not conflict
@@ -288,16 +301,20 @@ void VCTraceBuilder::atomic_store(const SymData &sd)
         current_inst->getOperand(1)->stripInBoundsOffsets() )) {
 		const SymAddrSize &ml = sd.get_ref();
     mayConflict(&ml);
+		curnode().value = val;
+		//std::cout << " # VISIBLE WRITE WITH VALUE: " << curnode().value;
   }
 }
 
-void VCTraceBuilder::load(const SymAddrSize &ml)
+void VCTraceBuilder::load(const SymAddrSize &ml, int val)
 {
 	// std::cout << "LOAD" << std::flush;
   // loads from stack may not conflict
   assert(llvm::isa<llvm::LoadInst>(current_inst));
   if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
     mayConflict(&ml);
+		curnode().value = val;
+		//std::cout << " # VISIBLE READ WITH VALUE: " << curnode().value;
     if (sch_initial || sch_extend)
 			threads_with_new_read.insert(curnode().iid.get_pid());
   }

@@ -39,10 +39,15 @@ libnidhugg_a_SOURCES = \
   VClock.cpp VClock.h VClock.tcc \
   vecset.h vecset.tcc \
   VCEvent.h \
+  VCIID.h \
   VCTrace.h \
+  VCAnnotation.h \
+  VCBasis.h \
+  VCHappensBeforeGraph.cpp VCHappensBeforeGraph.h \
   VCInterpreter.cpp VCInterpreter.h \
   VCTraceBuilder.cpp VCTraceBuilder.h \
-  VCExplorer.cpp VCExplorer.h
+  VCExplorer.cpp VCExplorer.h \
+  VCDumps.cpp
 
 libnidhugg_a_CXXFLAGS = -fno-rtti
 

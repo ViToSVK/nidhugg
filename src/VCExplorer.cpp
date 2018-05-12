@@ -18,6 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include <iostream>
+
 #include "VCExplorer.h"
 #include "VCTraceBuilder.h"
 
@@ -26,9 +28,28 @@ void VCExplorer::print_stats()
 {
   llvm::dbgs() << "Executed traces: " << executed_traces << "\n";
   //llvm::dbgs() << "Total number of executed instructions: " << total_instr_executed << "\n";
+
+	// Change to false to test if assertions are on
+	// To disable assertions (i.e. build as Release),
+	// in src/Makefile add in CXXFLAGS this: -DNDEBUG
+	assert(true && "TEST");
 }
 
 void VCExplorer::explore()
 {
-  //todo
+  while (!worklist.empty()) {
+
+		assert(!current.get());
+		current = std::move(worklist.front());
+		assert(!worklist.front().get());
+		worklist.pop_front();
+
+		// Compute the basis
+		assert(current->basis.empty());
+		current->basis = VCBasis(current->trace);
+		
+
+		// Delete managed VCTrace
+		current.reset();
+	}
 }

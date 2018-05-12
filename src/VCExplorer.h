@@ -21,13 +21,16 @@
 #ifndef __VC_EXPLORER_H__
 #define __VC_EXPLORER_H__
 
-#include <deque>
+#include <list>
+#include <memory>
 
 #include "VCTrace.h"
 
 class VCExplorer {
 
-  std::deque<VCTrace> worklist;
+  std::list<std::unique_ptr<VCTrace>> worklist;
+
+	std::unique_ptr<VCTrace> current;	
 
   /* *************************** */
   /* STATISTICS                  */
@@ -51,8 +54,7 @@ class VCExplorer {
   /* *************************** */
 
   VCExplorer(std::vector<VCEvent>&& trace) {
-    VCTrace initial_trace(std::move(trace));
-    worklist.push_back(initial_trace);
+    worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace))));
   }
   
 };

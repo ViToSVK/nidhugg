@@ -35,6 +35,8 @@
 #include <llvm/LLVMContext.h>
 #endif
 
+#include<iostream>
+
 #include "VCInterpreter.h"
 #include "VCTraceBuilder.h"
 #include "VCTBHelpers.h"
@@ -94,11 +96,14 @@ void VCInterpreter::visitLoadInst(llvm::LoadInst &I)
   GenericValue Result;
 
   SymAddrSize Ptr_sas = GetSymAddrSize(Ptr,I.getType());
-  TB.load(Ptr_sas);
 
   if(!CheckedLoadValueFromMemory(Result, Ptr, I.getType()))
     return;
 
+	TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue());
+
+	//std::cout << " # LOADING VALUE: " << Result.IntVal.getSExtValue();
+	
   // for debugging
   // assert((int)Result.IntVal.getSExtValue() != -1);
   // TB.setValue((int)Result.IntVal.getSExtValue());
@@ -115,9 +120,11 @@ void VCInterpreter::visitStoreInst(llvm::StoreInst &I)
   GenericValue *Ptr = (GenericValue *)GVTOP(getOperandValue(I.getPointerOperand(), SF));
 
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
-  TB.atomic_store(sd);  
+  TB.atomic_store(sd, (int) Val.IntVal.getSExtValue());  
 
   assert(tso_threads[CurrentThread].store_buffer.empty());
+
+	//std::cout << " # STORING VALUE: " << Val.IntVal.getSExtValue();
 
   // for debugging
   // TB.setValue((int)Val.IntVal.getSExtValue());
