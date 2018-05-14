@@ -25,7 +25,6 @@
 
 #include "VCBasis.h"
 #include "VCAnnotation.h"
-//#include "VCHappensBeforeGraph.h"
 
 class VCTrace {
  public:
@@ -39,7 +38,6 @@ class VCTrace {
 	VCBasis basis;
 	VCAnnotation annotation;
 	//VCAnnotationNeg annotationNeg;
-	//VCHappensBeforeGraph graph;
 	
 
   /* *************************** */

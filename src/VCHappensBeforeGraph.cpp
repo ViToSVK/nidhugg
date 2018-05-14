@@ -196,10 +196,45 @@ bool VCHappensBeforeGraph::addNecessaryEdges()
   return true;
 }
 
-void VCHappensBeforeGraph::addAnnotationEdges(const VCAnnotation& annotation)
+void VCHappensBeforeGraph::computeAnnotationInfo()
 {
-	// TODO
-	
+  // For each annotated read, find the
+	// corresponding good and bad writes
+  for (auto& ann : annotation) {
+    Node *annot_read = getNode(ann.first);
+		assert(annot_read && annot_read != initial_event && "Malformed annotation");
+		assert(isRead(annot_read->event) && "Event is not a read");
+
+    
+    // TODO handle good/bad local write
+		
+		
+		// Find good and bad remote writes
+		// Start at the beginning of the corresponding process
+    auto it = basis.getIterator(ann.second.second);
+		auto event_id = 0;
+		bool prEnd = false;
+		
+		while (!prEnd) {
+			// Check if this is the last event of the process
+      if (it.isAtProcessEnd())
+				prEnd = true;
+
+			if ((*it)->may_conflict && isWrite(**it) &&
+					(*it)->ml == annot_read->event->ml) {
+				if ((*it)->value == ann.second.first) {
+          // Found a good write
+				} else {
+          // Found a bad write
+				}
+			}
+
+			++it;
+			++event_id;
+		}
+	  
+	}
+		
 	/*
   // fill in the annotation edges
   for (auto& rw_pair : annotation) {
@@ -217,49 +252,47 @@ void VCHappensBeforeGraph::addAnnotationEdges(const VCAnnotation& annotation)
 
 void VCHappensBeforeGraph::_constructGraph()
 {
-	// TODO
-	
-	/*
-  // this should be more efficient than to dynamically adjust the hash table
+  // This should be more efficient than to dynamically adjust the hash tables
   unsigned reserve_size = 0;
   for (auto&b : basis)
     reserve_size += b.size();
-  instr_to_node.reserve(reserve_size);
+  instr_to_nodeset.reserve(reserve_size);
   nodes.reserve(reserve_size);
   reachable_nodes.reserve(reserve_size);
   rev_reachable_nodes.reserve(reserve_size);
 
-  // create the initial node
+  // Create the initial node corresponding to the initial event
   initial_node = new Node(nullptr);
   addNode(initial_node);
 
-  // create nodes and starting points
-  assert(!basis.empty());
-  // set of nodes that call pthread_create and pthread_join
+  // Set of nodes that call pthread_create and pthread_join
   std::vector<Node *> spawns;
   std::vector<Node *> joins;
 
+	// Create the nodes and add the program structure
+	assert(!basis.empty());
   unsigned idx = 0;
   for (auto& base : basis) {
     Node *node;
     Node *last = nullptr;
 
-    // create the nodes and add the program structure
+		// Create for this process
+    assert(!base.empty());
     unsigned idx2 = 0;
-    for (const DCEvent *event : base) {
+    for (const VCEvent *event : base) {
       assert(event->iid.get_pid() >= 0);
       node = new Node(event);
       node->process_id = idx;
       node->event_id = idx2;
       addNode(node);
       if (event->instruction)
-        instr_to_node[event->instruction].push_back(node);
+        instr_to_nodeset[event->instruction].push_back(node);
 
       if (last)
         last->addSuccessor(node);
       else
-        // make the first event in the base
-        // a successor of the inital node
+        // this is the first node/event in the base,
+        // make it a successor of the inital node/event
         initial_node->addSuccessor(node);
 
       last = node;
@@ -276,29 +309,38 @@ void VCHappensBeforeGraph::_constructGraph()
     ++idx;
   }
 
-  addAnnotation(annotation);
-
-  // fill in the threads creation happens-before relation
+	
+  // Add edges following from the threads creation
   for (Node *spwn : spawns) {
-    // find the first event of the thread in basis
+		bool a = false;
+    // find the first event of the thread in the basis
     for (auto& base : basis) {
       assert(!base.empty());
       if (base[0]->cpid == spwn->event->childs_cpid) {
-        spwn->addSuccessor(nodes[base[0]]);
+				addSuccessor(spwn, nodes[base[0]]);
+				a = true;
         break;
       }
     }
+		assert(a && "Invalid pthread_create");
+		((void)(a)); // so a does not appear unused on release
   }
-
   for (Node *jn : joins) {
-    // find the first event of the thread in basis
+		bool a = false;		
+    // find the first event of the thread in the basis
     for (auto& base : basis) {
       assert(!base.empty());
       if (base[0]->cpid == jn->event->childs_cpid) {
-        nodes[base[base.size() - 1]]->addSuccessor(jn);
+				addSuccessor(nodes[base[base.size() - 1]], jn);
+				a = true;
         break;
       }
     }
+		assert(a && "Invalid pthread_join");
+		((void)(a)); // so a does not appear unused on release		
   }
-  */
+
+  // Compute info following from the annotation
+	computeAnnotationInfo();
+	
 }

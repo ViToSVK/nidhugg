@@ -94,6 +94,12 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		// Mark that thread p owns the new event
 		threads[p].event_indices.push_back(prefix_idx);
 		// Create the new event
+		assert(replay_trace[prefix_idx].cpid ==
+					 threads[p].cpid && "Inconsistent scheduling");
+		assert(replay_trace[prefix_idx].executed_instructions ==
+					 threads[p].executed_instructions + 1 && "Inconsistent scheduling");
+		assert(replay_trace[prefix_idx].executed_events ==
+					 threads[p].executed_events && "Inconsistent scheduling");
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
 												threads[p].cpid,
 												threads[p].executed_instructions + 1, // +1 so that first will be 1
@@ -107,6 +113,8 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
 		// Increase the size of the current event, it will be scheduled
 		++prefix[prefix_idx].size;
+		assert(replay_trace[prefix_idx].size >=
+					 prefix[prefix_idx].size && "Inconsistent scheduling");
 	}
 
   assert((unsigned) prefix_idx < replay_trace.size());

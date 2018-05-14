@@ -91,7 +91,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
-  std::vector<VCEvent> replay_trace; 
+  std::vector<VCEvent> replay_trace;
 
   // The index into prefix corresponding to the last event that was
   // scheduled. Has the value -1 when no events have been scheduled.

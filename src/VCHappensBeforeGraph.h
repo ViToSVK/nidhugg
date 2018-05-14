@@ -5,15 +5,15 @@
 #include <vector>
 #include <unordered_map>
 
-#include "VCTrace.h"
+#include "VCEvent.h"
 #include "VCAnnotation.h"
 #include "VCBasis.h"
 #include "VCIID.h"
 
 class VCHappensBeforeGraph {
-	
+
 	typedef VCIID AnnotationKeyT;
-	
+
 	const VCBasis& basis;
   const VCAnnotation& annotation;
   unsigned max_search_index = 0; // for topoorders and sccs
@@ -31,11 +31,13 @@ class VCHappensBeforeGraph {
 
   VCHappensBeforeGraph(VCHappensBeforeGraph&& oth);
   VCHappensBeforeGraph& operator=(VCHappensBeforeGraph&& oth);
-  
+
   ~VCHappensBeforeGraph() {
 		for (auto& it : nodes)
     delete it.second;
 	}
+
+
 
   const VCAnnotation& getAnnotation() const { return annotation; }
   const VCBasis& getBasis() const { return basis; }
@@ -57,20 +59,23 @@ class VCHappensBeforeGraph {
     unsigned dfsid, lowpt;
     bool is_on_stack;
 
-    void addSuccessor(Node *nd) {
+    bool addSuccessor(Node *nd) {
       assert(nd != this && "We do not want self-loops");
       assert(nd && "Given node is nullptr");
-      successors.insert(nd);
-      nd->predecessors.insert(this);
+			bool a = (successors.insert(nd)).second;
+      bool b = (nd->predecessors.insert(this)).second;
+			assert(a == b && "Inconsistent successor and predecessor relations");
+			((void)(b)); // so b does not appear unused on release
+			return a;
     }
 
-    void removeSuccessor(Node *nd) {
+    bool removeSuccessor(Node *nd) {
+			assert(nd && "Given node is nullptr");
       bool a = successors.erase(nd);
-      assert(a && "Didn't have this successor");
-      ((void)(a)); // so a does not appear unused on release
       bool b = nd->predecessors.erase(this);
-      assert(a == b && "Had successor, but no predecessor");
-      ((void)(b)); // so a does not appear unused on release
+      assert(a == b && "Inconsistent successor and predecessor relations");
+			((void)(b)); // so b does not appear unused on release
+			return a;
     }
 
    public:
@@ -78,6 +83,9 @@ class VCHappensBeforeGraph {
     Node(const VCEvent *ev)
       : dfsid(0), lowpt(0), is_on_stack(0), event(ev) {}
 
+    bool operator==(const Node& oth) const { return this->id == oth.id; }
+		bool operator!=(const Node& oth) const { return !(*this == oth); }
+		
     void set_on_stack(bool a) { is_on_stack = a; }
     void set_dfsid(unsigned id) { dfsid = id; }
     void set_lowpt(unsigned lp) { lowpt = lp; }
@@ -108,16 +116,20 @@ class VCHappensBeforeGraph {
 
   void addSuccessor(Node *from, Node *to) {
 		assert(from && "Given node is nullptr");
-		from->addSuccessor(to);
-		edge_relation_stage++;
-		edge_relation_stage %= UINT32_MAX;
+		bool a = from->addSuccessor(to);
+		if (a) {
+			edge_relation_stage++;
+			edge_relation_stage %= UINT32_MAX;
+		}
 	}
 
   void removeSuccessor(Node *from, Node *to) {
 		assert(from && "Given node is nullptr");
-		from->removeSuccessor(to);
-		edge_relation_stage++;
-		edge_relation_stage %= UINT32_MAX;
+		bool a = from->removeSuccessor(to);
+		if (a) {
+			edge_relation_stage++;
+			edge_relation_stage %= UINT32_MAX;
+		}
 	}
 
   std::set<Node *>& getNodesReachableFromCompute(Node *n);
@@ -192,9 +204,6 @@ class VCHappensBeforeGraph {
 		return nd->id;
   }
 
-  // add edges between reads and writes from the annotation
-  void addAnnotationEdges(const VCAnnotation& annotation);
-
   // check whether ev2 is reachable from ev1
   bool canReach(const VCEvent *ev1, const VCEvent *ev2) {
 		Node *ev1_node = getNode(ev1);
@@ -258,6 +267,8 @@ class VCHappensBeforeGraph {
 private:
   void _constructGraph();
 
+  void computeAnnotationInfo();
+	
   std::unordered_map<const VCEvent *, Node *> nodes;
   
   Node *initial_node = nullptr;
@@ -269,6 +280,15 @@ private:
   std::unordered_map<const llvm::Instruction *, std::vector<Node *>> instr_to_nodeset;
 
   // Node *mapAnnotToNode(const AnnotationKeyT& iid) const; same as getNode
+
+	std::unordered_map<const VCIID *, const VCEvent *> localGoodWrite;
+	std::unordered_map<const VCIID *, const VCEvent *> localBadWrite;
+
+	// Set iterator follows the lexicographic ordering
+	std::unordered_map<const VCIID *,
+	                   std::set< std::pair<int, const VCEvent *> >> goodWrites;
+	std::unordered_map<const VCIID *, std::pair<int, const VCEvent *>> badWrites;
+	
 };
 
 #endif // _VCHAPPENSBEFOREGRAPH_H_

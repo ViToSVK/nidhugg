@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "VCEvent.h"
+#include "VCIID.h"
 
 //class PositiveAnnotation;
 
@@ -89,6 +90,8 @@ public:
     return processes[topology_root_index][0]->cpid;
   }
 
+	// typename clarifies that (const_)iterator
+	// is a class and not a static member
   typename ProcessesT::iterator begin() { return processes.begin(); }
   typename ProcessesT::iterator end() { return processes.end(); }
   typename ProcessesT::const_iterator begin() const { return processes.begin(); }
@@ -97,14 +100,14 @@ public:
   // iterator to seamlessly iterate over all events in the processes
   // with possibilities to skip whole processes
   class events_iterator {
-		ProcessesT& processes;
+		const ProcessesT& processes;
 		unsigned process_idx = 0;
 		unsigned event_idx = 0;
 
-		events_iterator(ProcessesT& processes, bool end = false)
+		events_iterator(const ProcessesT& processes, bool end = false)
 		: processes(processes), process_idx(end ? processes.size() : 0), event_idx(0) {}
 
-		events_iterator(ProcessesT& processes, unsigned process, unsigned event)
+		events_iterator(const ProcessesT& processes, unsigned process, unsigned event)
 		: processes(processes), process_idx(process), event_idx(event) {}
 
 		friend class Processes;
@@ -213,8 +216,10 @@ public:
 		// calling this results in jumping on the next process
 		// upon call to operator++ (it just jumps on the last
 		// event of the current process)
-		void skipProcess() { event_idx = processes[process_idx].size() - 1;}
+		void skipProcess() { event_idx = processes[process_idx].size() - 1; }
 
+    bool isAtProcessEnd() const { return event_idx == processes[process_idx].size() - 1; }
+		
 		const NodeT operator*() const {
 			assert(process_idx < processes.size());
 			assert(event_idx < processes[process_idx].size());
@@ -234,11 +239,11 @@ public:
 		}
   };
 
-  events_iterator events_begin() { return events_iterator(processes); }
-  events_iterator events_end() { return events_iterator(processes, true); }
-  events_iterator getIterator(unsigned process = 0, unsigned event = 0) {
+  events_iterator events_begin() const { return events_iterator(processes); }
+  events_iterator events_end() const { return events_iterator(processes, true); }
+  events_iterator getIterator(unsigned process = 0, unsigned event = 0) const {
     return events_iterator(processes, process, event);
-  }
+  }	
 
 protected:
   int topology_root_index = -1;
@@ -289,59 +294,68 @@ public:
     }
   }
 
-  events_iterator getIterator(const VCEvent& ev) {
+	// Get an iterator pointing to the given VCEvent
+  events_iterator getIterator(const VCEvent& ev) const {
     unsigned pidx = 0;
     for (auto& proc : processes) {
-        if (proc[0]->cpid != ev.cpid) {
-          ++pidx;
-          continue;
-        }
+			if (proc[0]->cpid != ev.cpid) {
+				++pidx;
+				continue;
+			}
 
-        // we found the right process
-        unsigned n = 0;
-        for (const VCEvent *pev : proc) {
-            if (pev == &ev)
-                return events_iterator(processes, pidx, n);
+			// we found the right process,
+			// now find the right event
+			unsigned n = 0;
+			for (const VCEvent *pev : proc) {
+				if (pev == &ev)
+					return events_iterator(processes, pidx, n);
 
-            ++n;
-        }
+				++n;
+			}
 
-        break;
-
+			break;
     }
 
     return events_end();
   }
 
-  // get an iterator for the process cpid and the sequential number
-  // of an event in the thread (its "order")
-  events_iterator getIterator(const CPid& cpid, unsigned idx) {
+  // Get an iterator pointing to the given VCIID
+  events_iterator getIterator(const VCIID& vciid) const {
     unsigned pidx = 0;
     for (auto& proc : processes) {
-        if (proc[0]->cpid != cpid) {
-          ++pidx;
-          continue;
-        }
+			if (proc[0]->cpid != vciid.cpid) {
+				++pidx;
+				continue;
+			}
 
-        // we found the right process,
-        // now find the correct event
-        unsigned n = 0;
-        for (const VCEvent *pev : proc) {
-            if (idx == pev->instruction_order) // INSTRUCTION or EVENT order?
-                return events_iterator(processes, pidx, n);
+			// we found the right process,
+			// now find the right event
+			unsigned n = 0;
+			for (const VCEvent *pev : proc) {
+				if (pev->instruction_order == vciid.instruction_order)
+					return events_iterator(processes, pidx, n);
 
-            ++n;
-        }
+				++n;
+			}
 
-        break;
+			break;
     }
 
     return events_end();
   }
 
-  events_iterator getIterator(unsigned process = 0, unsigned event = 0) {
-    return events_iterator(processes, process, event);
-  }
+	// Get an iterator pointing to (the beginning of) the given CPid
+  events_iterator getIterator(const CPid& cpid, unsigned event = 0) const {
+		unsigned pidx = 0;
+		for (auto& proc : processes) {
+			if (proc[0]->cpid == cpid)
+				return events_iterator(processes, pidx, event);
+
+			++pidx;
+		}
+
+		return events_end();
+	}
 
   void dump() const;
 };

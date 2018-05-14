@@ -22,6 +22,7 @@
 
 #include "VCExplorer.h"
 #include "VCTraceBuilder.h"
+#include "VCHappensBeforeGraph.h"
 
 
 void VCExplorer::print_stats()
@@ -47,6 +48,9 @@ void VCExplorer::explore()
 		// Compute the basis
 		assert(current->basis.empty());
 		current->basis = VCBasis(current->trace);
+
+		// Initialize the HappensBeforeGraph
+		VCHappensBeforeGraph hbgraph(current->basis, current->annotation);
 		
 
 		// Delete managed VCTrace

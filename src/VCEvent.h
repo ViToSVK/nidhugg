@@ -107,7 +107,7 @@ class VCEvent {
 
   // return a copy of this event without any computed information
   // contained in it -- that is copy only the basic attributes (iid, size,...)
-  // but do not copy the !orders!, branches, alts, etc..
+  // but do not copy the branches, alts, etc..
   VCEvent blank_copy() const {
     VCEvent tmp(iid);
 
@@ -115,6 +115,10 @@ class VCEvent {
 		tmp.size = size;
 		tmp.md = md;
 		tmp.instruction = instruction;
+		// orders stay the same since the basis
+		// up until this event stays the same
+		tmp.instruction_order = instruction_order;
+		tmp.event_order = event_order;
     
     return tmp;
   }
