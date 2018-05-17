@@ -1,5 +1,5 @@
-#ifndef _VCTBHELPERS_H_
-#define _VCTBHELPERS_H_
+#ifndef _VC_TBHELPERS_H_
+#define _VC_TBHELPERS_H_
 
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Function.h>
@@ -54,7 +54,7 @@ inline bool isRead(const VCEvent& ev)
     return false;
   return isRead(*ev.instruction);
 }
-
+/*
 inline bool isGlobalRead(const llvm::Instruction *I)
 {
   // XXX: what about pointers!
@@ -68,7 +68,7 @@ inline bool isGlobalRead(const VCEvent& ev)
     return false;
   return isGlobalRead(ev.instruction);
 }
-
+*/
 inline bool isWrite(const llvm::Instruction& I)
 {
   return llvm::isa<llvm::StoreInst>(&I) || isUnlock(I);
@@ -101,4 +101,4 @@ inline bool isPthreadCreate(const VCEvent& ev) {
   return is_function_call(ev.instruction, "pthread_create");
 }
 
-#endif
+#endif // _VC_TBHELPERS_H_

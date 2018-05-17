@@ -1,95 +1,86 @@
-#ifndef _VCBASIS_H_
-#define _VCBASIS_H_
+/* Copyright (C) 2016-2017 Marek Chalupa
+ * Copyright (C) 2017-2018 Viktor Toman
+ *
+ * This file is part of Nidhugg.
+ *
+ * Nidhugg is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Nidhugg is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef _VC_BASIS_H_
+#define _VC_BASIS_H_
 
 #include <vector>
 #include <unordered_map>
 
-#include "VCEvent.h"
 #include "VCIID.h"
 
-//class PositiveAnnotation;
+class Node {
+	// Indices into the basis
+	// (INT_MAX, INT_MAX) -> the initial node
+	unsigned process_id;
+	unsigned event_id;
+	// Pointer to the Event
+	// nullptr -> the initial node
+	const VCEvent *event;
 
-typedef int IPid;
+ public:
+	Node(unsigned pid, unsigned evid, const VCEvent* ev)
+		: process_id(pid), event_id(evid), event(ev) {}
+	
+	unsigned getProcessID() const { return process_id; }
+	unsigned getEventID() const { return event_id; }
+	const VCEvent *getEvent() const { return event; }
+	
+};
 
-template <typename NodeT>
-class Processes {
-public:
-  typedef std::vector<NodeT> ProcessT;
+class VCBasis {
+ public:
+  typedef std::vector<Node *> ProcessT;
   typedef std::vector<ProcessT> ProcessesT;
 
-  Processes() = default;
-  Processes(Processes&& oth) = default;
-  Processes& operator=(Processes&& oth) = default;
-  Processes(const Processes& oth) = default;
-  Processes& operator=(const Processes& oth) = default;
+	// Basis is not responsible for any resources
+	// All Node* allocation and deletion happens
+	// in the graph classes that inherit Basis
+  VCBasis() = default;
+  VCBasis(VCBasis&& oth) = default;
+  VCBasis& operator=(VCBasis&& oth) = default;
+  VCBasis(const VCBasis& oth) = default;
+  VCBasis& operator=(const VCBasis& oth) = default;
 
-  size_t size() const { return processes.size(); }
-  bool empty() const { return processes.empty(); }
-
-  const ProcessesT& getEvents() const { return processes;}
   const ProcessT& operator[](unsigned idx) const {
     assert(idx < size());
     return processes[idx];
   }
+	
+  bool empty() const { return processes.empty(); }
+  size_t size() const { return processes.size(); }
+	size_t nodes_size() const {
+		size_t res = 0;
+		for (auto& pr : processes)
+			res += pr.size();
+		return res;
+	}
 
-  int cpidToProc(const CPid& cpid) {
-    int n = 0;
-    for (auto& process: processes) {
-      assert(process.size() > 0);
-      if (process[0]->cpid == cpid) {
-        return n;
-      }
-      ++n;
+  int cpidToProcessID(const CPid& cpid) const {
+    for (unsigned i=0; i<cpidvector.size(); ++i) {
+			if (cpidvector[i] == cpid)
+				return i;
     }
-
     return -1;
   }
-
-  void setTopologyRoot(const CPid& cpid) {
-    assert(topology_root_index == -1 && "Already have a topology root");
-    topology_root_index = cpidToProc(cpid);
-    assert(topology_root_index != -1 && "Do not have a process with such cpid");
-  }
-
-  void setTopologyRoot(int idx) {
-    assert(topology_root_index == -1 && "Already have a topology root");
-    assert(idx >= 0 && (size_t) idx < processes.size());
-    topology_root_index = idx;
-  }
-
-  bool isTopologyRoot(const CPid& cpid) const {
-    assert(topology_root_index != -1);
-    return cpid == processes[topology_root_index][0]->cpid;
-  }
-
-  bool isTopologyRoot(unsigned idx) const {
-      return topology_root_index == (int) idx;
-  }
-
-  bool isTopologyRoot(const ProcessT& process) const {
-    assert(topology_root_index != -1);
-    return &process == &processes[topology_root_index];
-  }
-
-  bool hasTopologyRoot() const {
-    return topology_root_index != -1;
-  }
-
-  ProcessT& getTopologyRoot() {
-    assert(topology_root_index != -1);
-    return processes[topology_root_index];
-  }
-
-  const ProcessT& getTopologyRoot() const {
-    assert(topology_root_index != -1);
-    return processes[topology_root_index];
-  }
-
-  const CPid& getTopologyRootCPid() const {
-    assert(topology_root_index != -1);
-    return processes[topology_root_index][0]->cpid;
-  }
-
+	
 	// typename clarifies that (const_)iterator
 	// is a class and not a static member
   typename ProcessesT::iterator begin() { return processes.begin(); }
@@ -97,7 +88,7 @@ public:
   typename ProcessesT::const_iterator begin() const { return processes.begin(); }
   typename ProcessesT::const_iterator end() const { return processes.end(); }
 
-  // iterator to seamlessly iterate over all events in the processes
+  // Iterator to seamlessly iterate over all events in the processes
   // with possibilities to skip whole processes
   class events_iterator {
 		const ProcessesT& processes;
@@ -110,19 +101,16 @@ public:
 		events_iterator(const ProcessesT& processes, unsigned process, unsigned event)
 		: processes(processes), process_idx(process), event_idx(event) {}
 
-		friend class Processes;
 		friend class VCBasis;
 		
    public:
+		events_iterator(events_iterator&& oth)
+			: processes(std::move(oth.processes)), process_idx(oth.process_idx), event_idx(oth.event_idx) {}
+		events_iterator& operator=(events_iterator&& oth) = delete;
+		
 		events_iterator(const events_iterator& oth)
-		: processes(oth.processes), process_idx(oth.process_idx), event_idx(oth.event_idx) {}
-
-		events_iterator& operator=(const events_iterator& oth) {
-			processes = oth.processes;
-			process_idx = oth.process_idx;
-			event_idx = oth.event_idx;
-			return *this;
-		}
+		  : processes(oth.processes), process_idx(oth.process_idx), event_idx(oth.event_idx) {}
+		events_iterator& operator=(const events_iterator& oth) = delete;
 
 		events_iterator& operator++() {
 			assert(event_idx < processes[process_idx].size());
@@ -178,49 +166,50 @@ public:
 
 		unsigned getProcessID() const { return process_idx; }
 		unsigned getEventID() const { return event_idx; }
-		void shiftProcess() { ++process_idx; event_idx = 0;}
 
-		// void invalidate() { event_idx = 0; process_idx = processes.size(); }
-		// returns the processes.end() iterator for the processes from this iterator.
-		// This iterator serves as an end in both directions
-		events_iterator end() const { return events_iterator(processes, true /* end */); }
-
-		// return an iterator to the first event of the process that the
-		// current iterator is in
-		events_iterator processStart() const {
-			return events_iterator(processes, process_idx, 0);
+		// First event of the current process
+    void jumpToProcessStart() {
+			event_idx = 0;
 		}
-
-		// return the iterator to the last event from the process that this
-		// iterator currently is in
-		events_iterator processEnd() const {
+		events_iterator processStart() const {
 			auto tmp = *this;
-			tmp.skipProcess();
+			tmp.jumpToProcessStart();
 			return tmp;
 		}
 
-		// return an iterator for the first event of the next process
-		// XXX: maybe we could just set the indices instead of doing process end + shift
+		// Last event of the current process
+		void jumpToProcessEnd() {
+			if (process_idx < processes.size())
+			  event_idx = processes[process_idx].size() - 1;
+		}
+		events_iterator processEnd() const {
+			auto tmp = *this;
+			tmp.jumpToProcessEnd();
+			return tmp;
+		}
+
+		// First event of the next process
+		void jumpToNextProcess() {
+			if (process_idx < processes.size()) {
+				++process_idx; event_idx = 0;
+			}
+		}
 		events_iterator nextProcess() const {
-			auto tmp = processEnd();
+			auto tmp = *this;
+			tmp.jumpToNextProcess();
 			return ++tmp;
 		}
 
-		// return an iterator to the first event of the process that the
-		// current iterator is in
-		events_iterator prevProcess() const {
-			auto tmp = processStart();
-			return --tmp;
+    // The end (in both directions)
+		void jumpToEnd() {
+			process_idx = processes.size(); event_idx = 0;
 		}
+		events_iterator end() const {
+			return events_iterator(processes, true /* end */);
+	  }
 
-		// calling this results in jumping on the next process
-		// upon call to operator++ (it just jumps on the last
-		// event of the current process)
-		void skipProcess() { event_idx = processes[process_idx].size() - 1; }
-
-    bool isAtProcessEnd() const { return event_idx == processes[process_idx].size() - 1; }
-		
-		const NodeT operator*() const {
+		// Can not change NodeT through the iterator
+		const Node *operator*() const {
 			assert(process_idx < processes.size());
 			assert(event_idx < processes[process_idx].size());
 
@@ -239,125 +228,111 @@ public:
 		}
   };
 
-  events_iterator events_begin() const { return events_iterator(processes); }
-  events_iterator events_end() const { return events_iterator(processes, true); }
-  events_iterator getIterator(unsigned process = 0, unsigned event = 0) const {
+  events_iterator nodes_begin() const { return events_iterator(processes); }
+  events_iterator nodes_end() const { return events_iterator(processes, true); }
+  events_iterator nodes_iterator(unsigned process = 0, unsigned event = 0) const {
     return events_iterator(processes, process, event);
   }	
 
-protected:
-  int topology_root_index = -1;
-  ProcessesT processes;
-};
+	// Iterator pointing to the given Node
+  events_iterator nodes_iterator(const Node *nd) const {
+		assert(nd && "Do not have such node");
+    return nodes_iterator(nd->getProcessID(), nd->getEventID());
+	}
 
-class VCBasis : public Processes<const VCEvent *> {
-public:
-  VCBasis() = default;
+	// Node corresponding to the given VCEvent
+	const Node *getNode(const VCEvent& ev) const {
+    auto it = event_to_node.find(&ev);
+    if (it == event_to_node.end())
+      return nullptr;
 
-  VCBasis(ProcessesT&& procs) {
-		processes.swap(procs);
+    return it->second;
+  }
+	
+	// Iterator corresponding to the given VCEvent
+  events_iterator nodes_iterator(const VCEvent& ev) const {
+    return nodes_iterator(getNode(ev));
   }
 
-  void swap(ProcessesT& oth) {
-		processes.swap(oth);
+	// Node corresponding to the given VCIID
+	const Node *getNode(const VCIID& vciid) const {
+    auto it = vciid_to_node.find(vciid);
+    if (it == vciid_to_node.end())
+      return nullptr;
+
+    return it->second;
   }
-
-  // TraceT is a sequence of VCEvents.
-  // (Whatever the TraceT is, the iterators must
-  // return the VCEvent& on dereference.)
-  template <typename TraceT>
-  VCBasis(TraceT& trace, const VCEvent *till = nullptr)
-  {
-    // mapping from already discovered threads to our processes indexes
-    std::unordered_map<IPid, unsigned> mapping;
-    mapping.reserve(trace.size() / 2);
-
-    for (const VCEvent& event : trace) {
-      IPid pid = event.iid.get_pid();
-      unsigned idx;
-
-      auto it = mapping.find(pid);
-      if (it == mapping.end()) {
-        idx = processes.size();
-        mapping[pid] = idx;
-        processes.emplace_back(std::vector<const VCEvent *>());
-      } else
-        idx = it->second;
-
-      processes[idx].push_back(&event);
-
-      // we want processes only till this event?
-      // (we know that anything that occured after this event
-      //  is irrelevant for us)
-      if (till == &event)
-        break;
-    }
-  }
-
-	// Get an iterator pointing to the given VCEvent
-  events_iterator getIterator(const VCEvent& ev) const {
-    unsigned pidx = 0;
-    for (auto& proc : processes) {
-			if (proc[0]->cpid != ev.cpid) {
-				++pidx;
-				continue;
-			}
-
-			// we found the right process,
-			// now find the right event
-			unsigned n = 0;
-			for (const VCEvent *pev : proc) {
-				if (pev == &ev)
-					return events_iterator(processes, pidx, n);
-
-				++n;
-			}
-
-			break;
-    }
-
-    return events_end();
-  }
-
-  // Get an iterator pointing to the given VCIID
-  events_iterator getIterator(const VCIID& vciid) const {
-    unsigned pidx = 0;
-    for (auto& proc : processes) {
-			if (proc[0]->cpid != vciid.cpid) {
-				++pidx;
-				continue;
-			}
-
-			// we found the right process,
-			// now find the right event
-			unsigned n = 0;
-			for (const VCEvent *pev : proc) {
-				if (pev->instruction_order == vciid.instruction_order)
-					return events_iterator(processes, pidx, n);
-
-				++n;
-			}
-
-			break;
-    }
-
-    return events_end();
+	
+	// Iterator corresponding to the given VCIID
+  events_iterator nodes_iterator(const VCIID& vciid) const {
+    return nodes_iterator(getNode(vciid));
   }
 
 	// Get an iterator pointing to (the beginning of) the given CPid
-  events_iterator getIterator(const CPid& cpid, unsigned event = 0) const {
-		unsigned pidx = 0;
-		for (auto& proc : processes) {
-			if (proc[0]->cpid == cpid)
-				return events_iterator(processes, pidx, event);
+  events_iterator nodes_iterator(const CPid& cpid, unsigned evidx = 0) const {
+    int pidx = cpidToProcessID(cpid);
+		if (pidx == -1 || processes[pidx].size() <= evidx)
+			return nodes_end();
 
-			++pidx;
-		}
-
-		return events_end();
+		return nodes_iterator(pidx, evidx);
 	}
+	
+ protected:
+  ProcessesT processes;
+	std::vector<CPid> cpidvector;
+	std::unordered_map<const VCEvent *, Node *> event_to_node;
+	std::unordered_map<VCIID, Node *> vciid_to_node;
+	// make use of copy elision: emplace VCIID using copy constructor instead of move
+	// std::unordered_map<const llvm::Instruction *, std::vector<Node *>> instr_to_nodeset;
 
-  void dump() const;
 };
 
-#endif // _VCBASIS_H_
+/*
+CODE IF WE EVER NEED TO CONSIDER A STAR ARCHITECTURE WITHIN BASIS
+
+  void setTopologyRoot(int idx) {
+    assert(topology_root_index == -1 && "Already have a topology root");
+    assert(idx >= 0 && (size_t) idx < processes.size());
+    topology_root_index = idx;
+  }
+
+  void setTopologyRoot(const CPid& cpid) {
+    assert(topology_root_index == -1 && "Already have a topology root");
+    topology_root_index = cpidToProcessID(cpid);
+    assert(topology_root_index != -1 && "Do not have a process with such cpid");
+  }
+
+  bool hasTopologyRoot() const {
+    return topology_root_index != -1;
+  }
+
+  bool isTopologyRoot(unsigned idx) const {
+      return topology_root_index == (int) idx;
+  }
+
+  bool isTopologyRoot(const ProcessT& process) const {
+    assert(topology_root_index != -1);
+    return &process == &processes[topology_root_index];
+  }
+
+  bool isTopologyRoot(const CPid& cpid) const {
+    assert(topology_root_index != -1);
+    return cpid == cpidvector[topology_root_index];
+  }
+
+  const ProcessT& getTopologyRoot() const {
+    assert(topology_root_index != -1);
+    return processes[topology_root_index];
+  }
+
+  const CPid& getTopologyRootCPid() const {
+    assert(topology_root_index != -1);
+    return cpidvector[topology_root_index];
+  }
+
+ private:
+	int topology_root_index = -1;
+
+ */
+
+#endif // _VC_BASIS_H_

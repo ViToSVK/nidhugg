@@ -1,5 +1,4 @@
-/* Copyright (C) 2014-2016 Carl Leonardsson
- * Copyright (C) 2016-2017 Marek Chalupa
+/* Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2018 Viktor Toman
  *
  * This file is part of Nidhugg.
@@ -252,7 +251,7 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
   auto& curn = curnode();
   curn.may_conflict = true;
   if (ml)
-    curn.ml = ml->addr; // was curn.ml = *ml;
+    curn.ml = *ml; // prev I had ml->addr which loses some info
   curn.instruction = current_inst;
 
 	if (sch_replay) {
@@ -363,11 +362,25 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
     mutexes[ml.addr] = Mutex();
   }
   assert(mutexes.count(ml.addr));
+	Mutex &mutex = mutexes[ml.addr];
+	
   mayConflict(&ml);
+	curnode().value = mutex.value; // read
 
-  Mutex &mutex = mutexes[ml.addr];
   mutex.last_lock = mutex.last_access = prefix_idx;
-  //mutex.locked = true;
+  mutex.locked = true;
+}
+
+void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
+  assert(!dryrun);
+  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
+    // Assume static initialization
+    mutexes[ml.addr] = Mutex();
+  }
+  assert(mutexes.count(ml.addr));
+  Mutex &mutex = mutexes[ml.addr];
+  assert(0 <= mutex.last_lock);
+	((void)(mutex)); // so mutex does not appear unused on release
 }
 
 void VCTraceBuilder::mutex_trylock(const SymAddrSize &ml)
@@ -378,13 +391,15 @@ void VCTraceBuilder::mutex_trylock(const SymAddrSize &ml)
     mutexes[ml.addr] = Mutex();
   }
   assert(mutexes.count(ml.addr));
+	Mutex &mutex = mutexes[ml.addr];
+	
   mayConflict(&ml);
+  curnode().value = mutex.value; // read
 
-  Mutex &mutex = mutexes[ml.addr];
   mutex.last_access = prefix_idx;
-  if(mutex.last_lock < 0){ // Mutex is free
+  if(!mutex.locked){ // Mutex is free
     mutex.last_lock = prefix_idx;
-    //mutex.locked = true;
+    mutex.locked = true;
   }
 }
 
@@ -398,11 +413,14 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   assert(mutexes.count(ml.addr));
   
   Mutex &mutex = mutexes[ml.addr];
-  mayConflict(&ml);
   assert(0 <= mutex.last_access);
 
+  mayConflict(&ml);
+	curnode().value = curnode().iid.get_pid(); // write	
+
   mutex.last_access = prefix_idx;
-  //mutex.locked = false;
+  mutex.locked = false;
+	mutex.value = curnode().iid.get_pid(); // write
 }
 
 Trace *VCTraceBuilder::get_trace() const

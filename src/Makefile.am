@@ -40,10 +40,10 @@ libnidhugg_a_SOURCES = \
   vecset.h vecset.tcc \
   VCEvent.h \
   VCIID.h \
-  VCTrace.h \
   VCAnnotation.h \
+  VCTrace.h \
   VCBasis.h \
-  VCHappensBeforeGraph.cpp VCHappensBeforeGraph.h \
+  VCGraphVclock.cpp VCGraphVclock.h \
   VCInterpreter.cpp VCInterpreter.h \
   VCTraceBuilder.cpp VCTraceBuilder.h \
   VCExplorer.cpp VCExplorer.h \

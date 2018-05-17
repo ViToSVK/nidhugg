@@ -70,13 +70,9 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* TRACES                      */
   /* *************************** */  
   
-  // This event works as the global's initialization event
+  // We consider the global's initialization event
 	// It 'writes' initial value 0 to all global variables
-  // We could always put it into the prefix, but then
-  // we would need to change the whole code that works
-  // with prefix, so it is better here... We need this
-  // event when creating well-formed annotations
-  const VCEvent initial_event = VCEvent(IID<IPid>(0,0));
+  // const VCEvent initial_event = VCEvent(IID<IPid>(0,0));
 
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
@@ -101,13 +97,13 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Number of executed instructions since init of this TB
   unsigned executed_instr = 0;
 
-  VCEvent &curnode() {
+  VCEvent& curnode() {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
   };
 
-  const VCEvent &curnode() const {
+  const VCEvent& curnode() const {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
@@ -167,10 +163,10 @@ class VCTraceBuilder : public TSOTraceBuilder {
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);  
-  virtual void mutex_lock(const SymAddrSize &ml);
-  //virtual void mutex_lock_fail(const SymAddrSize &ml); // inheriting from TSOTB, it detects an error for us
-  virtual void mutex_trylock(const SymAddrSize &ml);
-  virtual void mutex_unlock(const SymAddrSize &ml);
+  virtual void mutex_lock(const SymAddrSize &ml); // added val argument
+  virtual void mutex_lock_fail(const SymAddrSize &ml);
+  virtual void mutex_trylock(const SymAddrSize &ml); // added val argument
+  virtual void mutex_unlock(const SymAddrSize &ml); // added val argument
   virtual void full_memory_conflict() {
     llvm::errs() << "No support for full memory conflict\n";
     abort();

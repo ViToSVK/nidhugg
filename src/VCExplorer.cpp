@@ -22,8 +22,6 @@
 
 #include "VCExplorer.h"
 #include "VCTraceBuilder.h"
-#include "VCHappensBeforeGraph.h"
-
 
 void VCExplorer::print_stats()
 {
@@ -40,17 +38,12 @@ void VCExplorer::explore()
 {
   while (!worklist.empty()) {
 
+		// Get a VCTrace
 		assert(!current.get());
 		current = std::move(worklist.front());
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
-		// Compute the basis
-		assert(current->basis.empty());
-		current->basis = VCBasis(current->trace);
-
-		// Initialize the HappensBeforeGraph
-		VCHappensBeforeGraph hbgraph(current->basis, current->annotation);
 		
 
 		// Delete managed VCTrace

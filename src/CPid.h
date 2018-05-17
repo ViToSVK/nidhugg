@@ -71,6 +71,8 @@ public:
    */
   int get_aux_index() const;
 
+  size_t hash() const;
+	
   std::string to_string() const;
 
   /* Comparison implements a total order over CPids. */

@@ -257,10 +257,12 @@ protected:
    */
   class Mutex{
   public:
-    Mutex() : last_access(-1), last_lock(-1) {};
-    Mutex(int lacc) : last_access(lacc), last_lock(-1) {};
+    Mutex() : last_access(-1), last_lock(-1), locked(false), value(-1) {};
+    Mutex(int lacc) : last_access(lacc), last_lock(-1), locked(false), value(-1) {};
     int last_access;
     int last_lock;
+    bool locked;
+    int value;
   };
   /* A map containing all pthread mutex objects in the current
    * execution. The key is the position in memory of the actual

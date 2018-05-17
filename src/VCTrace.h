@@ -23,7 +23,6 @@
 
 #include <vector>
 
-#include "VCBasis.h"
 #include "VCAnnotation.h"
 
 class VCTrace {
@@ -35,7 +34,6 @@ class VCTrace {
   
   std::vector<VCEvent> trace;
 
-	VCBasis basis;
 	VCAnnotation annotation;
 	//VCAnnotationNeg annotationNeg;
 	

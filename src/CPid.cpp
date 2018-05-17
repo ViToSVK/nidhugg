@@ -72,6 +72,14 @@ bool CPid::is_auxiliary() const{
   return aux_idx >= 0;
 }
 
+size_t CPid::hash() const{
+  size_t res = proc_seq.size();
+	unsigned st = proc_seq.size() < 4 ? proc_seq.size() : 4;
+	for(unsigned i = 1; i < st; ++i)
+		res ^= (size_t) proc_seq[i] >> i;
+	return res;
+}
+
 std::string CPid::to_string() const{
   std::stringstream ss;
   ss << "<0";

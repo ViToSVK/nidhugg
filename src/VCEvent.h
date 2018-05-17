@@ -1,5 +1,4 @@
-/* Copyright (C) 2014-2016 Carl Leonardsson
- * Copyright (C) 2016-2017 Marek Chalupa
+/* Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2018 Viktor Toman
  *
  * This file is part of Nidhugg.
@@ -18,9 +17,9 @@
  * along with this program.  If not, see
  * <http://www.gnu.org/licenses/>.
  */
- 
-#ifndef __VC_EVENT_H__
-#define __VC_EVENT_H__
+
+#ifndef _VC_EVENT_H_
+#define _VC_EVENT_H_
 
 #if defined(HAVE_LLVM_IR_METADATA_H)
 #include <llvm/IR/Metadata.h>
@@ -28,15 +27,9 @@
 #include <llvm/Metadata.h>
 #endif
 
-#include <config.h>
-
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/raw_os_ostream.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 
-#include "VClock.h"
-#include "vecset.h"
 #include "CPid.h"
 #include "TSOPSOTraceBuilder.h"
 #include "SymEv.h"
@@ -62,7 +55,7 @@ class VCEvent {
     : iid(iid), cpid(cpid), childs_cpid(),
 	    size(1), md(0), instruction(0),
 		  may_conflict(false),
-	    ml(SymMBlock::Stack(iid.get_pid(), 47), 47),
+		  ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
 		  value(0),
 		  instruction_order(instruction_order),
 		  event_order(event_order),
@@ -93,7 +86,7 @@ class VCEvent {
    * conflict with an instruction in another event? */
   bool may_conflict;
   /* Memory location (if any) modified/read by this event */
-  SymAddr ml;
+  SymAddrSize ml;
 	/* Value (if any) stored/loaded by this event */
 	int value;
 	/* Sequential number (within the thread) of the LAST instruction in this event
@@ -127,4 +120,4 @@ class VCEvent {
 	
 };
 
-#endif
+#endif // _VC_EVENT_H_
