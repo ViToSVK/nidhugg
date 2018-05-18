@@ -71,7 +71,7 @@ public:
    */
   int get_aux_index() const;
 
-  size_t hash() const;
+	friend struct std::hash<CPid>;
 	
   std::string to_string() const;
 
@@ -158,5 +158,19 @@ private:
   std::vector<CPid> cpids;
   std::map<CPid,int> identifiers;
 };
+
+namespace std{
+  template <>
+  struct hash<CPid>{
+    std::size_t operator()(const CPid& k) const{
+			using std::size_t;
+      size_t res = k.proc_seq.size();
+			size_t st = k.proc_seq.size() < 4 ? k.proc_seq.size() : 4;
+			for(size_t i = 1; i < st; ++i)
+				res ^= (size_t) k.proc_seq[i] >> i;
+			return res;
+    }
+  };
+}
 
 #endif

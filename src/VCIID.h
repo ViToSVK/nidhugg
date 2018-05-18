@@ -95,7 +95,7 @@ namespace std {
     std::size_t operator()(const VCIID& vciid) const
     {
       return (vciid.instruction_order >> 8)
-				^ (vciid.cpid.hash());
+				^ (std::hash<CPid>()(vciid.cpid));
     }
   };
 }

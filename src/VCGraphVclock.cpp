@@ -25,218 +25,93 @@
 #include "VCGraphVclock.h"
 #include "SCC.h"
 
-VCGraphVclock::~VCGraphVclock()
-{
-  //for (auto& it : *this)
-	//delete &it;
-	// TODO
-
-	delete initial_node;
-}
-
 VCGraphVclock::VCGraphVclock(const std::vector<VCEvent>& trace)
-	: initial_node(new Node(INT_MAX, INT_MAX, nullptr)) {
-  /*
+	: VCBasis(), initial_node(new Node(INT_MAX, INT_MAX, nullptr)) {
 
-  // TraceT is a sequence of VCEvents.
-  // (Whatever the TraceT is, the iterators must
-  // return the VCEvent& on dereference.)
-  template <typename TraceT>
-  VCBasis(TraceT& trace, const VCEvent *till = nullptr)
-  {
-    // mapping from already discovered threads to our processes indexes
-    std::unordered_map<IPid, unsigned> mapping;
-    mapping.reserve(trace.size() / 2);
+	// Faster than cpid_to_processid
+	std::unordered_map<int, unsigned> ipid_mapping;
+  ipid_mapping.reserve(trace.size() / 2);
+	cpid_to_processid.reserve(trace.size() / 2);
+	processes.reserve(trace.size() / 2);
+	event_to_node.reserve(trace.size());
+	read_vciid_to_node.reserve(trace.size() / 2);
 
-    for (const VCEvent& event : trace) {
-      IPid pid = event.iid.get_pid();
-      unsigned idx;
-
-      auto it = mapping.find(pid);
-      if (it == mapping.end()) {
-        idx = processes.size();
-        mapping[pid] = idx;
-        processes.emplace_back(std::vector<const VCEvent *>());
-      } else
-        idx = it->second;
-
-      processes[idx].push_back(&event);
-
-      // we want processes only till this event?
-      // (we know that anything that occured after this event
-      //  is irrelevant for us)
-      if (till == &event)
-        break;
-    }
-  }
-
-
-  void reserveMemory() {
-    assert(basis.size() > 0);
-
-    // this should be more efficient than to
-    // dynamically adjust the hash table
-    unsigned reserve_size = 0;
-    for (auto&b : basis)
-      reserve_size += b.size();
-    instr_to_nodeset.reserve(reserve_size);
-    mapping.reserve(reserve_size);
-  }
-
-  void createInitialNode() {
-    initial_node = new Node(basis, INT_MAX, INT_MAX);
-    // the initial node is before all other events
-    for (int& x : initial_node->successors)
-      x = 0;
-    mapping.emplace(nullptr, initial_node);
-  }
-
-  // create nodes and starting points
-  assert(!basis.empty());
-
-  // set of nodes that call pthread_create and pthread_join
   std::vector<Node *> spawns;
   std::vector<Node *> joins;
-  spawns.reserve(4);
-  joins.reserve(4);
+  spawns.reserve(8);
+  joins.reserve(8);  
 
-  unsigned process_idx = 0;
-  for (auto& base : basis) {
-    Node *node;
-    Node *last = nullptr;
+  for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
+		const VCEvent *ev = &(*traceit);
+    int pid = ev->iid.get_pid();
+    
+    unsigned proc_idx, ev_idx;
+		
+		auto ipidit = ipid_mapping.find(pid);
+		if (ipidit == ipid_mapping.end()) {
+			// First event of a new process
+			proc_idx = processes.size();
+			ev_idx = 0;
+			processes.emplace_back(std::vector<Node *>());
+			ipid_mapping.emplace(pid, proc_idx);
+			cpid_to_processid.emplace(ev->cpid, proc_idx);
+		} else {
+      // Another event of a known process
+			proc_idx = ipidit->second;
+			ev_idx = processes[proc_idx].size();
+		}
+		
+    Node *nd = new Node(proc_idx, ev_idx, ev);
 
-    // create a new process in nodes
-    //  - nodes are basically a copy of basis,
-    //  in this moment, but with nodes instead of DCEvents
-    processes.emplace_back();
+		nodes.insert(nd);
+		processes[proc_idx].push_back(nd);
+		assert(processes[proc_idx].size() == ev_idx + 1);
+		event_to_node.emplace(ev, nd);
+		if (isRead(*ev))
+			read_vciid_to_node.emplace(VCIID(*ev), nd);
 
-    // create the nodes and add the program structure
-    unsigned event_idx = 0;
-    for (const DCEvent *event : base) {
-      assert(event->iid.get_pid() >= 0);
-      node = new Node(basis, process_idx, event_idx);
-      mapping.emplace(event, node);
-      processes.back().push_back(node);
+		// XXX: what about function pointer calls?
+		if (ev->instruction) {
+			if (is_function_call(ev->instruction, "pthread_create"))
+				spawns.push_back(nd);
+			else if (is_function_call(ev->instruction, "pthread_join"))
+				joins.push_back(nd);
+	  }
+		
+	}
+	
+	// EDGES - initialize
+	edges.reserve(processes.size());
+	for (unsigned i=0; i<processes.size(); i++) {
+    edges.push_back(std::vector<std::vector<unsigned>>());
+		edges[i].reserve(processes.size());
 
-      if (event->instruction)
-        instr_to_node[event->instruction].push_back(node);
+		for (unsigned j=0; j<processes.size(); j++) {
+      edges[i].push_back(std::vector<unsigned>());
+			edges[i][j].reserve(i == j ? 0 : processes[i].size());
 
-      if (last)
-        last->addSuccessor(node);
+			for (unsigned k=0; k<processes[i].size(); k++)
+				edges[i][j][k] = INT_MAX;
+		}
+	}
 
-      last = node;
+	// EDGES - spawns
+	for (Node *spwn : spawns) {
+		int spwn_pid = cpidToProcessID(spwn->getEvent()->childs_cpid);
+		assert(spwn_pid >= 0 && spwn_pid < processes.size());
+    addEdge(spwn, processes[spwn_pid][0]);
+	}
 
-      // XXX: what about function pointer calls?
-      if (event->instruction) {
-        if (is_function_call(event->instruction, "pthread_create"))
-          spawns.push_back(node);
-        else if (is_function_call(event->instruction, "pthread_join"))
-          joins.push_back(node);
-      }
+	// EDGES - joins
+	for (Node *jn : joins) {
+		int jn_pid = cpidToProcessID(jn->getEvent()->childs_cpid);
+		assert(jn_pid >= 0 && jn_pid < processes.size());
+    addEdge(processes[jn_pid][processes[jn_pid].size() - 1], jn);
+	}
 
-      ++event_idx;
-    }
-
-    ++process_idx;
-  }
-
-  // fill in the annotation edges
-  for (auto& rw_pair : annotation) {
-    Node *read = mapAnnotToNode(rw_pair.first);
-    Node *write = mapAnnotToNode(rw_pair.second);
-
-    assert(read);
-    if (!write)
-      write = initial_node;
-
-    write->addSuccessor(read);
-  }
-
-  // fill in the threads creation happens-before relation
-  for (Node *spwn : spawns) {
-    // find the first event of the thread in basis
-    for (auto& base : basis) {
-      assert(!base.empty());
-      if (base[0]->cpid == spwn->getEvent()->childs_cpid) {
-        spwn->addSuccessor(getNode(base[0]));
-        break;
-      }
-    }
-  }
-
-  for (Node *jn : joins) {
-    // find the first event of the thread in basis
-    for (auto& base : basis) {
-      assert(!base.empty());
-      if (base[0]->cpid == jn->getEvent()->childs_cpid) {
-        getNode(base[base.size() - 1])->addSuccessor(jn);
-        break;
-      }
-    }
-  }
-
-	 */
 }
 
-/*
-HappensAfterGraphVclock::HappensAfterGraphVclock(HappensAfterGraphVclock&& oth)
-: annotation(std::move(oth.annotation)),
-  happens_before(std::move(oth.happens_before)),
-  basis(oth.basis),
-  blocked_before_sat(oth.blocked_before_sat),
-  mapping(std::move(oth.mapping)),
-  instr_to_node(std::move(oth.instr_to_node)),
-  initial_node(oth.initial_node)
-{
-}
 
-HappensAfterGraphVclock::HappensAfterGraphVclock(const HappensAfterGraphVclock& oth)
-: annotation(oth.annotation),
-  happens_before(oth.happens_before),
-  basis(oth.basis),
-  blocked_before_sat(oth.blocked_before_sat)
-{
-  mapping.reserve(oth.size());
-  instr_to_node.reserve(instr_to_node.size());
-
-  for (auto& it : oth.mapping) {
-    // copy the node (successors are indices into basis,
-    // so the successors will be mapped fine)
-    assert(it.second);
-    Node *new_nd = new Node(*it.second);
-
-    if (it.first && it.first->instruction)
-      instr_to_node[it.first->instruction].emplace_back(new_nd);
-
-    mapping.emplace(it.first, new_nd);
-  }
-
-  // also set the initial_node
-  initial_node = mapping[nullptr];
-  assert(initial_node);
-  assert(*this == oth);
-}
-
-HappensAfterGraphVclock& HappensAfterGraphVclock::operator=(HappensAfterGraphVclock&& oth) {
-  if (&oth != this)
-    *this = std::move(oth);
-  return *this;
-}
-*/
-
-bool VCGraphVclock::operator==(const VCGraphVclock& oth) const {
-	/*
-	if (mapping.size() != oth.mapping.size())
-    return false;
-
-  for (auto& it : *this) {
-    const Node *oth_nd = oth.getNode(it.getEvent());
-    if (!oth_nd  || (it.successors != oth_nd->successors))
-      return false;
-  }
-	*/
-  return true; // TODO
-}
 
 /*
 std::pair<bool, std::vector<Node *>>

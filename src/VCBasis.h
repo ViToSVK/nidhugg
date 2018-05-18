@@ -37,7 +37,17 @@ class Node {
 
  public:
 	Node(unsigned pid, unsigned evid, const VCEvent* ev)
-		: process_id(pid), event_id(evid), event(ev) {}
+	: process_id(pid), event_id(evid), event(ev) {}
+	Node(const Node& oth)
+	: process_id(oth.process_id),
+		event_id(oth.event_id),
+		event(oth.event) {}
+
+	bool operator==(const Node& oth) const {
+    return (process_id == oth.process_id &&
+						event_id == oth.event_id &&
+						event == oth.event);
+	}
 	
 	unsigned getProcessID() const { return process_id; }
 	unsigned getEventID() const { return event_id; }
@@ -49,7 +59,16 @@ class VCBasis {
  public:
   typedef std::vector<Node *> ProcessT;
   typedef std::vector<ProcessT> ProcessesT;
-
+	
+ protected:
+  ProcessesT processes;
+	std::unordered_map<CPid, unsigned> cpid_to_processid;
+	std::unordered_map<const VCEvent *, Node *> event_to_node;
+	std::unordered_map<VCIID, Node *> read_vciid_to_node;
+	// make use of copy elision: emplace VCIID using copy constructor instead of move
+	// std::unordered_map<const llvm::Instruction *, std::vector<Node *>> instr_to_nodeset;
+	
+ public:
 	// Basis is not responsible for any resources
 	// All Node* allocation and deletion happens
 	// in the graph classes that inherit Basis
@@ -74,11 +93,10 @@ class VCBasis {
 	}
 
   int cpidToProcessID(const CPid& cpid) const {
-    for (unsigned i=0; i<cpidvector.size(); ++i) {
-			if (cpidvector[i] == cpid)
-				return i;
-    }
-    return -1;
+		auto it = cpid_to_processid.find(cpid);
+		if (it == cpid_to_processid.end())
+			return -1;
+		return it->second;
   }
 	
 	// typename clarifies that (const_)iterator
@@ -212,7 +230,6 @@ class VCBasis {
 		const Node *operator*() const {
 			assert(process_idx < processes.size());
 			assert(event_idx < processes[process_idx].size());
-
 			return processes[process_idx][event_idx];
 		}
 
@@ -243,9 +260,8 @@ class VCBasis {
 	// Node corresponding to the given VCEvent
 	const Node *getNode(const VCEvent& ev) const {
     auto it = event_to_node.find(&ev);
-    if (it == event_to_node.end())
-      return nullptr;
-
+		assert(it != event_to_node.end()
+					 && "Given event is not tied to any node");
     return it->second;
   }
 	
@@ -256,10 +272,9 @@ class VCBasis {
 
 	// Node corresponding to the given VCIID
 	const Node *getNode(const VCIID& vciid) const {
-    auto it = vciid_to_node.find(vciid);
-    if (it == vciid_to_node.end())
-      return nullptr;
-
+    auto it = read_vciid_to_node.find(vciid);
+		assert(it != event_to_node.end()
+					 && "Given VCIID is not tied to any read event");
     return it->second;
   }
 	
@@ -271,19 +286,12 @@ class VCBasis {
 	// Get an iterator pointing to (the beginning of) the given CPid
   events_iterator nodes_iterator(const CPid& cpid, unsigned evidx = 0) const {
     int pidx = cpidToProcessID(cpid);
-		if (pidx == -1 || processes[pidx].size() <= evidx)
-			return nodes_end();
-
+		assert(pidx >= 0 && pidx < processes.size()
+					 && "Given cpid is not tied to any process");
+		assert(evidx < processes[pidx].size()
+					 && "Given evidx is out of range for the corresponding process");
 		return nodes_iterator(pidx, evidx);
 	}
-	
- protected:
-  ProcessesT processes;
-	std::vector<CPid> cpidvector;
-	std::unordered_map<const VCEvent *, Node *> event_to_node;
-	std::unordered_map<VCIID, Node *> vciid_to_node;
-	// make use of copy elision: emplace VCIID using copy constructor instead of move
-	// std::unordered_map<const llvm::Instruction *, std::vector<Node *>> instr_to_nodeset;
 
 };
 
