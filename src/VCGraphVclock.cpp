@@ -25,9 +25,15 @@
 #include "VCGraphVclock.h"
 #include "SCC.h"
 
+/* *************************** */
+/* CONSTRUCTORS                */
+/* *************************** */
+
 VCGraphVclock::VCGraphVclock(const std::vector<VCEvent>& trace)
 	: VCBasis(), initial_node(new Node(INT_MAX, INT_MAX, nullptr)) {
 
+  assert(!trace.empty());
+	
 	// Faster than cpid_to_processid
 	std::unordered_map<int, unsigned> ipid_mapping;
   ipid_mapping.reserve(trace.size() / 2);
@@ -81,17 +87,25 @@ VCGraphVclock::VCGraphVclock(const std::vector<VCEvent>& trace)
 	}
 	
 	// EDGES - initialize
-	edges.reserve(processes.size());
+	succ_original.reserve(processes.size());
+	pred_original.reserve(processes.size());
 	for (unsigned i=0; i<processes.size(); i++) {
-    edges.push_back(std::vector<std::vector<unsigned>>());
-		edges[i].reserve(processes.size());
+    succ_original.push_back(std::vector<std::vector<int>>());
+		succ_original[i].reserve(processes.size());
+    pred_original.push_back(std::vector<std::vector<int>>());
+		pred_original[i].reserve(processes.size());
 
 		for (unsigned j=0; j<processes.size(); j++) {
-      edges[i].push_back(std::vector<unsigned>());
-			edges[i][j].reserve(i == j ? 0 : processes[i].size());
+      succ_original[i].push_back(std::vector<int>());
+			succ_original[i][j].reserve(i == j ? 0 : processes[i].size());
+      pred_original[i].push_back(std::vector<int>());
+			pred_original[i][j].reserve(i == j ? 0 : processes[i].size());
 
-			for (unsigned k=0; k<processes[i].size(); k++)
-				edges[i][j][k] = INT_MAX;
+			if (i != j)
+				for (unsigned k=0; k<processes[i].size(); k++) {
+					succ_original[i][j][k] = INT_MAX;
+					pred_original[i][j][k] = -1;
+				}
 		}
 	}
 
@@ -99,115 +113,172 @@ VCGraphVclock::VCGraphVclock(const std::vector<VCEvent>& trace)
 	for (Node *spwn : spawns) {
 		int spwn_pid = cpidToProcessID(spwn->getEvent()->childs_cpid);
 		assert(spwn_pid >= 0 && spwn_pid < processes.size());
-    addEdge(spwn, processes[spwn_pid][0]);
+    bool res = addEdge(spwn, processes[spwn_pid][0],
+											 &succ_original, &pred_original);
+		assert(!res && "Adding spawn edges created a cycle");
+		((void)(res)); // so res does not appear unused on release
 	}
 
 	// EDGES - joins
 	for (Node *jn : joins) {
 		int jn_pid = cpidToProcessID(jn->getEvent()->childs_cpid);
 		assert(jn_pid >= 0 && jn_pid < processes.size());
-    addEdge(processes[jn_pid][processes[jn_pid].size() - 1], jn);
+    bool res = addEdge(processes[jn_pid][processes[jn_pid].size() - 1], jn,
+											 &succ_original, &pred_original);
+		assert(!res && "Adding join edges created a cycle");
+		((void)(res)); // so res does not appear unused on release		
 	}
 
 }
 
+/* *************************** */
+/* GRAPH EXTENSION             */
+/* *************************** */
 
-
-/*
-std::pair<bool, std::vector<Node *>>
-VCGraphVclock::computeTopoOrder()
-{
-  struct info {
-    unsigned dfsid = 0, lowpt = 0;
-    bool is_on_stack = false;
-  };
-
-
-  // initialize the info about nodes
-  info init_info; // info of the initial node
-  std::vector<std::vector<info>> infos;
-  infos.resize(processes.size());
-  unsigned i = 0;
-  for (auto& inf : infos)
-    inf.resize(processes[i++].size());
-
-  std::function<info&(Node *)> get_info = [&infos, &init_info](Node *nd)-> info& {
-    if (nd->process_id == INT_MAX)
-      return init_info;
-    return infos[nd->process_id][nd->event_id];
-  };
-
-  std::stack<Node *> stack;
-  std::vector<Node *> ret;
-  unsigned index = 0;
-
-  std::function<bool(Node *n)> _compute = [&](Node *n) -> bool {
-    ++index;
-    auto& inf = get_info(n);
-    inf.dfsid = index;
-    inf.lowpt = index;
-    stack.push(n);
-    inf.is_on_stack = true;
-
-    for (auto it = succ_begin(n), end = succ_end(n); it != end; ++it) {
-      Node *succ = *it;
-      auto& succ_inf = get_info(succ);
-      if (succ_inf.dfsid == 0) {
-        assert(succ_inf.is_on_stack == false);
-        if (!_compute(succ))
-          return false;
-        inf.lowpt = std::min(inf.lowpt, succ_inf.lowpt);
-      } else if (succ_inf.is_on_stack) {
-        return false; // cycle
-      }
-    }
-
-    if (inf.lowpt == inf.dfsid) {
-        int its = 0;
-        while (get_info(stack.top()).dfsid >= inf.dfsid) {
-          ++its;
-          Node *w = stack.top();
-          stack.pop();
-
-          get_info(w).is_on_stack = false;
-          ret.push_back(w);
-
-          if (stack.empty())
-              break;
-        }
-        assert(its == 1);
-    }
-
-    return true;
-  };
-
-  if (!_compute(initial_node))
-    return {false, {}};
-
-  assert(stack.empty());
-
-  return {true, ret};
+// Extends this graph so it corresponds to 'trace'
+// Checks the header file for the method description
+void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
+  // TBD
 }
 
+/* *************************** */
+/* EDGE ADDITION               */
+/* *************************** */
 
-// this works since the graph is acyclic
-std::vector<VCEvent> VCGraphVclock::linearize()
-{
-  std::vector<VCEvent> trace;
+// Returns true iff adding the edge would create a cycle
+// This method maintains:
+// 1) thread-pair-wise transitivity
+// 2) complete transitivity
+bool VCGraphVclock::addEdge(const Node *n1, const Node *n2,
+														ThreadPairsVclocks *succ,
+														ThreadPairsVclocks *pred) {
+	assert(n1 && n2 && "Do not have such node");
+	assert(n1 != initial_node && n2 != initial_node
+				 && "Can not add an edge from/to the initial node");
+	unsigned ti = n1->getProcessID();
+	unsigned tj = n2->getProcessID();
+	assert(ti != tj && "Can not add an edge within the same process");
+	unsigned ti_evx = n1->getEventID();
+	unsigned tj_evx = n2->getEventID();
+	assert(ti_evx < processes[ti].size() && tj_evx < processes[tj].size()
+				 && "Invalid node indices");
+	
+	std::pair<bool, bool> addEdgeResult =
+									addEdgeHelp(ti, ti_evx, tj, tj_evx, succ, pred);
+	
+  if (addEdgeResult.second) {
+    assert(!addEdgeResult.first);
+		return true;
+	}
 
-  auto order = computeTopoOrder();
-  assert(order.first && "The graph is not acyclic");
+  // Maintenance of complete transitivity
+  // Collect nodes from different threads with edges:
+	// 1) to   ti[ti_evx]
+	// 2) from tj[tj_evx]
+	
+	std::set< std::pair<unsigned, unsigned>> before_tiEvent, after_tjEvent;
+	for (unsigned k = 0; k<processes.size(); ++k) {
+    if (k != ti && k != tj) {
+      int maxbefore = (*pred)[ti][k][ti_evx];
+			if (maxbefore >= 0)
+				before_tiEvent.insert(std::pair<unsigned, unsigned>
+															(k, maxbefore));
 
-  // the order is reversed
-  assert(order.second.size() == size());
-  for (unsigned i = order.second.size(); i > 0; --i)
-    if (order.second[i - 1]->getEvent()) {
-      trace.emplace_back(order.second[i - 1]->getEvent()->blank_copy());
-      trace.back().id = trace.size() - 1;
-    } else
-      // the initial event must be the first event
-      assert(i == size());
+			int minafter = (*succ)[tj][k][tj_evx];
+			assert(minafter >= 0);
+			if ((unsigned) minafter < processes[k].size())
+				after_tjEvent.insert(std::pair<unsigned, unsigned>
+														 (k, minafter));
+		}
+	}
 
-  return trace;
+	// Try to add an edge between
+	// each of 1) and each of 2)
+	// (if they belong to different threads)
+
+	for (auto& bef : before_tiEvent)
+		for (auto& aft : after_tjEvent)
+			if (bef.first != aft.first) {
+        addEdgeResult = addEdgeHelp(bef.first, bef.second,
+																		aft.first, aft.second,
+																		succ, pred);
+				if (addEdgeResult.second) {
+					assert(!addEdgeResult.first);
+					// careful: even though this edge was not added
+					// in order not to create a cycle, the creation
+					// of this cycle is already unavoidable in the graph
+					// (ie transitively closing the graph has to create
+					// this cycle), so the graph is already useless for us
+					return true;
+				}
+			}
+
+	return false;
 }
-*/
+
+// first)  true iff the edge was added
+// second) true iff adding the edge would create a cycle
+// This method maintains thread-pair-wise transitivity
+std::pair<bool, bool> VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
+																								 unsigned tj, unsigned tj_evx,
+																								 ThreadPairsVclocks *succ,
+																								 ThreadPairsVclocks *pred) {
+  if ((*succ)[ti][tj][ti_evx] <= (int) tj_evx) {
+    // same/stronger edge already present
+		assert((*pred)[tj][ti][tj_evx] >= (int) ti_evx
+					 && "Inconsistent succ/pred vector clocks");
+		return std::pair<bool, bool>(false, false);
+	}
+
+	// weaker edge present, will add this one
+	assert((*pred)[tj][ti][tj_evx] < (int) ti_evx
+				 && "Inconsistent succ/pred vector clocks");
+
+	// check for cycle
+  if ((*succ)[tj][ti][tj_evx] <= (int) ti_evx) {
+		assert((*pred)[ti][tj][ti_evx] >= (int) tj_evx
+					 && "Inconsistent succ/pred vector clocks");		
+    return std::pair<bool, bool>(false, true);
+	}
+
+	// adding the edge will not create a cycle
+  // checking for cycle during maintenance
+	// of thread-pair-wise is unnecessary, since
+	// a cycle would have been found above already
+
+	(*succ)[ti][tj][ti_evx] = tj_evx;
+	(*pred)[tj][ti][tj_evx] = ti_evx;	
+	
+  // maintenance of transitivity of succ[ti][tj]
+	// tj_evx is fixed, everything in ti before ti_evx
+	// also happens-before tj_evx
+	
+	for (int ti_before_evx = ti_evx - 1;
+			 ti_before_evx >= 0;
+			 --ti_before_evx) {
+		if ((*succ)[ti][tj][ti_before_evx] <= (int) tj_evx)
+      break; // since for smaller indices also <= tj_evx
+		(*succ)[ti][tj][ti_before_evx] = tj_evx;
+	}
+
+  // maintenance of transitivity of pred[tj][ti]
+	// ti_evx is fixed, everything in tj after tj_evx
+	// also happens-after ti_evx
+	
+	for (unsigned tj_after_evx = tj_evx + 1;
+			 tj_after_evx < processes[tj].size();
+			 ++tj_after_evx) {
+		if ((*pred)[tj][ti][tj_after_evx] >= (int) ti_evx)
+			break; // since for bigger indices also >= ti_evx
+		(*pred)[tj][ti][tj_after_evx] = ti_evx;
+	}
+
+	return std::pair<bool, bool>(true, false);
+}
+
+// Returns true iff performing the closure implies creating a cycle
+bool VCGraphVclock::closure(ThreadPairsVclocks *succ,
+														ThreadPairsVclocks *pred) {
+	// TBD: Add closure rules here
+  return false;
+}

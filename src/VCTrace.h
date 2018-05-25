@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "VCAnnotation.h"
+#include "VCGraphVclock.h"
 
 class VCTrace {
  public:
@@ -36,19 +37,32 @@ class VCTrace {
 
 	VCAnnotation annotation;
 	//VCAnnotationNeg annotationNeg;
+
+	VCGraphVclock partialOrder;
 	
 
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
 
+  VCTrace() = delete;
+	
   VCTrace(std::vector<VCEvent>&& trace)
-  : trace(std::move(trace)) {}
+	: trace(std::move(trace)),
+		annotation(),
+		partialOrder(this->trace) {};
 
+  VCTrace(std::vector<VCEvent>&& trace,
+					VCAnnotation&& annotation,
+					VCGraphVclock&& partialOrder)
+	: trace(std::move(trace)),
+		annotation(std::move(annotation)),
+		partialOrder(std::move(partialOrder)) {};
+	
   VCTrace(VCTrace&& tr) = default;
   VCTrace& operator=(VCTrace&& tr) = default;
-  VCTrace(const VCTrace&) = default;
-  VCTrace& operator=(const VCTrace&) = default;
+  VCTrace(const VCTrace&) = delete;
+  VCTrace& operator=(const VCTrace&) = delete;
   
 };
 
