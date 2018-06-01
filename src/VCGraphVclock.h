@@ -25,36 +25,44 @@
 #include <vector>
 
 #include "VCBasis.h"
+#include "VCAnnotation.h"
 
 class VCGraphVclock : public VCBasis {
 
-  const Node *initial_node;
-	std::set<Node *> nodes;
-
-  using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
-	
 	// succ[i][j] = Vector clock for t_i -> t_j
 	// succ[i][j][a] = b means:
 	// t_i[<=a] *HB* t_j[b<=]
 	// so succ[i][j] fixes a (index of t_i),
 	// asks for 'smallest' b (smallest successor within t_j)
-	ThreadPairsVclocks succ_original;
-
+	
 	// pred[j][i] = Vector clock for t_j -> t_i
 	// pred[j][i][b] = a means:
 	// t_i[<=a] *HB* t_j[b<=]
 	// so pred[j][i] fixes b (index of t_j),
 	// asks for 'biggest' a (biggest predecessor within t_i)
-	ThreadPairsVclocks pred_original;
 
   // t_i[a] *HB* t_j[b]
 	// bigger a => 'stronger' edge
 	// smaller b => 'stronger' edge
+	
+  const Node *initial_node;
+	std::set<Node *> nodes;
+
+  using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
+	
+	ThreadPairsVclocks succ_original;
+	ThreadPairsVclocks pred_original;
+
+	std::unordered_map<SymAddrSize, std::vector<std::vector<int>>> tw_candidate;
 
 	// Container for pairs succ-pred, each item in the container
 	// has some additional partial order upon writes of interest
 	std::list< std::pair<ThreadPairsVclocks *, ThreadPairsVclocks *> >
-		edges_worklist;
+		refinements, // in the value-closing process
+		ready_to_mutate, // value-closed
+		mutation_refinements; // in the value-closing process after introducing a mutation
+
+	unsigned extension_from;
 
  public:
 
@@ -67,61 +75,54 @@ class VCGraphVclock : public VCBasis {
 		for (Node *nd: nodes) {
       delete nd;
 		}
-		for (auto succpredpair : edges_worklist) {
-			delete succpredpair.first;
-			delete succpredpair.second;
-		}
+		assert(refinements.empty());
+		assert(ready_to_mutate.empty());
+		assert(mutation_refinements.empty());
 	}
 	
 	VCGraphVclock() = delete;
-  VCGraphVclock(const std::vector<VCEvent>& trace);
+	
+  VCGraphVclock(const std::vector<VCEvent>& trace)
+	: VCBasis(),
+		initial_node(new Node(INT_MAX, INT_MAX, nullptr))
+			{ extendGraph(trace); }
 
-  VCGraphVclock(VCGraphVclock&& oth)
-	: VCBasis(std::move(oth)),
-		initial_node(std::move(oth.initial_node)),
-		nodes(std::move(oth.nodes)),
-		succ_original(std::move(oth.succ_original)),
-		pred_original(std::move(oth.pred_original)),
-		edges_worklist(std::move(oth.edges_worklist)) {}
-		
-  VCGraphVclock& operator=(VCGraphVclock&& oth) {
-		if (&oth != this) {
-			// destroy visible resources of lhs
-			delete initial_node;
-			for (Node *nd: nodes) {
-				delete nd;
-			}
-			for (auto succpredpair : edges_worklist) {
-				delete succpredpair.first;
-				delete succpredpair.second;
-			}
-			// move assign bases+members from rhs
-			initial_node = std::move(oth.initial_node);
-			nodes = std::move(oth.nodes);
-			succ_original = std::move(oth.succ_original);
-			pred_original = std::move(oth.pred_original);
-			edges_worklist = std::move(oth.edges_worklist);
-			VCBasis::operator=(std::move(oth));
-			// rhs is now resource-less
-		}
-		return *this;
-	};
+  VCGraphVclock(VCGraphVclock&& oth) = default;
+
+  VCGraphVclock& operator=(VCGraphVclock&& oth) = delete;
 
   VCGraphVclock(const VCGraphVclock& oth) = delete;
 
-	// Do NOT copy edges_worklist, provide pointers to
-	// TPVclocks that will be copied as the succ/pred_original
+	// Pointers to Vclocks that will be copied as succ/pred_original
+	// Trace that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
 							  const ThreadPairsVclocks *succ,
-							  const ThreadPairsVclocks *pred)
+							  const ThreadPairsVclocks *pred,
+								const std::vector<VCEvent>& trace)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     succ_original(*succ),
     pred_original(*pred),
-		edges_worklist() {
-		for (Node *nd : oth.nodes)
-			nodes.insert(new Node(*nd));
-	}
+		tw_candidate(),
+		refinements(),
+		ready_to_mutate(),
+		mutation_refinements()
+			{
+				for (Node *othnd : oth.nodes) {
+					Node *nd = new Node(*othnd);
+					nodes.insert(nd);
+					assert(nd->getProcessID() < processes.size() &&
+								 nd->getEventID() < processes[nd->getProcessID()].size() &&
+								 processes[nd->getProcessID()][nd->getEventID()] == othnd);
+					processes[nd->getProcessID()][nd->getEventID()] = nd;
+				}
+				// nodes -- fixed above
+				// processes -- fixed above
+				// cpid_to_processid -- no need to fix
+				// event_to_node -- fixed below
+				// read_vciid_to_node -- fixed below
+				extendGraph(trace);
+	    }
 	
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
 
@@ -140,22 +141,17 @@ class VCGraphVclock : public VCBasis {
 	//    they extend existing threads / create new threads
 	// 3) succ/pred_original are extended to accomodate new
 	//    threads+nodes while keeping all the original info
+	// Special case: initial trace extends an empty graph
 	void extendGraph(const std::vector<VCEvent>& trace);
 	
   /* *************************** */
   /* EDGE QUESTIONS              */
   /* *************************** */
-	
-  bool hasEdge(const VCEvent& e1, const VCEvent& e2,
-							 const ThreadPairsVclocks *succ) const {
-    auto n1 = getNode(e1);
-    auto n2 = getNode(e2);
-    return hasEdge(n1, n2, succ);
-  }
 
   bool hasEdge(const Node *n1, const Node *n2,
 							 const ThreadPairsVclocks *succ) const {
     assert(n1 && n2 && "Do not have such node");
+		assert(n1 != n2);
 		if (n1 == initial_node)
 			return true; // init HB everything
     if (n2 == initial_node)
@@ -167,13 +163,6 @@ class VCGraphVclock : public VCBasis {
 			            [n1->getEventID()] <= (int) n2->getEventID();
   }
 
-  bool areOrdered(const VCEvent& e1, const VCEvent& e2,
-									const ThreadPairsVclocks *succ) const {
-    auto n1 = getNode(e1);
-    auto n2 = getNode(e2);
-    return areOrdered(n1, n2, succ);
-  }
-
   bool areOrdered(const Node *n1, const Node *n2,
 									const ThreadPairsVclocks *succ) const {
     return hasEdge(n1, n2, succ) || hasEdge(n2, n1, succ);
@@ -181,72 +170,63 @@ class VCGraphVclock : public VCBasis {
 
 	// Given 'nd', returns its first successor within the
 	// thread 'thr_id' according to the vector clocks 'succ'
-	int getMinSucc(const Node *nd, unsigned thr_id,
+	const Node *getMinSucc(const Node *nd, unsigned thr_id,
 						     const ThreadPairsVclocks *succ) const {
 		assert(nd && "Do not have such node");
 		assert(nd != initial_node && "Asking getMinSucc for the initial node");
 		assert(thr_id < processes.size() && "Such thread does not exist");
-		return (*succ)[nd->getProcessID()]
-			            [thr_id]
-			            [nd->getEventID()];
+		assert(nd->getProcessID() != thr_id && "Asking getMinSucc within the same thread");
+		int ev_id = (*succ)[nd->getProcessID()]
+		                   [thr_id]
+		                   [nd->getEventID()];
+		assert(ev_id >= 0);
+		return ((unsigned) ev_id < processes[thr_id].size()) ?
+			processes[thr_id][ev_id] : nullptr;
 	}
 
 	// Given 'nd', returns its latest predecessor within the
 	// thread 'thr_id' according to the vector clocks 'pred'
-	int getMaxPred(const Node *nd, unsigned thr_id,
+	const Node *getMaxPred(const Node *nd, unsigned thr_id,
 								 const ThreadPairsVclocks *pred) const {
 		assert(nd && "Do not have such node");
 		assert(nd != initial_node && "Asking getMaxPred for the initial node");
 		assert(thr_id < processes.size() && "Such thread does not exist");
-		return (*pred)[nd->getProcessID()]
-			            [thr_id]
-			            [nd->getEventID()];
+		assert(nd->getProcessID() != thr_id && "Asking getMaxPred within the same thread");
+		int ev_id = (*pred)[nd->getProcessID()]
+			                 [thr_id]
+			                 [nd->getEventID()];
+		assert(ev_id < processes[thr_id].size());
+		return (ev_id >= 0) ?
+			processes[thr_id][ev_id] : nullptr;
 	}
 
   /* *************************** */
   /* EDGE ADDITION               */
   /* *************************** */
 
-	// FUTURE BELOW
-  //using edges = std::set<std::pair<const Node *, const Node *>>;
-	// <0> 'Strong' added edges (ie maximal wrt edge strength ordering)
-	// <1> All added edges (including those hidden by Vclock principle)
-	// <2> true iff a cycle appeared
-  // FUTURE END
-
-	bool addEdge(const VCEvent& e1, const VCEvent& e2,
-							 ThreadPairsVclocks *succ,
-							 ThreadPairsVclocks *pred) {
-    auto n1 = getNode(e1);
-    auto n2 = getNode(e2);
-    return addEdge(n1, n2, succ, pred);
-  }
-
-	// Returns true iff adding the edge would create a cycle
+	// Adds an edge between two unordered nodes
 	// This method maintains:
 	// 1) thread-pair-wise transitivity
 	// 2) complete transitivity
-  bool addEdge(const Node *n1, const Node *n2,
+  void addEdge(const Node *n1, const Node *n2,
 							 ThreadPairsVclocks *succ,
 							 ThreadPairsVclocks *pred);
 
-	// Returns true iff performing the closure implies creating a cycle
-  bool closure(ThreadPairsVclocks *succ,
-							 ThreadPairsVclocks *pred);
-	
-  void to_dot(const char *edge_params=nullptr) const;
-  void dump() const;
-
  private:
 
-	// first)  true iff the edge was added
-	// second) true iff adding the edge would create a cycle
-	// This method maintains thread-pair-wise transitivity
-	std::pair<bool, bool> addEdgeHelp(unsigned ti, unsigned ti_evx,
-																		unsigned tj, unsigned tj_evx,
-																		ThreadPairsVclocks *succ,
-																		ThreadPairsVclocks *pred);
+	// Helper method for addEdge,
+	// maintains thread-pair-wise transitivity
+	void addEdgeHelp(unsigned ti, unsigned ti_evx,
+									 unsigned tj, unsigned tj_evx,
+									 ThreadPairsVclocks *succ,
+									 ThreadPairsVclocks *pred);
 
+ public:
+	
+  // TODO: alg. helpers
+
+  void to_dot(const char *edge_params=nullptr) const;
+	
 };
 
 #endif // _VC_GRAPHVCLOCK_H

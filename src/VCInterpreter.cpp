@@ -39,7 +39,6 @@
 
 #include "VCInterpreter.h"
 #include "VCTraceBuilder.h"
-#include "VCTBHelpers.h"
 
 
 static void SetValue(llvm::Value *V,

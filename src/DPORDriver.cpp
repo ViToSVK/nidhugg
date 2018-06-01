@@ -100,8 +100,7 @@ void DPORDriver::reparse(){
     }
   }
 }
-
-llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, const Configuration &conf) const {
+llvm::ExecutionEngine *DPORDriver::create_execution_engine(llvm::Module *mod, TraceBuilder &TB, const Configuration &conf) {
   std::string ErrorMsg;
   llvm::ExecutionEngine *EE = 0;
   switch(conf.memory_model){
@@ -151,6 +150,10 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, con
   (void)EE->getPointerToFunction(EntryFn);
 
   return EE;
+}
+
+llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, const Configuration &conf) const {
+  return DPORDriver::create_execution_engine(mod, TB, conf);
 }
 
 Trace *DPORDriver::run_once(TraceBuilder &TB) const{

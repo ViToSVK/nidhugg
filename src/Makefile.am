@@ -40,6 +40,7 @@ libnidhugg_a_SOURCES = \
   vecset.h vecset.tcc \
   VCEvent.h \
   VCIID.h \
+  VCHelpers.h \
   VCAnnotation.h \
   VCTrace.h \
   VCBasis.h \

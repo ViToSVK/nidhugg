@@ -21,7 +21,7 @@
 #include <iostream>
 
 #include "VCExplorer.h"
-#include "VCTraceBuilder.h"
+#include "VCHelpers.h"
 
 void VCExplorer::print_stats()
 {
@@ -44,9 +44,60 @@ void VCExplorer::explore()
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
+		// For a given memory location, have a map
+		// read -> values written into that location
+		std::unordered_map<SymAddrSize,
+											 std::unordered_map<const Node *, std::set<int>>>
+			reads_to_annotate;
+
+		// For a given memory location, have a map
+		// value -> writes that wrote it into that location
+		std::unordered_map<SymAddrSize,
+											 std::unordered_map<int, std::set<const Node *>>>
+			active_writes;
+
+
+		// Find the reads to annotate
+		for (unsigned proc_idx = 0;
+				 proc_idx < current->partialOrder.size();
+				 ++proc_idx) {
+
+			auto it = current->partialOrder.nodes_process_end(proc_idx);
+      const Node *nd = *it;
+			const VCEvent *ev = nd->getEvent();
+			
+			if (ev->may_conflict && isRead(ev) &&
+					!current->annotation.defines(VCIID(*ev)) ) {
+        auto it = reads_to_annotate.find(ev->ml);
+				if (it == reads_to_annotate.end()) {
+					reads_to_annotate.emplace_hint(it, ev->ml,
+																				 std::unordered_map<const Node *, std::set<int>>());
+				}
+				reads_to_annotate[ev->ml].emplace(nd, std::set<int>());
+				reads_to_annotate[ev->ml][nd].insert(0); // initial node XXX FOR SPAWNED THREADS ALSO, RIGHT?
+			}
+		}
+
+		// Find the active writes
 		
+
+		
+			
 
 		// Delete managed VCTrace
 		current.reset();
 	}
+}
+
+std::vector<VCEvent> VCExplorer::extendTrace
+(std::vector<VCEvent>&& tr, const std::unordered_set<int>& unannot) {
+	VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr), unannot);
+	auto res = TB.extendGivenTrace();
+
+	if (TB.has_error())
+		originalTB.error_trace = TB.get_trace();
+
+	++executed_traces;
+
+	return res;
 }

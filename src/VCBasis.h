@@ -52,7 +52,7 @@ class Node {
 	unsigned getProcessID() const { return process_id; }
 	unsigned getEventID() const { return event_id; }
 	const VCEvent *getEvent() const { return event; }
-	
+	void setEvent(const VCEvent *ev) { event = ev; }
 };
 
 class VCBasis {
@@ -65,8 +65,6 @@ class VCBasis {
 	std::unordered_map<CPid, unsigned> cpid_to_processid;
 	std::unordered_map<const VCEvent *, Node *> event_to_node;
 	std::unordered_map<VCIID, Node *> read_vciid_to_node;
-	// make use of copy elision: emplace VCIID using copy constructor instead of move
-	// std::unordered_map<const llvm::Instruction *, std::vector<Node *>> instr_to_nodeset;
 	
  public:
 	// Basis is not responsible for any resources
@@ -74,9 +72,9 @@ class VCBasis {
 	// in the graph classes that inherit Basis
   VCBasis() = default;
   VCBasis(VCBasis&& oth) = default;
-  VCBasis& operator=(VCBasis&& oth) = default;
+  VCBasis& operator=(VCBasis&& oth) = delete;
   VCBasis(const VCBasis& oth) = default;
-  VCBasis& operator=(const VCBasis& oth) = default;
+  VCBasis& operator=(const VCBasis& oth) = delete;
 
   const ProcessT& operator[](unsigned idx) const {
     assert(idx < size());
@@ -249,7 +247,10 @@ class VCBasis {
   events_iterator nodes_end() const { return events_iterator(processes, true); }
   events_iterator nodes_iterator(unsigned process = 0, unsigned event = 0) const {
     return events_iterator(processes, process, event);
-  }	
+  }
+	events_iterator nodes_process_end(unsigned process = 0) const {
+    return events_iterator(processes, process, processes[process].size() - 1);
+	}
 
 	// Iterator pointing to the given Node
   events_iterator nodes_iterator(const Node *nd) const {
@@ -294,53 +295,5 @@ class VCBasis {
 	}
 
 };
-
-/*
-CODE IF WE EVER NEED TO CONSIDER A STAR ARCHITECTURE WITHIN BASIS
-
-  void setTopologyRoot(int idx) {
-    assert(topology_root_index == -1 && "Already have a topology root");
-    assert(idx >= 0 && (size_t) idx < processes.size());
-    topology_root_index = idx;
-  }
-
-  void setTopologyRoot(const CPid& cpid) {
-    assert(topology_root_index == -1 && "Already have a topology root");
-    topology_root_index = cpidToProcessID(cpid);
-    assert(topology_root_index != -1 && "Do not have a process with such cpid");
-  }
-
-  bool hasTopologyRoot() const {
-    return topology_root_index != -1;
-  }
-
-  bool isTopologyRoot(unsigned idx) const {
-      return topology_root_index == (int) idx;
-  }
-
-  bool isTopologyRoot(const ProcessT& process) const {
-    assert(topology_root_index != -1);
-    return &process == &processes[topology_root_index];
-  }
-
-  bool isTopologyRoot(const CPid& cpid) const {
-    assert(topology_root_index != -1);
-    return cpid == cpidvector[topology_root_index];
-  }
-
-  const ProcessT& getTopologyRoot() const {
-    assert(topology_root_index != -1);
-    return processes[topology_root_index];
-  }
-
-  const CPid& getTopologyRootCPid() const {
-    assert(topology_root_index != -1);
-    return cpidvector[topology_root_index];
-  }
-
- private:
-	int topology_root_index = -1;
-
- */
 
 #endif // _VC_BASIS_H_

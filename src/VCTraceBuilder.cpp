@@ -28,7 +28,7 @@
 bool VCTraceBuilder::reset()
 {
   // Construct the explorer with the initial trace
-  VCExplorer explorer = VCExplorer(std::move(prefix));
+  VCExplorer explorer = VCExplorer(std::move(prefix), *this);
 	// prefix is empty now (as desired)
 	
   // Call the main method
@@ -140,7 +140,7 @@ bool VCTraceBuilder::schedule_arbitrarily(int *proc)
   assert(!sch_replay && (sch_initial || sch_extend));
 
   for(unsigned p = 0; p < threads.size(); p += 2) {
-		if (!threads_with_new_read.count(p)) {
+		if (!threads_with_unannotated_read.count(p)) {
 			// We only schedule threads that have not yet seen a new visible read
 			if (schedule_thread(proc, p))
 				return true;		
@@ -247,7 +247,6 @@ void VCTraceBuilder::refuse_schedule()
 
 void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
 {
-	// std::cout << "MAYCONF" << std::flush;
   auto& curn = curnode();
   curn.may_conflict = true;
   if (ml)
@@ -271,7 +270,6 @@ void VCTraceBuilder::metadata(const llvm::MDNode *md)
 
 IID<CPid> VCTraceBuilder::get_iid() const
 {
-	// std::cout << "GETIID" << std::flush;
   IPid pid = curnode().iid.get_pid();
   int idx = curnode().iid.get_index();
   return IID<CPid>(threads[pid].cpid,idx);
@@ -280,6 +278,7 @@ IID<CPid> VCTraceBuilder::get_iid() const
 void VCTraceBuilder::spawn()
 {
 	// std::cout << "SPAWN" << std::flush;
+	curnode().kind = VCEvent::Kind::SPAWN;
   mayConflict();
   // store the CPid of the new thread
   IPid parent_ipid = curnode().iid.get_pid();
@@ -295,6 +294,7 @@ void VCTraceBuilder::spawn()
 void VCTraceBuilder::join(int tgt_proc)
 {
 	// std::cout << "JOIN" << std::flush;
+	curnode().kind = VCEvent::Kind::JOIN;
   mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
 }
@@ -306,10 +306,11 @@ void VCTraceBuilder::atomic_store(const SymData &sd, int val)
   assert(llvm::isa<llvm::StoreInst>(current_inst));
   if (!llvm::isa<llvm::AllocaInst>(
         current_inst->getOperand(1)->stripInBoundsOffsets() )) {
+		curnode().kind = VCEvent::Kind::STORE;
 		const SymAddrSize &ml = sd.get_ref();
     mayConflict(&ml);
 		curnode().value = val;
-		//std::cout << " # VISIBLE WRITE WITH VALUE: " << curnode().value;
+		//std::cout << " # VISIBLE STORE WITH VALUE: " << curnode().value;
   }
 }
 
@@ -319,92 +320,49 @@ void VCTraceBuilder::load(const SymAddrSize &ml, int val)
   // loads from stack may not conflict
   assert(llvm::isa<llvm::LoadInst>(current_inst));
   if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
+		curnode().kind = VCEvent::Kind::LOAD;
     mayConflict(&ml);
 		curnode().value = val;
-		//std::cout << " # VISIBLE READ WITH VALUE: " << curnode().value;
+		//std::cout << " # VISIBLE LOAD WITH VALUE: " << curnode().value;
     if (sch_initial || sch_extend)
-			threads_with_new_read.insert(curnode().iid.get_pid());
+			threads_with_unannotated_read.insert(curnode().iid.get_pid());
   }
 }
 
 void VCTraceBuilder::fence()
 {
-	// std::cout << "FENCE" << std::flush;
   assert(curnode().iid.get_pid() % 2 == 0);
 }
 
 void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
 {
+	// std::cout << "M_INIT" << std::flush;
   fence();
   assert(mutexes.count(ml.addr) == 0);
+	curnode().kind = VCEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(prefix_idx);
+	mutexes[ml.addr].value = -1; // value for default-unlocked mutex
 }
 
 void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
 {
+	// std::cout << "M_DESTROY" << std::flush;
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
     mutexes[ml.addr] = Mutex();
   }
   assert(mutexes.count(ml.addr));
+	curnode().kind = VCEvent::Kind::M_DESTROY;
   mayConflict(&ml);
 
   mutexes.erase(ml.addr);
 }
 
-void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
-{
-  fence();
-  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
-    // Assume static initialization
-    mutexes[ml.addr] = Mutex();
-  }
-  assert(mutexes.count(ml.addr));
-	Mutex &mutex = mutexes[ml.addr];
-	
-  mayConflict(&ml);
-	curnode().value = mutex.value; // read
-
-  mutex.last_lock = mutex.last_access = prefix_idx;
-  mutex.locked = true;
-}
-
-void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
-  assert(!dryrun);
-  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
-    // Assume static initialization
-    mutexes[ml.addr] = Mutex();
-  }
-  assert(mutexes.count(ml.addr));
-  Mutex &mutex = mutexes[ml.addr];
-  assert(0 <= mutex.last_lock);
-	((void)(mutex)); // so mutex does not appear unused on release
-}
-
-void VCTraceBuilder::mutex_trylock(const SymAddrSize &ml)
-{
-  fence();
-  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
-    // Assume static initialization
-    mutexes[ml.addr] = Mutex();
-  }
-  assert(mutexes.count(ml.addr));
-	Mutex &mutex = mutexes[ml.addr];
-	
-  mayConflict(&ml);
-  curnode().value = mutex.value; // read
-
-  mutex.last_access = prefix_idx;
-  if(!mutex.locked){ // Mutex is free
-    mutex.last_lock = prefix_idx;
-    mutex.locked = true;
-  }
-}
-
 void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
 {
+  // std::cout << "M_UNLOCK" << std::flush;	
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
@@ -415,12 +373,63 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_access);
 
+	curnode().kind = VCEvent::Kind::M_UNLOCK;
   mayConflict(&ml);
-	curnode().value = curnode().iid.get_pid(); // write	
+	curnode().value = ( curnode().iid.get_pid() << 16 )
+		                + curnode().event_order; // WRITE
 
   mutex.last_access = prefix_idx;
   mutex.locked = false;
-	mutex.value = curnode().iid.get_pid(); // write
+	mutex.value = curnode().value; // WRITE
+}
+
+void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
+{
+	// std::cout << "M_LOCK" << std::flush;
+  fence();
+  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
+    // Assume static initialization
+    mutexes[ml.addr] = Mutex();
+  }
+  assert(mutexes.count(ml.addr));
+	Mutex &mutex = mutexes[ml.addr];
+  assert(!mutex.locked && mutex.value != -47);
+	
+	curnode().kind = VCEvent::Kind::M_LOCK;
+  mayConflict(&ml);
+	curnode().value = mutex.value; // READ
+	
+  mutex.last_lock = mutex.last_access = prefix_idx;
+  mutex.locked = true;
+	mutex.value = -47; // value for locked mutex
+}
+
+void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
+	// std::cout << "M_LOCKFAIL" << std::flush;
+  assert(!dryrun);
+  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
+    // Assume static initialization
+    mutexes[ml.addr] = Mutex();
+  }
+  assert(mutexes.count(ml.addr));
+  Mutex &mutex = mutexes[ml.addr];
+  assert(0 <= mutex.last_lock);
+	assert(mutex.locked && mutex.value == -47);
+	((void)(mutex)); // so mutex does not appear unused on release
+}
+
+std::vector<VCEvent> VCTraceBuilder::extendGivenTrace() {
+  assert(sch_replay && !replay_trace.empty());
+
+  std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, config));
+
+  // Run main.
+  EE->runFunctionAsMain(M->getFunction("main"), {"prog"}, 0);
+
+  // Run static destructors.
+  EE->runStaticConstructorsDestructors(true);
+
+  return prefix;
 }
 
 Trace *VCTraceBuilder::get_trace() const

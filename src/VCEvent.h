@@ -47,12 +47,13 @@
  * it must be the first event in the sequence.
  */
 class VCEvent {
+	
  public:
-
   VCEvent(const IID<int> &iid, const CPid& cpid,
 					unsigned instruction_order, unsigned event_order,
 					unsigned id)
-    : iid(iid), cpid(cpid), childs_cpid(),
+    : kind(Kind::DUMMY),
+		  iid(iid), cpid(cpid), childs_cpid(),
 	    size(1), md(0), instruction(0),
 		  may_conflict(false),
 		  ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
@@ -61,13 +62,33 @@ class VCEvent {
 		  event_order(event_order),
 		  id(id)
       { assert(iid.get_pid() >= 0); }
-
-  VCEvent(const IID<int> &iid, const CPid& cpid)
-		: VCEvent(iid, cpid, 0, -1, -1) {}
 	
-  VCEvent(const IID<int> &iid)
-		: VCEvent(iid, CPid(), 0, -1, -1) {}
-
+ private:
+	// Returns a 'blank copy' of the event
+	// The event will be a part of replay_trace
+	// Only /**/ attributes are copied
+	// Rest will be computed during the replay
+ VCEvent(const VCEvent& oth, bool blank)
+    : kind(Kind::DUMMY),
+		  iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
+	    size(oth.size) /**/, md(0), instruction(0),
+		  may_conflict(false),
+		  ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
+		  value(0),
+		  instruction_order(oth.instruction_order) /**/,
+		  event_order(oth.event_order) /**/,
+		  id(-1)
+      { assert(iid.get_pid() >= 0);
+			  assert(blank); }
+	
+ public:
+  enum class Kind {
+    DUMMY,
+		LOAD, STORE,
+		SPAWN, JOIN,
+    M_INIT, M_LOCK, M_UNLOCK, M_DESTROY
+  } kind;
+	
   /* A simple identifier of the thread that executed this event */
   IID<int> iid;
   /* A complex identifier of the thread that executed this event */
@@ -98,24 +119,15 @@ class VCEvent {
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
-  // return a copy of this event without any computed information
-  // contained in it -- that is copy only the basic attributes (iid, size,...)
-  // but do not copy the branches, alts, etc..
-  VCEvent blank_copy() const {
-    VCEvent tmp(iid);
-
-		tmp.cpid = cpid;
-		tmp.size = size;
-		tmp.md = md;
-		tmp.instruction = instruction;
-		// orders stay the same since the basis
-		// up until this event stays the same
-		tmp.instruction_order = instruction_order;
-		tmp.event_order = event_order;
-    
-    return tmp;
+  VCEvent blank_copy(const VCEvent& oth) const {
+    return VCEvent(oth, true);
   }
 
+	bool equalVCIID(const VCEvent& oth) const {
+		return std::tie(instruction_order, cpid)
+				== std::tie(oth.instruction_order, oth.cpid);
+	}
+	
   void dump() const;
 	
 };

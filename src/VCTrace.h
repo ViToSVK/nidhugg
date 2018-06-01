@@ -60,7 +60,7 @@ class VCTrace {
 		partialOrder(std::move(partialOrder)) {};
 	
   VCTrace(VCTrace&& tr) = default;
-  VCTrace& operator=(VCTrace&& tr) = default;
+  VCTrace& operator=(VCTrace&& tr) = delete;
   VCTrace(const VCTrace&) = delete;
   VCTrace& operator=(const VCTrace&) = delete;
   

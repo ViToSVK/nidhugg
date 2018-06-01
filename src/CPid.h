@@ -167,7 +167,7 @@ namespace std{
       size_t res = k.proc_seq.size();
 			size_t st = k.proc_seq.size() < 4 ? k.proc_seq.size() : 4;
 			for(size_t i = 1; i < st; ++i)
-				res ^= (size_t) k.proc_seq[i] >> i;
+				res ^= (size_t) k.proc_seq[i] << (4*i);
 			return res;
     }
   };

@@ -24,14 +24,20 @@
 #include <list>
 #include <memory>
 
+#include "VCTraceBuilder.h"
 #include "VCTrace.h"
 
 class VCExplorer {
 
+  VCTraceBuilder& originalTB;
+	
   std::list<std::unique_ptr<VCTrace>> worklist;
 
 	std::unique_ptr<VCTrace> current;	
 
+  std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
+																	 const std::unordered_set<int>& unannot);
+	
   /* *************************** */
   /* STATISTICS                  */
   /* *************************** */ 
@@ -53,7 +59,8 @@ class VCExplorer {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  VCExplorer(std::vector<VCEvent>&& trace) {
+  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb)
+		: originalTB(tb) {
     worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace))));
   }
   
