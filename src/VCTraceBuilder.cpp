@@ -402,6 +402,9 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   mutex.last_lock = mutex.last_access = prefix_idx;
   mutex.locked = true;
 	mutex.value = -47; // value for locked mutex
+
+	if (sch_initial || sch_extend) // READ
+		threads_with_unannotated_read.insert(curnode().iid.get_pid());
 }
 
 void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){

@@ -10,40 +10,89 @@
 inline bool isLoad(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::LOAD;
 }
+inline bool isLoad(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::LOAD;
+}
+
+//
 
 inline bool isStore(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::STORE;
 }
+inline bool isStore(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::STORE;
+}
+
+//
 
 inline bool isSpawn(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::SPAWN;
 }
+inline bool isSpawn(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::SPAWN;
+}
+
+//
 
 inline bool isJoin(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::JOIN;
 }
+inline bool isJoin(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::JOIN;
+}
+
+//
 
 inline bool isMutexInit(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::M_INIT;
 }
+inline bool isMutexInit(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::M_INIT;
+}
+
+//
 
 inline bool isMutexDestroy(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::M_DESTROY;
 }
+inline bool isMutexDestroy(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::M_DESTROY;
+}
+
+//
 
 inline bool isLock(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::M_LOCK;
 }
+inline bool isLock(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::M_LOCK;
+}
+
+//
 
 inline bool isUnlock(const VCEvent *ev) {
   return ev->kind == VCEvent::Kind::M_UNLOCK;
 }
+inline bool isUnlock(const VCEvent& ev) {
+  return ev.kind == VCEvent::Kind::M_UNLOCK;
+}
+
+//
 
 inline bool isRead(const VCEvent *ev) {
   return isLoad(ev); // || isLock(ev) - treat them separately
 }
+inline bool isRead(const VCEvent& ev) {
+  return isLoad(ev); // || isLock(ev) - treat them separately
+}
+
+//
 
 inline bool isWrite(const VCEvent *ev)
+{
+  return isStore(ev); //  || isUnlock(ev) - treat them separately
+}
+inline bool isWrite(const VCEvent& ev)
 {
   return isStore(ev); //  || isUnlock(ev) - treat them separately
 }

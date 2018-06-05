@@ -53,14 +53,16 @@ class VCGraphVclock : public VCBasis {
 	ThreadPairsVclocks succ_original;
 	ThreadPairsVclocks pred_original;
 
+	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
+	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
+	// returns -1 if there is no such write
 	std::unordered_map<SymAddrSize, std::vector<std::vector<int>>> tw_candidate;
 
 	// Container for pairs succ-pred, each item in the container
 	// has some additional partial order upon writes of interest
 	std::list< std::pair<ThreadPairsVclocks *, ThreadPairsVclocks *> >
-		refinements, // in the value-closing process
-		ready_to_mutate, // value-closed
-		mutation_refinements; // in the value-closing process after introducing a mutation
+		value_closing, // in the value-closing process
+		ready_to_mutate; // value-closed
 
 	unsigned extension_from;
 
@@ -75,9 +77,8 @@ class VCGraphVclock : public VCBasis {
 		for (Node *nd: nodes) {
       delete nd;
 		}
-		assert(refinements.empty());
+		assert(value_closing.empty());
 		assert(ready_to_mutate.empty());
-		assert(mutation_refinements.empty());
 	}
 	
 	VCGraphVclock() = delete;
@@ -104,9 +105,8 @@ class VCGraphVclock : public VCBasis {
     succ_original(*succ),
     pred_original(*pred),
 		tw_candidate(),
-		refinements(),
-		ready_to_mutate(),
-		mutation_refinements()
+		value_closing(),
+		ready_to_mutate()
 			{
 				for (Node *othnd : oth.nodes) {
 					Node *nd = new Node(*othnd);
@@ -130,6 +130,8 @@ class VCGraphVclock : public VCBasis {
   /* GRAPH EXTENSION             */
   /* *************************** */
 
+ private:
+	
 	// At the point of calling the method, this graph
 	// is linked to some 'orig_trace', graph's nodes
 	// point to the events of 'orig_trace'
@@ -148,6 +150,8 @@ class VCGraphVclock : public VCBasis {
   /* EDGE QUESTIONS              */
   /* *************************** */
 
+ public:
+	
   bool hasEdge(const Node *n1, const Node *n2,
 							 const ThreadPairsVclocks *succ) const {
     assert(n1 && n2 && "Do not have such node");
@@ -221,9 +225,29 @@ class VCGraphVclock : public VCBasis {
 									 ThreadPairsVclocks *succ,
 									 ThreadPairsVclocks *pred);
 
- public:
+  /* *************************** */
+  /* TAIL WRITES QUESTIONS       */
+  /* *************************** */
+
+	// Given 'nd', returns a candidate for a tail write from
+	// the thread 'thr_id' using 'succ' and 'tw_candidate'
+	const Node *getTWcandidate(const Node *nd, unsigned thr_id,
+														 const ThreadPairsVclocks *succ) const;
 	
-  // TODO: alg. helpers
+	// first) good tail writes
+	// second) bad tail writes
+	std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
+		tailWrites(const Node *nd, const ThreadPairsVclocks *succ, int good) const;
+	
+ public:
+
+  /* *************************** */
+  /* MAIN ALGORITHM              */
+  /* *************************** */
+	
+  bool valueClosure(const VCAnnotation& annot,
+										ThreadPairsVclocks *succ,
+										ThreadPairsVclocks *pred);
 
   void to_dot(const char *edge_params=nullptr) const;
 	

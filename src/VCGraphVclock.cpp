@@ -286,8 +286,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 	}
 
 	// TAIL WRITE CANDIDATES CACHE
-	// worth another (quick) trace scan (during the previous
-	// one we discovered exactly how much space to reserve)
+	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
+	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
+	// returns -1 if there is no such write
 	
   for (auto& ml_cache : tw_candidate) {
     ml_cache.second.reserve(processes.size());
@@ -295,7 +296,28 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 			ml_cache.second.push_back(std::vector<int>(processes[i].size(), -1));
 	}
 
-	// TODO
+	for (unsigned tid = 0; tid < processes.size(); ++tid)
+		for (unsigned evid = 0; evid < processes[tid].size(); ++evid) {
+      // update [ml][tid][evid] for all ml
+			const VCEvent *ev = processes[tid][evid]->getEvent();
+			if (!isWrite(ev) || !tw_candidate.count(ev->ml)) {
+        // no update anywhere
+				if (evid > 0)
+					for (auto& ml_cache : tw_candidate)
+            ml_cache.second[tid][evid] = ml_cache.second[tid][evid-1];
+			} else {
+				// update on ev->ml
+				bool foundalready = false;
+        for (auto& ml_cache : tw_candidate)
+          if (!foundalready && ml_cache.first == ev->ml) {
+            foundalready = true;
+						ml_cache.second[tid][evid] = evid;
+					} else {
+            if (evid > 0)
+							ml_cache.second[tid][evid] = ml_cache.second[tid][evid-1];
+					}
+			}
+		}
 	
 }
 
@@ -400,4 +422,157 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 		(*pred)[tj][ti][tj_after_evx] = (int) ti_evx;
 	}
 	
+}
+
+const Node * VCGraphVclock::getTWcandidate(const Node *nd, unsigned thr_id,
+																					 const ThreadPairsVclocks *succ) const {
+	int ev_id = (nd->getProcessID() == thr_id) ? nd->getEventID()
+						: (*succ)[nd->getProcessID()][thr_id][nd->getEventID()];
+	if (ev_id >= (int) processes[thr_id].size())
+		ev_id = processes[thr_id].size() - 1;
+	else
+		--ev_id;
+
+	while (ev_id >= 0) {
+		const VCEvent *ev = processes[thr_id][ev_id]->getEvent();
+		if (isWrite(ev) && ev->ml == nd->getEvent()->ml)
+			return processes[thr_id][ev_id];
+		--ev_id;
+	}
+
+	return nullptr;
+}
+
+std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
+	VCGraphVclock::tailWrites(const Node *nd, const ThreadPairsVclocks *succ, int good) const {
+	assert(nd && "Do not have such node");
+	assert(nd != initial_node && "Asking getTWcandidate for the initial node");
+	assert(isRead(nd->getEvent()));
+
+  auto result = std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>();  
+	
+	auto mayBeOrdered = std::unordered_set<const Node *>();
+
+	for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id) {
+    const Node *candidate = getTWcandidate(nd, thr_id, succ);
+		if (!candidate) {
+      assert(isWrite(candidate->getEvent()));
+			mayBeOrdered.emplace(candidate);
+		}
+	}
+
+  if (mayBeOrdered.empty()) {
+    // the initial node is the unique tail write
+		if (good == 0)
+			result.first.emplace(initial_node);
+		else
+			result.second.emplace(initial_node);
+		return result;
+	}
+	
+	auto trueTails = std::unordered_set<const Node *>(mayBeOrdered);
+	assert(trueTails.size() == mayBeOrdered.size());
+
+	for (auto it_nd1 = mayBeOrdered.begin(); it_nd1 != mayBeOrdered.end(); ++it_nd1) {
+    auto it_nd2 = it_nd1;
+		++it_nd2;
+		while (it_nd2 != mayBeOrdered.end()) {
+			if (hasEdge(*it_nd1, *it_nd2, succ))
+				trueTails.erase(*it_nd1);
+			if (hasEdge(*it_nd2, *it_nd1, succ))
+				trueTails.erase(*it_nd2);
+      ++it_nd2;
+		}
+	}
+
+	assert(!trueTails.empty());
+
+	for (auto& tail : trueTails) {
+    if (tail->getEvent()->value == good)
+			result.first.emplace(tail);
+		else
+			result.second.emplace(tail);
+	}
+  
+	
+	return result;
+}
+
+bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
+																 ThreadPairsVclocks *succ,
+																 ThreadPairsVclocks *pred) {
+	std::vector<int> done; // done on all bigger indices
+	done.reserve(processes.size());
+	for (unsigned tid=0; tid<processes.size(); ++tid)
+		done.push_back(processes[tid].size() - 1);
+	
+	while (true) {
+		auto maxReadCandidates = std::unordered_set<const Node *>();
+		
+    for (unsigned tid=0; tid<processes.size(); ++tid) {
+      while (done[tid] > -1) {
+        const Node *nd = processes[tid][done[tid]];
+				if (isRead(nd->getEvent())) {
+          maxReadCandidates.emplace(nd);
+					break;
+				}
+				--done[tid];
+			}
+		}
+
+		// finished scanning for maximal not-done read candidates
+
+		if (maxReadCandidates.empty()) {
+      for (unsigned tid=0; tid<processes.size(); ++tid)
+				assert(done[tid] == -1);
+			return true;
+		}
+
+		// there are some candidates, so one will be found
+
+		const Node *maxRead = nullptr;
+
+		while (!maxRead) {
+			assert(!maxReadCandidates.empty());
+      auto it_nd1 = maxReadCandidates.begin();
+			auto it_nd2 = maxReadCandidates.begin();
+			++it_nd2;
+
+			while (it_nd2 != maxReadCandidates.end()) {
+        if (hasEdge(*it_nd1, *it_nd2, succ))
+          break;
+				++it_nd2;
+			}
+			
+			if (it_nd2 == maxReadCandidates.end()) {
+        maxRead = *it_nd1;
+				maxReadCandidates.clear();
+			} else
+				maxReadCandidates.erase(*it_nd1);
+		}
+
+		// have a maximal not-done read event
+		
+    int good = annot.getValue(*(maxRead->getEvent()));
+		
+		auto tailW = tailWrites(maxRead, succ, good);
+
+		while (tailW.first.empty()) {
+			// only bad tail writes
+			// order all after maxRead
+			// or return false if impossible
+      assert(!tailW.second.empty());
+			for (const Node *badtw : tailW.second) {
+        if (hasEdge(badtw, maxRead, succ))
+					return false;
+				addEdge(maxRead, badtw, succ, pred);
+			}
+
+			tailW = tailWrites(maxRead, succ, good);
+		}
+
+		assert(!tailW.first.empty());
+		--done[maxRead->getProcessID()];
+			
+	}
 }

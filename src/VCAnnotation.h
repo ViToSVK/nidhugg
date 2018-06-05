@@ -22,6 +22,10 @@
 #define _VC_ANNOTATION_H_
 
 #include "VCIID.h"
+#include "VCHelpers.h"
+
+#include <unordered_map>
+#include <unordered_set>
 
 class VCAnnotation {
  public:
@@ -30,6 +34,7 @@ class VCAnnotation {
   typedef std::map<AnnotationKeyT, AnnotationValueT> MappingT;
   typedef MappingT::iterator iterator;
   typedef MappingT::const_iterator const_iterator;
+	typedef std::unordered_map<SymAddrSize, std::unordered_set<AnnotationValueT>> LockValuesT;
 
   const MappingT& getMapping() const { return mapping; }
 
@@ -40,41 +45,44 @@ class VCAnnotation {
   VCAnnotation& operator=(VCAnnotation&& a) = default;
 
   bool operator==(const VCAnnotation& oth) const {
-      return mapping == oth.mapping;
+		return (mapping == oth.mapping) && (lockvalues == oth.lockvalues);
   }
 
+  bool empty() const { return mapping.empty(); }
+	
   size_t size() const { return mapping.size(); }
 
-  const AnnotationValueT *getValue(const AnnotationKeyT& k) const
+  AnnotationValueT getValue(const AnnotationKeyT& k) const
   {
     auto it = mapping.find(k);
 		assert(it != mapping.end());
-    return &(it->second);
+    return it->second;
   }
 
-  const AnnotationValueT *getValue(const VCEvent& e) const
+  AnnotationValueT getValue(const VCEvent& e) const
   {
     return getValue(AnnotationKeyT(e.cpid, e.instruction_order));
   }
 
   void add(const AnnotationKeyT& a, const AnnotationValueT& b)
   {
-		assert(mapping.find(a) == mapping.end());
-    mapping.emplace(a, b);
+		auto it = mapping.find(a);
+		assert(it == mapping.end());
+    mapping.emplace_hint(it, a, b);
   }
 
   void add(AnnotationKeyT&& a, AnnotationValueT&& b)
   {
-		assert(mapping.find(a) == mapping.end());
-		mapping.emplace(a, b);
+		auto it = mapping.find(a);
+		assert(it == mapping.end());
+    mapping.emplace_hint(it, a, b);
   }
 
-  void add(const VCEvent& a, const VCEvent& b)
+  void add(const VCEvent& a, const AnnotationValueT& b)
   {
-		assert(isRead(a) && isWrite(b));
-    add(AnnotationKeyT(a.cpid, a.instruction_order),
-				b.value); //  std::make_pair(b.value, b.cpid)
-  }
+		assert(isRead(a));
+    add(AnnotationKeyT(a.cpid, a.instruction_order), b);
+	}
 	
   void erase(const AnnotationKeyT& k) {
 		assert(defines(k));
@@ -95,7 +103,45 @@ class VCAnnotation {
     return defines(AnnotationKeyT(ev.cpid, ev.instruction_order));
   }
 
-  bool empty() const { return mapping.empty(); }
+	void addLockValue(const SymAddrSize& ml, const AnnotationValueT& val) {
+		auto it = lockvalues.find(ml);
+    if (it == lockvalues.end())
+			lockvalues.emplace_hint(it, ml, std::unordered_set<AnnotationValueT>());
+		auto valit = it->second.find(val);
+		assert(valit == it->second.end());
+		it->second.emplace_hint(valit, val);
+	}
+
+	void addLockValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isLock(ev));
+		addLockValue(ev.ml, val);
+	}
+
+	void eraseLockValue(const SymAddrSize& ml, const AnnotationValueT& val) {
+    auto it = lockvalues.find(ml);
+		assert(it != lockvalues.end());
+		auto valit = it->second.find(val);
+		assert(valit != it->second.end());
+		it->second.erase(valit);
+	}
+
+	void eraseLockValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isLock(ev));
+		eraseLockValue(ev.ml, val);
+	}
+
+	bool definesLockValue(const SymAddrSize& ml, const AnnotationValueT& val) {
+    auto it = lockvalues.find(ml);
+		if (it == lockvalues.end())
+			return false;
+		auto valit = it->second.find(val);
+		return (valit != it->second.end());
+	}
+
+	bool definesLockValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isLock(ev));
+		return definesLockValue(ev.ml, val);
+	}
 
   iterator begin() { return mapping.begin(); }
   const_iterator begin() const { return mapping.begin(); }
@@ -106,6 +152,7 @@ class VCAnnotation {
 
 private:
   MappingT mapping;
+	LockValuesT lockvalues;
 };
 
 #endif // _VC_ANNOTATION_H_
