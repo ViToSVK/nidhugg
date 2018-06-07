@@ -53,6 +53,7 @@ void VCAnnotation::dump() const {
 
 void VCGraphVclock::to_dot(const char *edge_params) const
 {
+  ThreadPairsVclocks& succ_original = *(original.first);
 
   llvm::errs() << "digraph {\n";
 	for (auto it = nodes_begin(); it != nodes_end(); ++it) {

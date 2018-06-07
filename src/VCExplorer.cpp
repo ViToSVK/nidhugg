@@ -67,7 +67,7 @@ void VCExplorer::explore()
 			const VCEvent *ev = nd->getEvent();
 			
 			if (ev->may_conflict && isRead(ev) &&
-					!current->annotation.defines(VCIID(*ev)) ) {
+					!current->annotation.defines(*ev) ) {
         auto it = reads_to_annotate.find(ev->ml);
 				if (it == reads_to_annotate.end()) {
 					reads_to_annotate.emplace_hint(it, ev->ml,

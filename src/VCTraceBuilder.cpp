@@ -372,6 +372,7 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_access);
+	assert(mutex.locked && "Unlocked resource got unlocked again");
 
 	curnode().kind = VCEvent::Kind::M_UNLOCK;
   mayConflict(&ml);

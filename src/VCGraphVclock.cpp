@@ -182,6 +182,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 	
 	// EDGES - extend for original processes
 
+  ThreadPairsVclocks& succ_original = *(original.first);
+	ThreadPairsVclocks& pred_original = *(original.second);
+	
 	succ_original.reserve(processes.size());
 	pred_original.reserve(processes.size());	
 
@@ -240,9 +243,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 		assert (spwn_it != cpid_to_processid.end());
 		const Node *nthr = processes[spwn_it->second][0];
 		
-		assert(!hasEdge(nthr, spwn, &succ_original));
-		if (!hasEdge(spwn, nthr, &succ_original))
-      addEdge(spwn, nthr, &succ_original, &pred_original);
+		assert(!hasEdge(nthr, spwn, original));
+		if (!hasEdge(spwn, nthr, original))
+      addEdge(spwn, nthr, original);
 	}
 
 	// EDGES - joins
@@ -252,9 +255,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
     const Node *wthr = processes[jn_it->second]
 			                          [processes[jn_it->second].size() - 1];
 
-		assert(!hasEdge(jn, wthr, &succ_original));
-		if (!hasEdge(wthr, jn, &succ_original))
-	    addEdge(wthr, jn, &succ_original, &pred_original);
+		assert(!hasEdge(jn, wthr, original));
+		if (!hasEdge(wthr, jn, original))
+	    addEdge(wthr, jn, original);
 	}
 
 	// EDGES - mutex inits
@@ -265,9 +268,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 		for (auto& tid_nd_first : mutex_first[loc_init]) {
 			const Node *nd_first = tid_nd_first.second;
 
-			assert(!hasEdge(nd_first, nd_init, &succ_original));
-			if (!hasEdge(nd_init, nd_first, &succ_original))
-				addEdge(nd_init, nd_first, &succ_original, &pred_original);
+			assert(!hasEdge(nd_first, nd_init, original));
+			if (!hasEdge(nd_init, nd_first, original))
+				addEdge(nd_init, nd_first, original);
 		}
 	}
 
@@ -279,9 +282,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 		for (auto& tid_nd_last : mutex_last[loc_destroy]) {
 			const Node *nd_last = tid_nd_last.second;
 
-			assert(!hasEdge(nd_destroy, nd_last, &succ_original));
-			if (!hasEdge(nd_last, nd_destroy, &succ_original))
-				addEdge(nd_last, nd_destroy, &succ_original, &pred_original);
+			assert(!hasEdge(nd_destroy, nd_last, original));
+			if (!hasEdge(nd_last, nd_destroy, original))
+				addEdge(nd_last, nd_destroy, original);
 		}
 	}
 
@@ -329,76 +332,87 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 // This method maintains:
 // 1) thread-pair-wise transitivity
 // 2) complete transitivity
-void VCGraphVclock::addEdge(const Node *n1, const Node *n2,
-														ThreadPairsVclocks *succ,
-														ThreadPairsVclocks *pred) {
+void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& po) {
 	assert(n1 && n2 && "Do not have such node");
-	assert(!areOrdered(n1, n2, succ));
+	assert(!areOrdered(n1, n2, po));
 	unsigned ti = n1->getProcessID();
 	unsigned tj = n2->getProcessID();
 	unsigned ti_evx = n1->getEventID();
 	unsigned tj_evx = n2->getEventID();
-	
-	addEdgeHelp(ti, ti_evx, tj, tj_evx, succ, pred);
+
+	addEdgeHelp(ti, ti_evx, tj, tj_evx, po);
 
   // Maintenance of the complete transitivity
   // Collect nodes from different threads with edges:
 	// 1) to   ti[ti_evx]
 	// 2) from tj[tj_evx]
-	
+
+  ThreadPairsVclocks& succ = *(po.first);
+	ThreadPairsVclocks& pred = *(po.second);	
+
 	std::set< std::pair<unsigned, unsigned>> before_tiEvent, after_tjEvent;
 	for (unsigned k = 0; k<processes.size(); ++k) {
     if (k != ti && k != tj) {
-      int maxbefore = (*pred)[ti][k][ti_evx];
+      int maxbefore = pred[ti][k][ti_evx];
 			if (maxbefore >= 0)
 				before_tiEvent.emplace(k, maxbefore);
 
-			int minafter = (*succ)[tj][k][tj_evx];
+			int minafter = succ[tj][k][tj_evx];
 			assert(minafter >= 0);
 			if ((unsigned) minafter < processes[k].size())
 				after_tjEvent.emplace(k, minafter);
 		}
 	}
 
-  // Add edges between each of 1) and tj[tj_evx]
-	for (auto& bef : before_tiEvent)
-		addEdgeHelp(bef.first, bef.second,
-								tj, tj_evx,
-								succ, pred);
+  // TryAdd edges between each of 1) (n3) and tj[tj_evx] (n2)
+	for (auto& bef : before_tiEvent) {
+		const Node *n3 = processes[bef.first][bef.second];
+		assert(!hasEdge(n2, n3, po) && "Cycle");
+		if (!hasEdge(n3, n2, po))
+			addEdgeHelp(bef.first, bef.second,
+									tj, tj_evx, po);
+	}
 
-	// Add edges between ti[ti_evx] and each of 2)
+	// TryAdd edges between ti[ti_evx] (n1) and each of 2) (n3)
+	for (auto& aft : after_tjEvent) {
+    const Node *n3 = processes[aft.first][aft.second];
+		assert(!hasEdge(n3, n1, po) && "Cycle");
+		if (!hasEdge(n1, n3, po))
+			addEdgeHelp(ti, ti_evx,
+									aft.first, aft.second, po);
+	}
 
-	for (auto& aft : after_tjEvent)
-		addEdgeHelp(ti, ti_evx,
-								aft.first, aft.second,
-								succ, pred);
-	
-	// Add edges between each of 1) and each of 2)
+	// TryAdd edges between each of 1) (n3) and each of 2) (n4)
 	// (if they belong to different threads)
 	for (auto& bef : before_tiEvent)
 		for (auto& aft : after_tjEvent)
-			if (bef.first != aft.first)
-        addEdgeHelp(bef.first, bef.second,
-										aft.first, aft.second,
-										succ, pred);
-	
+			if (bef.first != aft.first) {
+        const Node *n3 = processes[bef.first][bef.second];
+				const Node *n4 = processes[aft.first][aft.second];
+				assert(!hasEdge(n4, n3, po) && "Cycle");
+				if (!hasEdge(n4, n3, po))
+					addEdgeHelp(bef.first, bef.second,
+											aft.first, aft.second, po);
+			}
+
 }
 
 // Helper method for addEdge,
 // maintains thread-pair-wise transitivity
 void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 																unsigned tj, unsigned tj_evx,
-																ThreadPairsVclocks *succ,
-																ThreadPairsVclocks *pred) {
-	assert( (*succ)[ti][tj][ti_evx] > (int) tj_evx && // ! ti[ti_evx] HB tj[tj_evx]
-					(*succ)[tj][ti][tj_evx] > (int) ti_evx && // ! tj[tj_evx] HB ti[ti_evx]
+																const PartialOrder& po) {
+  ThreadPairsVclocks& succ = *(po.first);
+	ThreadPairsVclocks& pred = *(po.second);
+	assert( succ[ti][tj][ti_evx] > (int) tj_evx && // ! ti[ti_evx] HB tj[tj_evx]
+					succ[tj][ti][tj_evx] > (int) ti_evx && // ! tj[tj_evx] HB ti[ti_evx]
 					"Tried to add an edge between ordered nodes");
-	assert( (*pred)[tj][ti][tj_evx] < (int) ti_evx && // ! ti[ti_evx] HB tj[tj_evx]
-					(*pred)[ti][tj][ti_evx] < (int) tj_evx && // ! tj[tj_evx] HB ti[ti_evx]
+	assert( pred[tj][ti][tj_evx] < (int) ti_evx && // ! ti[ti_evx] HB tj[tj_evx]
+					pred[ti][tj][ti_evx] < (int) tj_evx && // ! tj[tj_evx] HB ti[ti_evx]
 				 && "Inconsistent succ/pred vector clocks");
 
-	(*succ)[ti][tj][ti_evx] = (int) tj_evx;
-	(*pred)[tj][ti][tj_evx] = (int) ti_evx;
+	succ[ti][tj][ti_evx] = (int) tj_evx;
+	pred[tj][ti][tj_evx] = (int) ti_evx;
 	
   // Maintenance of thread-pair-wise transitivity of succ[ti][tj]
 	// Everything in ti before ti_evx also happens-before tj[tj_evx]
@@ -406,9 +420,9 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 	for (int ti_before_evx = ti_evx - 1;
 			 ti_before_evx >= 0;
 			 --ti_before_evx) {
-		if ((*succ)[ti][tj][ti_before_evx] <= (int) tj_evx)
+		if (succ[ti][tj][ti_before_evx] <= (int) tj_evx)
       break; // since for smaller indices also <= tj_evx
-		(*succ)[ti][tj][ti_before_evx] = (int) tj_evx;
+		succ[ti][tj][ti_before_evx] = (int) tj_evx;
 	}
 
   // Maintenance of thread-pair-wise transitivity of pred[tj][ti]
@@ -417,76 +431,107 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 	for (unsigned tj_after_evx = tj_evx + 1;
 			 tj_after_evx < processes[tj].size();
 			 ++tj_after_evx) {
-		if ((*pred)[tj][ti][tj_after_evx] >= (int) ti_evx)
+		if (pred[tj][ti][tj_after_evx] >= (int) ti_evx)
 			break; // since for bigger indices also >= ti_evx
-		(*pred)[tj][ti][tj_after_evx] = (int) ti_evx;
+		pred[tj][ti][tj_after_evx] = (int) ti_evx;
 	}
 	
 }
 
 const Node * VCGraphVclock::getTWcandidate(const Node *nd, unsigned thr_id,
-																					 const ThreadPairsVclocks *succ) const {
-	int ev_id = (nd->getProcessID() == thr_id) ? nd->getEventID()
-						: (*succ)[nd->getProcessID()][thr_id][nd->getEventID()];
-	if (ev_id >= (int) processes[thr_id].size())
+																					 const PartialOrder& po) const {
+	assert(isRead(nd->getEvent()));
+	const ThreadPairsVclocks& succ = *(po.first);
+	
+	int ev_id = (nd->getProcessID() == thr_id) ? nd->getEventID() - 1
+						: succ[nd->getProcessID()][thr_id][nd->getEventID()] - 1;
+	if (ev_id == INT_MAX - 1)
 		ev_id = processes[thr_id].size() - 1;
-	else
-		--ev_id;
+	assert(ev_id < (int) processes[thr_id].size());
 
-	while (ev_id >= 0) {
-		const VCEvent *ev = processes[thr_id][ev_id]->getEvent();
-		if (isWrite(ev) && ev->ml == nd->getEvent()->ml)
-			return processes[thr_id][ev_id];
-		--ev_id;
-	}
+	if (ev_id == -1)
+		return nullptr;
 
-	return nullptr;
+	// TAIL WRITE CANDIDATES CACHE
+	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
+	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
+	// returns -1 if there is no such write
+	
+	auto ml_cache = tw_candidate.find(nd->getEvent()->ml);
+	assert(ml_cache != tw_candidate.end()
+				 && "Cache not set up for the ml of this read");
+	assert(thr_id < ml_cache->second.size() &&
+				 ev_id < ml_cache->second[thr_id].size());
+	
+	int tw_evidx = ml_cache->second[thr_id][ev_id];
+  if (tw_evidx == -1)
+		return nullptr;
+
+	assert(tw_evidx >= 0 && tw_evidx <= ev_id);
+  const Node *result = processes[thr_id][tw_evidx];
+	assert(isWrite(result->getEvent()) &&
+				 result->getEvent()->ml == nd->getEvent()->ml);
+
+	return result;
 }
 
 std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
-	VCGraphVclock::tailWrites(const Node *nd, const ThreadPairsVclocks *succ, int good) const {
+	VCGraphVclock::tailWrites(const Node *nd, const PartialOrder& po, int good) const {
 	assert(nd && "Do not have such node");
 	assert(nd != initial_node && "Asking getTWcandidate for the initial node");
 	assert(isRead(nd->getEvent()));
-
+	
   auto result = std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>();  
 	
 	auto mayBeOrdered = std::unordered_set<const Node *>();
 
 	for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id) {
-    const Node *candidate = getTWcandidate(nd, thr_id, succ);
-		if (!candidate) {
+    const Node *candidate = getTWcandidate(nd, thr_id, po);
+		if (candidate) {
       assert(isWrite(candidate->getEvent()));
 			mayBeOrdered.emplace(candidate);
 		}
 	}
 
   if (mayBeOrdered.empty()) {
-    // the initial node is the unique tail write
-		if (good == 0)
+    // initial_node is the unique tail write
+		if (good == 0) // initial_node writes 0 everywhere
 			result.first.emplace(initial_node);
 		else
 			result.second.emplace(initial_node);
 		return result;
 	}
+
+  // find tail writes - all maximal out of the candidates
+	// below method works since we have total transitivity
 	
 	auto trueTails = std::unordered_set<const Node *>(mayBeOrdered);
 	assert(trueTails.size() == mayBeOrdered.size());
 
 	for (auto it_nd1 = mayBeOrdered.begin(); it_nd1 != mayBeOrdered.end(); ++it_nd1) {
-    auto it_nd2 = it_nd1;
-		++it_nd2;
-		while (it_nd2 != mayBeOrdered.end()) {
-			if (hasEdge(*it_nd1, *it_nd2, succ))
-				trueTails.erase(*it_nd1);
-			if (hasEdge(*it_nd2, *it_nd1, succ))
-				trueTails.erase(*it_nd2);
-      ++it_nd2;
+		if (trueTails.count(*it_nd1)) {
+			
+			auto it_nd2 = it_nd1;
+			++it_nd2;
+			while (it_nd2 != mayBeOrdered.end()) {
+				if (trueTails.count(*it_nd2)) {
+					if (hasEdge(*it_nd1, *it_nd2, po)) {
+						trueTails.erase(*it_nd1);
+						break;
+					}				
+					if (hasEdge(*it_nd2, *it_nd1, po))
+						trueTails.erase(*it_nd2);
+				}
+				++it_nd2;
+			}
+			
 		}
 	}
 
 	assert(!trueTails.empty());
 
+  // divide the tail writes into good and bad
+	
 	for (auto& tail : trueTails) {
     if (tail->getEvent()->value == good)
 			result.first.emplace(tail);
@@ -494,13 +539,11 @@ std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
 			result.second.emplace(tail);
 	}
   
-	
 	return result;
 }
 
 bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
-																 ThreadPairsVclocks *succ,
-																 ThreadPairsVclocks *pred) {
+																 const PartialOrder& po) {
 	std::vector<int> done; // done on all bigger indices
 	done.reserve(processes.size());
 	for (unsigned tid=0; tid<processes.size(); ++tid)
@@ -528,7 +571,8 @@ bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
 			return true;
 		}
 
-		// there are some candidates, so one will be found
+		// there are some candidates, find arbitrary maximal
+		// below method works since we have total transitivity
 
 		const Node *maxRead = nullptr;
 
@@ -539,7 +583,7 @@ bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
 			++it_nd2;
 
 			while (it_nd2 != maxReadCandidates.end()) {
-        if (hasEdge(*it_nd1, *it_nd2, succ))
+        if (hasEdge(*it_nd1, *it_nd2, po))
           break;
 				++it_nd2;
 			}
@@ -552,27 +596,160 @@ bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
 		}
 
 		// have a maximal not-done read event
-		
+
+		assert(maxRead);
     int good = annot.getValue(*(maxRead->getEvent()));
 		
-		auto tailW = tailWrites(maxRead, succ, good);
+		auto tailW = tailWrites(maxRead, po, good);
 
 		while (tailW.first.empty()) {
-			// only bad tail writes
+			// there are only bad tail writes
 			// order all after maxRead
 			// or return false if impossible
       assert(!tailW.second.empty());
 			for (const Node *badtw : tailW.second) {
-        if (hasEdge(badtw, maxRead, succ))
+        if (hasEdge(badtw, maxRead, po))
 					return false;
-				addEdge(maxRead, badtw, succ, pred);
+				addEdge(maxRead, badtw, po);
 			}
 
-			tailW = tailWrites(maxRead, succ, good);
+			tailW = tailWrites(maxRead, po, good);
 		}
 
+    // the max read is done (tail writes are mixed or only good)
+		
 		assert(!tailW.first.empty());
 		--done[maxRead->getProcessID()];
+		
+	}
+	
+}
+
+void VCGraphVclock::orderWrite(const VCAnnotation& annot,
+															 const VCEvent *w1, bool w1IsActive) {
+	assert(isWrite(w1));
+	auto it = event_to_node.find(w1);
+	assert(it != event_to_node.end());
+	const Node *ndW1 = it->second;
+	assert(ndW1->getEvent() == w1);
+
+	assert(!worklist_done.empty());
+	assert(worklist_ready.empty());
+	worklist_ready.swap(worklist_done);
+	assert(worklist_done.empty());
+	assert(!worklist_ready.empty());
+
+	while (!worklist_ready.empty()) {
+    PartialOrder current = std::move(worklist_ready.front());
+		assert(!worklist.front().first.get());
+		assert(!worklist.front().second.get());
+		worklist_ready.pop_front();
+
+		const Node *ndW2 = nullptr;
+
+    // Find w2 if there is any
+		
+		for (unsigned tid=0; tid<processes.size(); ++tid) {
+      if (tid == ndW1->getProcessID())
+				continue;
+
+			int minsucc = (*(current.first)) // succ
+				[ndW1->getProcessID()][tid][ndW1->getEventID()];
+			if (minsucc == INT_MAX)
+				minsucc = (int) processes[tid].size();
+			assert(minsucc <= (int) processes[tid].size());
+
+			int maxpred = (*(current.second)) // pred
+				[ndW1->getProcessID()][tid][ndW1->getEventID()];
+			assert(minsucc > maxpred && "Cycle in the partial order");
+
+			// in this thread w2 can be only between maxpred and minsucc
+			// (excluding both) since it has to be unordered with w1
+
+			// TAIL WRITE CANDIDATES CACHE
+			// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
+			// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
+			// returns -1 if there is no such write
+
+			auto ml_cache = tw_candidate.find(w1->ml);
+			assert(ml_cache != tw_candidate.end()
+						 && "We are ordering a write whose ml was never read");
 			
+			int tw_evidx = ml_cache->second[tid][minsucc - 1];
+
+			while (tw_evidx > maxpred) {
+        const VCEvent *w2cand = processes[tid][tw_evidx]->getEvent();
+				if (isWrite(w2cand) &&
+						w2cand->value != w1->value &&
+						(w1IsActive || annot.isActiveWrite(*w2cand))) {
+					// found w2, set it and break
+					ndW2 = processes[tid][tw_evidx];
+					assert(!areOrdered(ndW1, ndW2, current.first /*succ*/)
+								 && "succ/pred has false information");
+					break;
+				} else {
+          // didn't find, jump to 'tail write' of this place
+					int evid = tw_evidx - 1;
+					tw_evidx = (evid == -1) ? -1 : ml_cache->second[tid][evid];
+				}
+			}
+
+			if (ndW2)
+				break;
+		}
+
+		if (!ndW2) {
+      // We found no w2, so in current, w1 is ordered with
+			// all writes that we need it to be; add current to done
+			worklist_done.push_back(std::move(current));
+			assert(!current.first.get());
+			assert(!current.second.get());
+			continue;
+		}
+
+		// We found w2
+
+		assert(ndW2 && isWrite(ndW2->getEvent()) &&
+					 ndW2->getEvent()->value != w1->value &&
+					 (w1IsActive || annot.isActiveWrite(*(ndW2->getEvent()))) &&
+					 ndW2->getEvent()->ml == w1->ml &&
+					 !areOrdered(ndW1, ndW2, current.first /*succ*/));
+
+		PartialOrder otherorder = PartialOrder
+			(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
+			 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
+
+    // handle current: w1 -> w2
+		
+		addEdge(ndW1, ndW2, current);
+		bool closureres = valueClosure(annot, current);
+
+	  if (closureres) {
+      // succesfully closed, add it to ready
+			worklist_ready.push_back(std::move(current));
+			assert(!current.first.get());
+			assert(!current.second.get());
+		} else {
+      // can't close, deallocate
+			current.first.reset();
+			current.second.reset();
+		}
+
+		// handle otherorder: w2 -> w1
+
+		addEdge(ndW2, ndW1, otherorder);
+		closureres = valueClosure(annot, otherorder);
+
+		if (closureres) {
+      // succesfully closed, add it to ready
+			worklist_ready.push_back(std::move(otherorder));
+			assert(!otherorder.first.get());
+			assert(!otherorder.second.get());
+		} else {
+      // can't close, deallocate
+			otherorder.first.reset();
+			otherorder.second.reset();
+		}
+		
 	}
 }

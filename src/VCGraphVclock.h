@@ -29,13 +29,11 @@
 
 class VCGraphVclock : public VCBasis {
 
-	// succ[i][j] = Vector clock for t_i -> t_j
 	// succ[i][j][a] = b means:
 	// t_i[<=a] *HB* t_j[b<=]
 	// so succ[i][j] fixes a (index of t_i),
 	// asks for 'smallest' b (smallest successor within t_j)
 	
-	// pred[j][i] = Vector clock for t_j -> t_i
 	// pred[j][i][b] = a means:
 	// t_i[<=a] *HB* t_j[b<=]
 	// so pred[j][i] fixes b (index of t_j),
@@ -48,21 +46,22 @@ class VCGraphVclock : public VCBasis {
   const Node *initial_node;
 	std::set<Node *> nodes;
 
-  using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
-	
-	ThreadPairsVclocks succ_original;
-	ThreadPairsVclocks pred_original;
-
 	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
 	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
 	// returns -1 if there is no such write
 	std::unordered_map<SymAddrSize, std::vector<std::vector<int>>> tw_candidate;
+	
+  using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
 
-	// Container for pairs succ-pred, each item in the container
-	// has some additional partial order upon writes of interest
-	std::list< std::pair<ThreadPairsVclocks *, ThreadPairsVclocks *> >
-		value_closing, // in the value-closing process
-		ready_to_mutate; // value-closed
+  using PartialOrder = std::pair<std::unique_ptr<ThreadPairsVclocks>,
+		                             std::unique_ptr<ThreadPairsVclocks>>;
+
+	PartialOrder original;
+	
+	// Partial orders that are refinements of original
+	std::list< PartialOrder >
+		worklist_ready,
+		worklist_done;
 
 	unsigned extension_from;
 
@@ -77,15 +76,18 @@ class VCGraphVclock : public VCBasis {
 		for (Node *nd: nodes) {
       delete nd;
 		}
-		assert(value_closing.empty());
-		assert(ready_to_mutate.empty());
 	}
 	
 	VCGraphVclock() = delete;
 	
   VCGraphVclock(const std::vector<VCEvent>& trace)
 	: VCBasis(),
-		initial_node(new Node(INT_MAX, INT_MAX, nullptr))
+		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
+		tw_candidate(),		
+		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
+						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
+		worklist_ready(),
+		worklist_done()		
 			{ extendGraph(trace); }
 
   VCGraphVclock(VCGraphVclock&& oth) = default;
@@ -94,19 +96,18 @@ class VCGraphVclock : public VCBasis {
 
   VCGraphVclock(const VCGraphVclock& oth) = delete;
 
-	// Pointers to Vclocks that will be copied as succ/pred_original
+	// Partial order that will be copied as original
 	// Trace that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
-							  const ThreadPairsVclocks *succ,
-							  const ThreadPairsVclocks *pred,
+							  const PartialOrder& po,
 								const std::vector<VCEvent>& trace)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
-    succ_original(*succ),
-    pred_original(*pred),
 		tw_candidate(),
-		value_closing(),
-		ready_to_mutate()
+		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
+						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second)))),
+		worklist_ready(),
+		worklist_done()
 			{
 				for (Node *othnd : oth.nodes) {
 					Node *nd = new Node(*othnd);
@@ -149,11 +150,8 @@ class VCGraphVclock : public VCBasis {
   /* *************************** */
   /* EDGE QUESTIONS              */
   /* *************************** */
-
- public:
 	
-  bool hasEdge(const Node *n1, const Node *n2,
-							 const ThreadPairsVclocks *succ) const {
+  bool hasEdge(const Node *n1, const Node *n2, const PartialOrder& po) const {
     assert(n1 && n2 && "Do not have such node");
 		assert(n1 != n2);
 		if (n1 == initial_node)
@@ -162,27 +160,27 @@ class VCGraphVclock : public VCBasis {
       return false; // nothing HB init
 		if (n1->getProcessID() == n2->getProcessID())
 			return n1->getEventID() < n2->getEventID();
-    return (*succ)[n1->getProcessID()]
-		              [n2->getProcessID()]
-			            [n1->getEventID()] <= (int) n2->getEventID();
-  }
+		const ThreadPairsVclocks& succ = *(po.first);
+    return succ[n1->getProcessID()]
+		           [n2->getProcessID()]
+			         [n1->getEventID()] <= (int) n2->getEventID();
+  }	
 
-  bool areOrdered(const Node *n1, const Node *n2,
-									const ThreadPairsVclocks *succ) const {
-    return hasEdge(n1, n2, succ) || hasEdge(n2, n1, succ);
+  bool areOrdered(const Node *n1, const Node *n2, const PartialOrder& po) const {
+    return hasEdge(n1, n2, po) || hasEdge(n2, n1, po);
   }
 
 	// Given 'nd', returns its first successor within the
 	// thread 'thr_id' according to the vector clocks 'succ'
-	const Node *getMinSucc(const Node *nd, unsigned thr_id,
-						     const ThreadPairsVclocks *succ) const {
+	const Node *getMinSucc(const Node *nd, unsigned thr_id, const PartialOrder& po) const {
 		assert(nd && "Do not have such node");
 		assert(nd != initial_node && "Asking getMinSucc for the initial node");
 		assert(thr_id < processes.size() && "Such thread does not exist");
 		assert(nd->getProcessID() != thr_id && "Asking getMinSucc within the same thread");
-		int ev_id = (*succ)[nd->getProcessID()]
-		                   [thr_id]
-		                   [nd->getEventID()];
+		const ThreadPairsVclocks& succ = *(po.first);
+		int ev_id = succ[nd->getProcessID()]
+		                [thr_id]
+		                [nd->getEventID()];
 		assert(ev_id >= 0);
 		return ((unsigned) ev_id < processes[thr_id].size()) ?
 			processes[thr_id][ev_id] : nullptr;
@@ -190,15 +188,15 @@ class VCGraphVclock : public VCBasis {
 
 	// Given 'nd', returns its latest predecessor within the
 	// thread 'thr_id' according to the vector clocks 'pred'
-	const Node *getMaxPred(const Node *nd, unsigned thr_id,
-								 const ThreadPairsVclocks *pred) const {
+	const Node *getMaxPred(const Node *nd, unsigned thr_id, const PartialOrder& po) const {
 		assert(nd && "Do not have such node");
 		assert(nd != initial_node && "Asking getMaxPred for the initial node");
 		assert(thr_id < processes.size() && "Such thread does not exist");
 		assert(nd->getProcessID() != thr_id && "Asking getMaxPred within the same thread");
-		int ev_id = (*pred)[nd->getProcessID()]
-			                 [thr_id]
-			                 [nd->getEventID()];
+		const ThreadPairsVclocks& pred = *(po.second);
+		int ev_id = pred[nd->getProcessID()]
+			              [thr_id]
+			              [nd->getEventID()];
 		assert(ev_id < processes[thr_id].size());
 		return (ev_id >= 0) ?
 			processes[thr_id][ev_id] : nullptr;
@@ -212,18 +210,13 @@ class VCGraphVclock : public VCBasis {
 	// This method maintains:
 	// 1) thread-pair-wise transitivity
 	// 2) complete transitivity
-  void addEdge(const Node *n1, const Node *n2,
-							 ThreadPairsVclocks *succ,
-							 ThreadPairsVclocks *pred);
-
- private:
+  void addEdge(const Node *n1, const Node *n2, const PartialOrder& po);
 
 	// Helper method for addEdge,
 	// maintains thread-pair-wise transitivity
 	void addEdgeHelp(unsigned ti, unsigned ti_evx,
 									 unsigned tj, unsigned tj_evx,
-									 ThreadPairsVclocks *succ,
-									 ThreadPairsVclocks *pred);
+									 const PartialOrder& po);
 
   /* *************************** */
   /* TAIL WRITES QUESTIONS       */
@@ -231,23 +224,60 @@ class VCGraphVclock : public VCBasis {
 
 	// Given 'nd', returns a candidate for a tail write from
 	// the thread 'thr_id' using 'succ' and 'tw_candidate'
-	const Node *getTWcandidate(const Node *nd, unsigned thr_id,
-														 const ThreadPairsVclocks *succ) const;
+	const Node *getTWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
 	
 	// first) good tail writes
 	// second) bad tail writes
 	std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
-		tailWrites(const Node *nd, const ThreadPairsVclocks *succ, int good) const;
+		tailWrites(const Node *nd, const PartialOrder& po, int good) const;
 	
  public:
 
   /* *************************** */
   /* MAIN ALGORITHM              */
   /* *************************** */
+
+	// true iff succesfully closed
+  bool valueClosure(const VCAnnotation& annot, const PartialOrder& po);
+
+	// used just before ordering writes of trace extension
+  void initWorklist() {
+    assert(worklist_ready.empty());
+		assert(worklist_done.empty());
+		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(original.first))),
+															 std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(original.first))));
+	}
+
+	// argument is a mutation candidate
+	// used just before ordering fake-active writes
+	void initWorklist(const PartialOrder& po) {
+    assert(worklist_ready.empty());
+		assert(worklist_done.empty());
+		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(po.first))),
+															 std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(po.second))));
+	}
+
+	// used after ordering writes of trace extension
+	// each partial order in the list will be a target for mutations
+	std::list<PartialOrder> dumpMutationCandidates() {
+    assert(worklist_ready.empty());
+		assert(!worklist_done.empty());
+		
+    auto result = std::list<PartialOrder>();
+    result.swap(worklist_done);
+		assert(worklist_done.empty());
+		assert(!result.empty());
+		
+		return result;
+	}
 	
-  bool valueClosure(const VCAnnotation& annot,
-										ThreadPairsVclocks *succ,
-										ThreadPairsVclocks *pred);
+	// Input: partial orders in worklist_ready
+  // Output: partial orders in worklist_done
+	void orderWrite(const VCAnnotation& annot, const VCEvent *ev, bool evIsActive);
 
   void to_dot(const char *edge_params=nullptr) const;
 	
