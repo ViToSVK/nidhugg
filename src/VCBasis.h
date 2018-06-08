@@ -274,7 +274,7 @@ class VCBasis {
 	// Node corresponding to the given VCIID
 	const Node *getNode(const VCIID& vciid) const {
     auto it = read_vciid_to_node.find(vciid);
-		assert(it != event_to_node.end()
+		assert(it != read_vciid_to_node.end()
 					 && "Given VCIID is not tied to any read event");
     return it->second;
   }
@@ -287,7 +287,7 @@ class VCBasis {
 	// Get an iterator pointing to (the beginning of) the given CPid
   events_iterator nodes_iterator(const CPid& cpid, unsigned evidx = 0) const {
     int pidx = cpidToProcessID(cpid);
-		assert(pidx >= 0 && pidx < processes.size()
+		assert(pidx >= 0 && pidx < (int) processes.size()
 					 && "Given cpid is not tied to any process");
 		assert(evidx < processes[pidx].size()
 					 && "Given evidx is out of range for the corresponding process");

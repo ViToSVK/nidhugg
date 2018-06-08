@@ -40,7 +40,6 @@ class VCAnnotation {
 	
   MappingT mapping;
 	ActiveValuesT activevalues;
-	ActiveValuesT lockvalues;
 
  public:
 	
@@ -51,7 +50,7 @@ class VCAnnotation {
   VCAnnotation& operator=(VCAnnotation&& a) = default;
 
   bool operator==(const VCAnnotation& oth) const {
-		return (mapping == oth.mapping) && (lockvalues == oth.lockvalues);
+		return (mapping == oth.mapping) && (activevalues == oth.activevalues);
   }
 
   bool empty() const { return mapping.empty(); }
@@ -87,96 +86,69 @@ class VCAnnotation {
     mapping.erase(k);
   }
 
+  bool defines(const AnnotationKeyT& k) const {
+    return mapping.find(k) != mapping.end();
+  }
+	
   bool defines(AnnotationKeyT&& k) const {
     return mapping.find(k) != mapping.end();
   }
 
  public:
 
-  // We do not keep locks in the mapping
+  // We also keep locks in the mapping
 	
-  AnnotationValueT getValue(const VCEvent& e) const {
-		assert(isRead(a));
-    return getValue(AnnotationKeyT(e.cpid, e.instruction_order));
+  AnnotationValueT getValue(const VCEvent& ev) const {
+		assert(isRead(ev));
+    return getValue(AnnotationKeyT(ev.cpid, ev.instruction_order));
   }
 
-  void add(const VCEvent& a, const AnnotationValueT& b) {
-		assert(isRead(a));
-    add(AnnotationKeyT(a.cpid, a.instruction_order), b);
+  void add(const VCEvent& ev, const AnnotationValueT& val) {
+		assert(isRead(ev) || isLock(ev));
+    add(AnnotationKeyT(ev.cpid, ev.instruction_order), val);
 	}
 
 	void erase(const VCEvent& ev) {
-		assert(isRead(ev));
+		assert(isRead(ev) || isLock(ev));
     mapping.erase(AnnotationKeyT(ev.cpid, ev.instruction_order));
 	}
 
   bool defines(const VCEvent& ev) const {
-		assert(isRead(ev));
+		assert(isRead(ev) || isLock(ev));
     return defines(AnnotationKeyT(ev.cpid, ev.instruction_order));
   }	
 	
 
   /* *************************** */
-  /* ACTIVE VALUES               */
+  /* ACTIVE VALUES + LOCK VALUES */
   /* *************************** */
 
  private:
 
-	void tryAddActiveValue(const SymAddrSize& ml, const AnnotationValueT& val) {
+	void addActiveValue(const SymAddrSize& ml, const AnnotationValueT& val) {
 		auto it = activevalues.find(ml);
     if (it == activevalues.end())
 			it = activevalues.emplace_hint(it, ml, std::unordered_set<AnnotationValueT>());
-		auto valit = it->second.find(val);
-		if (valit == it->second.end())
-		  it->second.emplace_hint(valit, val);
-	}
-
-	bool isActive(const SymAddrSize& ml, const AnnotationValueT& val) const {
-		auto it = activevalues.find(ml);
-    if (it == activevalues.end())
-			return false;
-		auto valit = it->second.find(val);
-		return (valit != it->second.end());
-	}
-
- public:
-
-	void tryAddActiveValue(const VCEvent& ev, const AnnotationValueT& val) {
-    assert(isRead(ev));
-		tryAddActiveValue(ev.ml, val);
-	}
-
-	bool isActiveWrite(const VCEvent& ev) const {
-    assert(isWrite(ev));
-		return isActive(ev.ml, ev.value);
-	}
-	
-  /* *************************** */
-  /* LOCK VALUES                 */
-  /* *************************** */
-
- private:
-	
-	void addLockValue(const SymAddrSize& ml, const AnnotationValueT& val) {
-		auto it = lockvalues.find(ml);
-    if (it == lockvalues.end())
-			it = lockvalues.emplace_hint(it, ml, std::unordered_set<AnnotationValueT>());
 		auto valit = it->second.find(val);
 		assert(valit == it->second.end());
 		it->second.emplace_hint(valit, val);
 	}
 
-	void eraseLockValue(const SymAddrSize& ml, const AnnotationValueT& val) {
-    auto it = lockvalues.find(ml);
-		assert(it != lockvalues.end());
+	void eraseActiveValue(const SymAddrSize& ml, const AnnotationValueT& val) {
+    auto it = activevalues.find(ml);
+		assert(it != activevalues.end());
 		auto valit = it->second.find(val);
 		assert(valit != it->second.end());
 		it->second.erase(valit);
 	}
-
-	bool definesLockValue(const SymAddrSize& ml, const AnnotationValueT& val) const {
-    auto it = lockvalues.find(ml);
-		if (it == lockvalues.end())
+	
+  bool isActiveMl(const SymAddrSize& ml) const {
+		return activevalues.find(ml) != activevalues.end();
+	}
+	
+	bool isActiveMlVal(const SymAddrSize& ml, const AnnotationValueT& val) const {
+		auto it = activevalues.find(ml);
+    if (it == activevalues.end())
 			return false;
 		auto valit = it->second.find(val);
 		return (valit != it->second.end());
@@ -184,20 +156,45 @@ class VCAnnotation {
 
  public:
 
-	void addLockValue(const VCEvent& ev, const AnnotationValueT& val) {
-    assert(isLock(ev));
-		addLockValue(ev.ml, val);
+	void addActiveValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isRead(ev));
+		addActiveValue(ev.ml, val);
 	}
 
+	void addLockValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isLock(ev));
+		addActiveValue(ev.ml, val);
+	}
+
+	void eraseActiveValue(const VCEvent& ev, const AnnotationValueT& val) {
+    assert(isRead(ev));
+		eraseActiveValue(ev.ml, val);
+	}
+	
 	void eraseLockValue(const VCEvent& ev, const AnnotationValueT& val) {
     assert(isLock(ev));
-		eraseLockValue(ev.ml, val);
+		eraseActiveValue(ev.ml, val);
+	}
+	
+  bool isActiveMl(const VCEvent& ev) const {
+    assert(isWrite(ev));
+		return isActiveMl(ev.ml);
+	}
+	
+	bool isActiveWrite(const VCEvent& ev) const {
+    assert(isWrite(ev));
+		return isActiveMlVal(ev.ml, ev.value);
+	}
+
+	bool isActiveMlVal(const VCEvent& ev, const AnnotationValueT& val) const {
+    assert(isRead(ev));
+		return isActiveMlVal(ev.ml, val);
 	}
 
 	bool definesLockValue(const VCEvent& ev, const AnnotationValueT& val) const {
     assert(isLock(ev));
-		return definesLockValue(ev.ml, val);
-	}	
+		return isActiveMlVal(ev.ml, val);
+	}
 
 };
 

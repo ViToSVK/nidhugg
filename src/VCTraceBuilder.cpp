@@ -95,9 +95,9 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		// Create the new event
 		assert(replay_trace[prefix_idx].cpid ==
 					 threads[p].cpid && "Inconsistent scheduling");
-		assert(replay_trace[prefix_idx].executed_instructions ==
+		assert(replay_trace[prefix_idx].instruction_order ==
 					 threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-		assert(replay_trace[prefix_idx].executed_events ==
+		assert(replay_trace[prefix_idx].event_order ==
 					 threads[p].executed_events && "Inconsistent scheduling");
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
 												threads[p].cpid,
@@ -342,7 +342,7 @@ void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
 	curnode().kind = VCEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(prefix_idx);
-	mutexes[ml.addr].value = -1; // value for default-unlocked mutex
+	mutexes[ml.addr].value = 31337; // default-unlocked mutex
 }
 
 void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
@@ -373,11 +373,14 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_access);
 	assert(mutex.locked && "Unlocked resource got unlocked again");
+	assert(mutex.value == - 1 - (curnode().iid.get_pid() * 1000000)
+				 && "Unlocked by different process than the one that locked");
 
 	curnode().kind = VCEvent::Kind::M_UNLOCK;
   mayConflict(&ml);
-	curnode().value = ( curnode().iid.get_pid() << 16 )
+	curnode().value = ( curnode().iid.get_pid() * 1000000 )
 		                + curnode().event_order; // WRITE
+	                  // mutex unlocked by this event (>=0)
 
   mutex.last_access = prefix_idx;
   mutex.locked = false;
@@ -394,7 +397,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   }
   assert(mutexes.count(ml.addr));
 	Mutex &mutex = mutexes[ml.addr];
-  assert(!mutex.locked && mutex.value != -47);
+  assert(!mutex.locked && mutex.value >= 0);
 	
 	curnode().kind = VCEvent::Kind::M_LOCK;
   mayConflict(&ml);
@@ -402,7 +405,8 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
 	
   mutex.last_lock = mutex.last_access = prefix_idx;
   mutex.locked = true;
-	mutex.value = -47; // value for locked mutex
+	mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
+	              // mutex locked by this process (<0)
 
 	if (sch_initial || sch_extend) // READ
 		threads_with_unannotated_read.insert(curnode().iid.get_pid());
@@ -418,7 +422,7 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
   assert(mutexes.count(ml.addr));
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_lock);
-	assert(mutex.locked && mutex.value == -47);
+	assert(mutex.locked && mutex.value < 0);
 	((void)(mutex)); // so mutex does not appear unused on release
 }
 

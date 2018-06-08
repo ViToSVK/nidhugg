@@ -26,7 +26,7 @@
 void VCExplorer::print_stats()
 {
   llvm::dbgs() << "Executed traces: " << executed_traces << "\n";
-  //llvm::dbgs() << "Total number of executed instructions: " << total_instr_executed << "\n";
+  llvm::dbgs() << "Total number of executed instructions: " << total_instr_executed << "\n";
 
 	// Change to false to test if assertions are on
 	// To disable assertions (i.e. build as Release),
@@ -44,53 +44,71 @@ void VCExplorer::explore()
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
-		// For a given memory location, have a map
-		// read -> values written into that location
-		std::unordered_map<SymAddrSize,
-											 std::unordered_map<const Node *, std::set<int>>>
-			reads_to_annotate;
+		// Get partial-order refinements that order extension writes
+		// Each refinement will be a candidate for possible mutations
+    std::list<PartialOrder> mutationPOs = extensionWritesOrderings();
+		
+    for (auto it = mutationPOs.begin();
+				 it != mutationPOs.end(); ++it)
+		  current->graph.to_dot(*it, "");
 
-		// For a given memory location, have a map
-		// value -> writes that wrote it into that location
-		std::unordered_map<SymAddrSize,
-											 std::unordered_map<int, std::set<const Node *>>>
-			active_writes;
+		/**/ if (current->graph.getExtensionFrom() > 0) return;
 
+		auto nodesToMutate = getNodesToMutate();
+		auto unannot = std::unordered_set<int>();
+		for (auto& nd : nodesToMutate)
+			unannot.emplace(nd->getProcessID());
+		
+    while (!mutationPOs.empty()) {
+      auto po = std::move(mutationPOs.front());
+			assert(!mutationPOs.front().first.get());
+			assert(!mutationPOs.front().second.get());
+			mutationPOs.pop_front();
 
-		// Find the reads to annotate
-		for (unsigned proc_idx = 0;
-				 proc_idx < current->partialOrder.size();
-				 ++proc_idx) {
-
-			auto it = current->partialOrder.nodes_process_end(proc_idx);
-      const Node *nd = *it;
-			const VCEvent *ev = nd->getEvent();
-			
-			if (ev->may_conflict && isRead(ev) &&
-					!current->annotation.defines(*ev) ) {
-        auto it = reads_to_annotate.find(ev->ml);
-				if (it == reads_to_annotate.end()) {
-					reads_to_annotate.emplace_hint(it, ev->ml,
-																				 std::unordered_map<const Node *, std::set<int>>());
+			for (auto nd : nodesToMutate) {
+        if (isRead(nd->getEvent()))
+					mutateRead(po, nd);
+				else {
+          assert(isLock(nd->getEvent()));
+					mutateLock(po, nd);
 				}
-				reads_to_annotate[ev->ml].emplace(nd, std::set<int>());
-				reads_to_annotate[ev->ml][nd].insert(0); // initial node XXX FOR SPAWNED THREADS ALSO, RIGHT?
 			}
 		}
-
-		// Find the active writes
 		
-
-		
-			
-
 		// Delete managed VCTrace
 		current.reset();
 	}
 }
 
-std::vector<VCEvent> VCExplorer::extendTrace
-(std::vector<VCEvent>&& tr, const std::unordered_set<int>& unannot) {
+std::list<PartialOrder> VCExplorer::extensionWritesOrderings()
+{
+  assert(current.get());
+
+	current->graph.initWorklist();
+
+	if (current->annotation.empty()) {
+		// No write is active yet, so nothing has to be ordered
+		assert(current->graph.getExtensionFrom() == 0);
+    return current->graph.dumpMutationCandidates();
+	}
+
+	for (unsigned trace_idx = current->graph.getExtensionFrom();
+			 trace_idx < current->trace.size(); ++trace_idx) {
+		
+    const VCEvent& ev = current->trace[trace_idx];
+		if (isWrite(ev) && current->annotation.isActiveMl(ev)) {
+      bool evIsActive = current->annotation.isActiveWrite(ev);
+			current->graph.orderWrite(current->annotation, &ev, evIsActive);
+		}
+		
+	}
+
+	return current->graph.dumpMutationCandidates();
+}
+
+std::vector<VCEvent> VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
+																						 const std::unordered_set<int>& unannot)
+{
 	VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr), unannot);
 	auto res = TB.extendGivenTrace();
 
@@ -100,4 +118,34 @@ std::vector<VCEvent> VCExplorer::extendTrace
 	++executed_traces;
 
 	return res;
+}
+
+std::unordered_set<const Node *> VCExplorer::getNodesToMutate()
+{
+  auto candidates = current->graph.getLastNodes();
+	
+	auto result = std::unordered_set<const Node *>();
+
+	for (auto& nd : candidates)
+		if ((isRead(nd->getEvent()) || isLock(nd->getEvent()))
+				&& !current->annotation.defines(*(nd->getEvent())))
+			result.emplace(nd);
+
+	return result;
+}
+
+void VCExplorer::mutateRead(const PartialOrder& po, const Node *nd)
+{
+  assert(isRead(nd->getEvent()));
+
+	auto mutateValues = current->graph.getMutateValues(po, nd);
+
+	for (int val : mutateValues) {
+    // mutate read-value
+	}
+}
+
+void VCExplorer::mutateLock(const PartialOrder& po, const Node *nd)
+{
+  // TODO
 }

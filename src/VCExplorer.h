@@ -33,10 +33,20 @@ class VCExplorer {
 	
   std::list<std::unique_ptr<VCTrace>> worklist;
 
-	std::unique_ptr<VCTrace> current;	
+	std::unique_ptr<VCTrace> current;
 
+	//
+
+  std::list<PartialOrder> extensionWritesOrderings();
+	
   std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
 																	 const std::unordered_set<int>& unannot);
+
+	std::unordered_set<const Node *> getNodesToMutate();
+
+	void mutateRead(const PartialOrder& po, const Node *nd);
+
+	void mutateLock(const PartialOrder& po, const Node *nd);
 	
   /* *************************** */
   /* STATISTICS                  */

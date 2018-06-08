@@ -31,9 +31,10 @@
 
 // Extends this graph so it corresponds to 'trace'
 // Checks the header file for the method description
-void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
-	
-	assert(edges_worklist.empty());
+void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
+{
+	assert(worklist_ready.empty());
+	assert(worklist_done.empty());
 	assert(!trace.empty());
 	assert(trace.size() >= nodes_size());
 
@@ -125,7 +126,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 			nd = processes[proc_idx][ev_idx];
 			assert(nd);
 			assert(nodes.count(nd));
-			assert(nd->getEvent.equalVCIID(&ev);
+			assert(nd->getEvent()->equalVCIID(*ev)
 						 && "Original part of the basis is changed in 'trace'");
 			// since VCIID's are equal, read_vciid_to_node is
 			// already set up for 'nd' in case 'nd' is a read node
@@ -176,7 +177,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 
 	assert(processes.size() == cur_evidx.size());
 	for (unsigned i = 0; i < cur_evidx.size(); ++i) {
-    assert(curevidx[i] == processes[i].size()
+    assert(cur_evidx[i] == processes[i].size()
 					 && "Didn't go through entire original part of the basis");
 	}
 	
@@ -332,7 +333,8 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace) {
 // This method maintains:
 // 1) thread-pair-wise transitivity
 // 2) complete transitivity
-void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& po) {
+void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& po)
+{
 	assert(n1 && n2 && "Do not have such node");
 	assert(!areOrdered(n1, n2, po));
 	unsigned ti = n1->getProcessID();
@@ -401,7 +403,8 @@ void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& 
 // maintains thread-pair-wise transitivity
 void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 																unsigned tj, unsigned tj_evx,
-																const PartialOrder& po) {
+																const PartialOrder& po)
+{
   ThreadPairsVclocks& succ = *(po.first);
 	ThreadPairsVclocks& pred = *(po.second);
 	assert( succ[ti][tj][ti_evx] > (int) tj_evx && // ! ti[ti_evx] HB tj[tj_evx]
@@ -409,7 +412,7 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 					"Tried to add an edge between ordered nodes");
 	assert( pred[tj][ti][tj_evx] < (int) ti_evx && // ! ti[ti_evx] HB tj[tj_evx]
 					pred[ti][tj][ti_evx] < (int) tj_evx && // ! tj[tj_evx] HB ti[ti_evx]
-				 && "Inconsistent succ/pred vector clocks");
+				  "Inconsistent succ/pred vector clocks");
 
 	succ[ti][tj][ti_evx] = (int) tj_evx;
 	pred[tj][ti][tj_evx] = (int) ti_evx;
@@ -439,7 +442,8 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 }
 
 const Node * VCGraphVclock::getTWcandidate(const Node *nd, unsigned thr_id,
-																					 const PartialOrder& po) const {
+																					 const PartialOrder& po) const
+{
 	assert(isRead(nd->getEvent()));
 	const ThreadPairsVclocks& succ = *(po.first);
 	
@@ -461,7 +465,7 @@ const Node * VCGraphVclock::getTWcandidate(const Node *nd, unsigned thr_id,
 	assert(ml_cache != tw_candidate.end()
 				 && "Cache not set up for the ml of this read");
 	assert(thr_id < ml_cache->second.size() &&
-				 ev_id < ml_cache->second[thr_id].size());
+				 ev_id < (int) ml_cache->second[thr_id].size());
 	
 	int tw_evidx = ml_cache->second[thr_id][ev_id];
   if (tw_evidx == -1)
@@ -476,7 +480,8 @@ const Node * VCGraphVclock::getTWcandidate(const Node *nd, unsigned thr_id,
 }
 
 std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
-	VCGraphVclock::tailWrites(const Node *nd, const PartialOrder& po, int good) const {
+	VCGraphVclock::tailWrites(const Node *nd, const PartialOrder& po, int good) const
+{
 	assert(nd && "Do not have such node");
 	assert(nd != initial_node && "Asking getTWcandidate for the initial node");
 	assert(isRead(nd->getEvent()));
@@ -543,7 +548,8 @@ std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
 }
 
 bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
-																 const PartialOrder& po) {
+																 const PartialOrder& po)
+{
 	std::vector<int> done; // done on all bigger indices
 	done.reserve(processes.size());
 	for (unsigned tid=0; tid<processes.size(); ++tid)
@@ -555,7 +561,7 @@ bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
     for (unsigned tid=0; tid<processes.size(); ++tid) {
       while (done[tid] > -1) {
         const Node *nd = processes[tid][done[tid]];
-				if (isRead(nd->getEvent())) {
+				if (isRead(nd->getEvent()) && annot.defines(*(nd->getEvent()))) {
           maxReadCandidates.emplace(nd);
 					break;
 				}
@@ -626,8 +632,10 @@ bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
 }
 
 void VCGraphVclock::orderWrite(const VCAnnotation& annot,
-															 const VCEvent *w1, bool w1IsActive) {
+															 const VCEvent *w1, bool w1IsActive)
+{
 	assert(isWrite(w1));
+	assert(annot.isActiveMl(*w1));
 	auto it = event_to_node.find(w1);
 	assert(it != event_to_node.end());
 	const Node *ndW1 = it->second;
@@ -641,8 +649,8 @@ void VCGraphVclock::orderWrite(const VCAnnotation& annot,
 
 	while (!worklist_ready.empty()) {
     PartialOrder current = std::move(worklist_ready.front());
-		assert(!worklist.front().first.get());
-		assert(!worklist.front().second.get());
+		assert(!worklist_ready.front().first.get());
+		assert(!worklist_ready.front().second.get());
 		worklist_ready.pop_front();
 
 		const Node *ndW2 = nullptr;
@@ -684,8 +692,8 @@ void VCGraphVclock::orderWrite(const VCAnnotation& annot,
 						(w1IsActive || annot.isActiveWrite(*w2cand))) {
 					// found w2, set it and break
 					ndW2 = processes[tid][tw_evidx];
-					assert(!areOrdered(ndW1, ndW2, current.first /*succ*/)
-								 && "succ/pred has false information");
+					assert(!areOrdered(ndW1, ndW2, current)
+								 && "partial order has false information");
 					break;
 				} else {
           // didn't find, jump to 'tail write' of this place
@@ -713,7 +721,7 @@ void VCGraphVclock::orderWrite(const VCAnnotation& annot,
 					 ndW2->getEvent()->value != w1->value &&
 					 (w1IsActive || annot.isActiveWrite(*(ndW2->getEvent()))) &&
 					 ndW2->getEvent()->ml == w1->ml &&
-					 !areOrdered(ndW1, ndW2, current.first /*succ*/));
+					 !areOrdered(ndW1, ndW2, current));
 
 		PartialOrder otherorder = PartialOrder
 			(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
@@ -752,4 +760,16 @@ void VCGraphVclock::orderWrite(const VCAnnotation& annot,
 		}
 		
 	}
+}
+
+std::unordered_set<int> VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
+{
+	assert(nodes.count(nd));
+	assert(isRead(nd->getEvent()));
+
+	// TODO continue
+
+  auto result = std::unordered_set<int>();
+	
+	return result;
 }

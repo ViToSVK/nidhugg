@@ -27,6 +27,11 @@
 #include "VCBasis.h"
 #include "VCAnnotation.h"
 
+using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
+
+using PartialOrder = std::pair<std::unique_ptr<ThreadPairsVclocks>,
+															 std::unique_ptr<ThreadPairsVclocks>>;
+
 class VCGraphVclock : public VCBasis {
 
 	// succ[i][j][a] = b means:
@@ -44,17 +49,12 @@ class VCGraphVclock : public VCBasis {
 	// smaller b => 'stronger' edge
 	
   const Node *initial_node;
-	std::set<Node *> nodes;
+	std::set<const Node *> nodes;
 
 	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
 	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
 	// returns -1 if there is no such write
 	std::unordered_map<SymAddrSize, std::vector<std::vector<int>>> tw_candidate;
-	
-  using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
-
-  using PartialOrder = std::pair<std::unique_ptr<ThreadPairsVclocks>,
-		                             std::unique_ptr<ThreadPairsVclocks>>;
 
 	PartialOrder original;
 	
@@ -67,13 +67,23 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  unsigned getExtensionFrom() const { return extension_from; }
+	
+  bool empty() const {
+    return (processes.empty() && cpid_to_processid.empty() &&
+						event_to_node.empty() && read_vciid_to_node.empty() &&
+						!initial_node && nodes.empty() && tw_candidate.empty() &&
+						!original.first.get() && !original.second.get() &&
+						worklist_ready.empty() && worklist_done.empty());
+	}
+	
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
 	
 	~VCGraphVclock() {
 		delete initial_node;
-		for (Node *nd: nodes) {
+		for (const Node *nd: nodes) {
       delete nd;
 		}
 	}
@@ -109,7 +119,7 @@ class VCGraphVclock : public VCBasis {
 		worklist_ready(),
 		worklist_done()
 			{
-				for (Node *othnd : oth.nodes) {
+				for (const Node *othnd : oth.nodes) {
 					Node *nd = new Node(*othnd);
 					nodes.insert(nd);
 					assert(nd->getProcessID() < processes.size() &&
@@ -197,7 +207,7 @@ class VCGraphVclock : public VCBasis {
 		int ev_id = pred[nd->getProcessID()]
 			              [thr_id]
 			              [nd->getEventID()];
-		assert(ev_id < processes[thr_id].size());
+		assert(ev_id < (int) processes[thr_id].size());
 		return (ev_id >= 0) ?
 			processes[thr_id][ev_id] : nullptr;
 	}
@@ -274,12 +284,23 @@ class VCGraphVclock : public VCBasis {
 		
 		return result;
 	}
-	
+
 	// Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
 	void orderWrite(const VCAnnotation& annot, const VCEvent *ev, bool evIsActive);
 
-  void to_dot(const char *edge_params=nullptr) const;
+	std::unordered_set<const Node *> getLastNodes() const {
+    auto result = std::unordered_set<const Node *>();
+
+		for (unsigned tid = 0; tid < processes.size(); ++tid)
+			result.emplace(processes[tid][ processes[tid].size() - 1 ]);
+
+		return result;
+	}
+
+  std::unordered_set<int> getMutateValues(const PartialOrder& po, const Node *nd) const;
+	
+  void to_dot(const PartialOrder& po, const char *edge_params=nullptr) const;
 	
 };
 
