@@ -37,16 +37,20 @@ class VCExplorer {
 
 	//
 
-  std::list<PartialOrder> extensionWritesOrderings();
-	
-  std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
-																	 const std::unordered_set<int>& unannot);
-
 	std::unordered_set<const Node *> getNodesToMutate();
+	
+  std::list<PartialOrder> extensionWritesOrderings();
+
+  std::list<PartialOrder> mutationOrderings
+  (const PartialOrder& po, const Node *nd, int val,
+   const VCAnnotation& annot, bool wasAlreadyActive);
 
 	void mutateRead(const PartialOrder& po, const Node *nd);
 
 	void mutateLock(const PartialOrder& po, const Node *nd);
+
+  std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
+																	 const std::unordered_set<int>& unannot);
 	
   /* *************************** */
   /* STATISTICS                  */
@@ -55,9 +59,8 @@ class VCExplorer {
   // Number of executed traces (1 because of the initial
   // trace that was obtained as a constructor argument)
   unsigned executed_traces = 1;
-  // Total number of executed instructions over all traces
-  // TODO: count only over annotation-leaf traces???
-  unsigned total_instr_executed = 0;
+	// Number of fully executed traces
+	unsigned executed_traces_full = 0;
   
  public:
 

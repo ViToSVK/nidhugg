@@ -77,7 +77,7 @@ class VCEvent {
 		  value(0),
 		  instruction_order(oth.instruction_order) /**/,
 		  event_order(oth.event_order) /**/,
-		  id(-1)
+		id(-1)
       { assert(iid.get_pid() >= 0);
 			  assert(blank); }
 	
@@ -119,8 +119,8 @@ class VCEvent {
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
-  VCEvent blank_copy(const VCEvent& oth) const {
-    return VCEvent(oth, true);
+  VCEvent blank_copy() const {
+    return VCEvent(*this, true);
   }
 
 	bool equalVCIID(const VCEvent& oth) const {

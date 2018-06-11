@@ -110,7 +110,8 @@ class VCGraphVclock : public VCBasis {
 	// Trace that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
 							  const PartialOrder& po,
-								const std::vector<VCEvent>& trace)
+								const std::vector<VCEvent>& trace,
+								const VCAnnotation& annot)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		tw_candidate(),
@@ -133,6 +134,8 @@ class VCGraphVclock : public VCBasis {
 				// event_to_node -- fixed below
 				// read_vciid_to_node -- fixed below
 				extendGraph(trace);
+				bool res = valueClosure(annot, original);
+				assert(res); ((void)(res));
 	    }
 	
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
@@ -257,25 +260,34 @@ class VCGraphVclock : public VCBasis {
 		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
 															 (new ThreadPairsVclocks(*(original.first))),
 															 std::unique_ptr<ThreadPairsVclocks>
-															 (new ThreadPairsVclocks(*(original.first))));
+															 (new ThreadPairsVclocks(*(original.second))));
 	}
 
 	// argument is a mutation candidate
-	// used just before ordering fake-active writes
-	void initWorklist(const PartialOrder& po) {
+	// used just before ordering newly-active writes
+	// 
+	bool initWorklistAndClose(const PartialOrder& po, const VCAnnotation& annot) {
     assert(worklist_ready.empty());
 		assert(worklist_done.empty());
 		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
 															 (new ThreadPairsVclocks(*(po.first))),
 															 std::unique_ptr<ThreadPairsVclocks>
 															 (new ThreadPairsVclocks(*(po.second))));
+		bool res = valueClosure(annot, worklist_done.front());
+		if (!res)
+			worklist_done.pop_front();
+		return res;
 	}
 
-	// used after ordering writes of trace extension
-	// each partial order in the list will be a target for mutations
-	std::list<PartialOrder> dumpMutationCandidates() {
+	// used:
+	// 1) after ordering writes of trace extension
+	//    each PO will be a target for mutations
+	// *or*
+	// 2) after ordering newly-active writes
+	//    each PO is a successful mutation
+	std::list<PartialOrder> dumpDoneWorklist() {
     assert(worklist_ready.empty());
-		assert(!worklist_done.empty());
+    assert(!worklist_done.empty());
 		
     auto result = std::list<PartialOrder>();
     result.swap(worklist_done);
@@ -299,6 +311,12 @@ class VCGraphVclock : public VCBasis {
 	}
 
   std::unordered_set<int> getMutateValues(const PartialOrder& po, const Node *nd) const;
+
+	std::vector<VCEvent> linearize(const PartialOrder& po) const;
+
+  void dump_po(const PartialOrder& po) const;
+
+	void dump_po() const { dump_po(original); }
 	
   void to_dot(const PartialOrder& po, const char *edge_params=nullptr) const;
 	

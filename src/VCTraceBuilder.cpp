@@ -423,7 +423,7 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_lock);
 	assert(mutex.locked && mutex.value < 0);
-	((void)(mutex)); // so mutex does not appear unused on release
+	((void)(mutex));
 }
 
 std::vector<VCEvent> VCTraceBuilder::extendGivenTrace() {

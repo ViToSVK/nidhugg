@@ -122,6 +122,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 
 		} else {
 			// Already known event
+			assert(extension_from == INT_MAX);
 			assert(ev_idx < processes[proc_idx].size());
 			nd = processes[proc_idx][ev_idx];
 			assert(nd);
@@ -763,13 +764,96 @@ void VCGraphVclock::orderWrite(const VCAnnotation& annot,
 }
 
 std::unordered_set<int> VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
-{
+{	
 	assert(nodes.count(nd));
 	assert(isRead(nd->getEvent()));
 
-	// TODO continue
+	int nd_tid = nd->getProcessID();
+	int nd_evid = nd->getEventID();
+	assert(nd_evid == (int) processes[nd_tid].size() - 1);
+	
+	auto mutateWrites = std::unordered_set<const Node *>();
+	auto mayBeCovered = std::unordered_set<const Node *>();
+	// from here and below everything is covered from nd by some other write
+	auto covered = std::vector<int>(processes.size(), -1);
 
+  ThreadPairsVclocks& succ = *(po.first);
+	ThreadPairsVclocks& pred = *(po.second);
+	
+	// handle thread nd_tid
+	for (int evid = nd_evid - 1; evid >= 0; --evid) {
+    const Node *wrnd = processes[nd_tid][evid];
+		if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml) {
+			// add to mayBeCovered
+			mayBeCovered.insert(wrnd);
+      // update cover in other threads
+			for (unsigned i = 0; i < processes.size(); ++i)
+				if (nd_tid != (int) i) {
+					int newcov = pred[nd_tid][i][evid];
+					if (newcov > covered[i])
+						covered[i] = newcov;
+			  }
+			// nodes before wrnd in nd_tid are covered by wrnd
+			break;
+		}
+	}
+
+	// handle all other threads
+	for (unsigned tid = 0; tid < processes.size(); ++tid) {
+		if (nd_tid != (int) tid) {
+      // handle nodes unordered with nd
+			int su = succ[nd_tid][tid][nd_evid];
+			if (su == INT_MAX)
+				su = processes[tid].size();
+			int pr = pred[nd_tid][tid][nd_evid];
+			// (su-1, su-2, ..., pr+2, pr+1) unordered with nd
+			for (int evid = su-1; evid > pr; --evid) {
+				const Node *wrnd = processes[tid][evid];
+				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml)
+					mutateWrites.insert(wrnd);
+				// wrnd covers nothing since it is unordered with nd
+			}
+
+			// handle nodes that happen before nd
+			for (int evid = pr; evid >= 0; --evid) {
+				const Node *wrnd = processes[tid][evid];
+				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml) {
+					// add to mayBeCovered
+					mayBeCovered.insert(wrnd);
+					// update cover in other threads
+					for (unsigned i = 0; i < processes.size(); ++i)
+						if (tid != i) {
+							int newcov = pred[tid][i][evid];
+							if (newcov > covered[i])
+								covered[i] = newcov;
+						}
+					// nodes before wrnd in tid are covered by wrnd
+					break;
+				}
+			}
+		}
+	}
+
+  // only take those that are not
+	// covered from nd by some other
+	for (auto& wrnd : mayBeCovered)
+		if (covered[wrnd->getProcessID()] < (int) wrnd->getEventID())
+			mutateWrites.emplace(wrnd);
+
+	// have mutateWrites, return set of their values
   auto result = std::unordered_set<int>();
+	for (auto& wrnd : mutateWrites)
+		result.insert(wrnd->getEvent()->value);
+
+	// if we have nothing to cover the init event
+	if (mayBeCovered.empty())
+		result.insert(0);
 	
 	return result;
+}
+
+std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
+{
+	// TODO
+  return std::vector<VCEvent>();
 }

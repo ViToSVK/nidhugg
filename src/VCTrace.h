@@ -39,6 +39,8 @@ class VCTrace {
 	//VCAnnotationNeg annotationNeg;
 
 	VCGraphVclock graph;
+
+	std::unordered_set<int> unannot;
 	
 
   /* *************************** */
@@ -50,14 +52,16 @@ class VCTrace {
   VCTrace(std::vector<VCEvent>&& trace)
 	: trace(std::move(trace)),
 		annotation(),
-		graph(this->trace) {};
+		graph(this->trace),
+		unannot() {};
 
   VCTrace(std::vector<VCEvent>&& trace,
-					VCAnnotation&& annotation,
-					VCGraphVclock&& partialOrder)
+					VCAnnotation& annotation,
+					VCGraphVclock&& graph)
 	: trace(std::move(trace)),
-		annotation(std::move(annotation)),
-		graph(std::move(partialOrder)) {};
+		annotation(annotation),
+		graph(std::move(graph)),
+		unannot() {};
 	
   VCTrace(VCTrace&& tr) = default;
   VCTrace& operator=(VCTrace&& tr) = delete;

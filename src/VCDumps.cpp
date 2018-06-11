@@ -123,11 +123,12 @@ void VCAnnotation::dump() const {
   llvm::errs() << *this;
 }
 
-void VCGraphVclock::to_dot(const PartialOrder& po, const char *edge_params) const
+void VCGraphVclock::dump_po(const PartialOrder& po) const
 {
   ThreadPairsVclocks& succ = *(po.first);
-  
-  /*
+	ThreadPairsVclocks& pred = *(po.second);
+
+	llvm::errs() << "\n";
   for (unsigned ti=0; ti<succ.size(); ++ti)
 		for (unsigned tj=0; tj<succ[ti].size(); ++tj) {
 			llvm::errs() << "succ " << ti << "->" << tj << " size: " << succ[ti][tj].size() << "   content:";
@@ -135,7 +136,19 @@ void VCGraphVclock::to_dot(const PartialOrder& po, const char *edge_params) cons
 				llvm::errs() << " " << succ[ti][tj][tiev];
 			llvm::errs() << "\n";
 		}
-	*/
+  for (unsigned ti=0; ti<pred.size(); ++ti)
+		for (unsigned tj=0; tj<pred[ti].size(); ++tj) {
+			llvm::errs() << "pred " << ti << "->" << tj << " size: " << pred[ti][tj].size() << "   content:";
+			for (unsigned tiev=0; tiev<pred[ti][tj].size(); ++tiev)
+				llvm::errs() << " " << pred[ti][tj][tiev];
+			llvm::errs() << "\n";
+		}
+	llvm::errs() << "\n";
+}
+
+void VCGraphVclock::to_dot(const PartialOrder& po, const char *edge_params) const
+{
+  ThreadPairsVclocks& succ = *(po.first);
 
   llvm::errs() << "\ndigraph {\n";
   
