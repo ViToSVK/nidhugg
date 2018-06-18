@@ -51,11 +51,9 @@ class VCGraphVclock : public VCBasis {
   const Node *initial_node;
 	std::set<const Node *> nodes;
 
-	// [ml][tid][evid] returns idx of first event of thread-tid writing to ml
-	// starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
-	// returns -1 if there is no such write
-	std::unordered_map<SymAddrSize, std::vector<std::vector<int>>> tw_candidate;
-
+	std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
+		nonstar_writes;
+	
 	PartialOrder original;
 	
 	// Partial orders that are refinements of original
@@ -71,8 +69,8 @@ class VCGraphVclock : public VCBasis {
 	
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
-						event_to_node.empty() && read_vciid_to_node.empty() &&
-						!initial_node && nodes.empty() && tw_candidate.empty() &&
+						event_to_node.empty() && lock_vciid_to_node.empty() &&
+						!initial_node && nodes.empty() &&
 						!original.first.get() && !original.second.get() &&
 						worklist_ready.empty() && worklist_done.empty());
 	}
@@ -93,7 +91,8 @@ class VCGraphVclock : public VCBasis {
   VCGraphVclock(const std::vector<VCEvent>& trace)
 	: VCBasis(),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
-		tw_candidate(),		
+		nodes(),
+		nonstar_writes(),
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
 						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
 		worklist_ready(),
@@ -114,7 +113,8 @@ class VCGraphVclock : public VCBasis {
 								const VCAnnotation& annot)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
-		tw_candidate(),
+		nodes(),
+		nonstar_writes(),
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
 						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second)))),
 		worklist_ready(),
@@ -132,7 +132,7 @@ class VCGraphVclock : public VCBasis {
 				// processes -- fixed above
 				// cpid_to_processid -- no need to fix
 				// event_to_node -- fixed below
-				// read_vciid_to_node -- fixed below
+				// lock_vciid_to_node -- no need to fix
 				extendGraph(trace);
 				bool res = valueClosure(annot, original);
 				assert(res); ((void)(res));
@@ -177,8 +177,10 @@ class VCGraphVclock : public VCBasis {
     return succ[n1->getProcessID()]
 		           [n2->getProcessID()]
 			         [n1->getEventID()] <= (int) n2->getEventID();
-  }	
+  }
 
+  friend class POcomp; // for std::sort
+	
   bool areOrdered(const Node *n1, const Node *n2, const PartialOrder& po) const {
     return hasEdge(n1, n2, po) || hasEdge(n2, n1, po);
   }
@@ -230,19 +232,6 @@ class VCGraphVclock : public VCBasis {
 	void addEdgeHelp(unsigned ti, unsigned ti_evx,
 									 unsigned tj, unsigned tj_evx,
 									 const PartialOrder& po);
-
-  /* *************************** */
-  /* TAIL WRITES QUESTIONS       */
-  /* *************************** */
-
-	// Given 'nd', returns a candidate for a tail write from
-	// the thread 'thr_id' using 'succ' and 'tw_candidate'
-	const Node *getTWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
-	
-	// first) good tail writes
-	// second) bad tail writes
-	std::pair<std::unordered_set<const Node *>, std::unordered_set<const Node *>>
-		tailWrites(const Node *nd, const PartialOrder& po, int good) const;
 	
  public:
 
@@ -253,7 +242,7 @@ class VCGraphVclock : public VCBasis {
 	// true iff succesfully closed
   bool valueClosure(const VCAnnotation& annot, const PartialOrder& po);
 
-	// used just before ordering writes of trace extension
+	// used just before ordering non-star-root writes of trace extension
   void initWorklist() {
     assert(worklist_ready.empty());
 		assert(worklist_done.empty());
@@ -263,28 +252,8 @@ class VCGraphVclock : public VCBasis {
 															 (new ThreadPairsVclocks(*(original.second))));
 	}
 
-	// argument is a mutation candidate
-	// used just before ordering newly-active writes
-	// 
-	bool initWorklistAndClose(const PartialOrder& po, const VCAnnotation& annot) {
-    assert(worklist_ready.empty());
-		assert(worklist_done.empty());
-		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
-															 (new ThreadPairsVclocks(*(po.first))),
-															 std::unique_ptr<ThreadPairsVclocks>
-															 (new ThreadPairsVclocks(*(po.second))));
-		bool res = valueClosure(annot, worklist_done.front());
-		if (!res)
-			worklist_done.pop_front();
-		return res;
-	}
-
-	// used:
-	// 1) after ordering writes of trace extension
-	//    each PO will be a target for mutations
-	// *or*
-	// 2) after ordering newly-active writes
-	//    each PO is a successful mutation
+	// used after ordering writes of trace extension
+	// each PO will be a target for mutations
 	std::list<PartialOrder> dumpDoneWorklist() {
     assert(worklist_ready.empty());
     assert(!worklist_done.empty());
@@ -299,13 +268,16 @@ class VCGraphVclock : public VCBasis {
 
 	// Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-	void orderWrite(const VCAnnotation& annot, const VCEvent *ev, bool evIsActive);
+	void orderEventMaz(const VCEvent *ev1);
 
-	std::unordered_set<const Node *> getLastNodes() const {
+	std::unordered_set<const Node *> getNodesToMutate() const {
     auto result = std::unordered_set<const Node *>();
 
-		for (unsigned tid = 0; tid < processes.size(); ++tid)
-			result.emplace(processes[tid][ processes[tid].size() - 1 ]);
+		for (unsigned tid = 0; tid < processes.size(); ++tid) {
+			const Node *nd = processes[tid][ processes[tid].size() - 1 ];
+      if (isRead(nd->getEvent()) || isLock(nd->getEvent()))
+				result.insert(nd);
+		}
 
 		return result;
 	}
@@ -314,11 +286,32 @@ class VCGraphVclock : public VCBasis {
 
 	std::vector<VCEvent> linearize(const PartialOrder& po) const;
 
+  /* *************************** */
+  /* DUMPS                       */
+  /* *************************** */
+	
   void dump_po(const PartialOrder& po) const;
 
 	void dump_po() const { dump_po(original); }
 	
   void to_dot(const PartialOrder& po, const char *edge_params=nullptr) const;
+	
+};
+
+class POcomp {
+	
+ public:
+
+  POcomp(const VCGraphVclock& gr, const PartialOrder& po) : gr(gr), po(po) {}
+
+	bool operator() (const Node *n1, const Node *n2) {
+		return (gr.hasEdge(n1, n2, po));
+	}
+
+ private:
+
+	const VCGraphVclock& gr;
+	const PartialOrder& po;
 	
 };
 

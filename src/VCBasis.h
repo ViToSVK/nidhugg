@@ -59,14 +59,17 @@ class VCBasis {
  public:
   typedef std::vector<Node *> ProcessT;
   typedef std::vector<ProcessT> ProcessesT;
+
+ private:
+	const unsigned star_root_index = 1;
 	
  protected:
   ProcessesT processes;
 	std::unordered_map<CPid, unsigned> cpid_to_processid;
 	std::unordered_map<const VCEvent *, Node *> event_to_node;
-	std::unordered_map<VCIID, Node *> read_vciid_to_node;
+	std::unordered_map<VCIID, Node *> lock_vciid_to_node;
 	
- public:
+ public:	
 	// Basis is not responsible for any resources
 	// All Node* allocation and deletion happens
 	// in the graph classes that inherit Basis
@@ -75,7 +78,7 @@ class VCBasis {
   VCBasis& operator=(VCBasis&& oth) = delete;
   VCBasis(const VCBasis& oth) = default;
   VCBasis& operator=(const VCBasis& oth) = delete;
-
+	
   const ProcessT& operator[](unsigned idx) const {
     assert(idx < size());
     return processes[idx];
@@ -96,6 +99,14 @@ class VCBasis {
 			return -1;
 		return it->second;
   }
+
+	bool isStarRoot(unsigned idx) const {
+		return star_root_index == idx;
+  }
+
+	unsigned starRoot() const {
+    return star_root_index;
+	}
 	
 	// typename clarifies that (const_)iterator
 	// is a class and not a static member
@@ -270,19 +281,19 @@ class VCBasis {
   events_iterator nodes_iterator(const VCEvent& ev) const {
     return nodes_iterator(getNode(ev));
   }
-
-	// Node corresponding to the given VCIID
+	
+	// Node corresponding to the given lock VCIID
 	const Node *getNode(const VCIID& vciid) const {
-    auto it = read_vciid_to_node.find(vciid);
-		assert(it != read_vciid_to_node.end()
-					 && "Given VCIID is not tied to any read event");
+    auto it = lock_vciid_to_node.find(vciid);
+		assert(it != lock_vciid_to_node.end()
+					 && "Given VCIID is not tied to any lock event");
     return it->second;
   }
 	
-	// Iterator corresponding to the given VCIID
+	// Iterator corresponding to the given lock VCIID
   events_iterator nodes_iterator(const VCIID& vciid) const {
     return nodes_iterator(getNode(vciid));
-  }
+	}
 
 	// Get an iterator pointing to (the beginning of) the given CPid
   events_iterator nodes_iterator(const CPid& cpid, unsigned evidx = 0) const {

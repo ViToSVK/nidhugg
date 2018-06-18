@@ -123,7 +123,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
   VCTraceBuilder(const Configuration &conf, llvm::Module *m)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(true), sch_replay(false), sch_extend(false)
-  {}
+    {}
 
   // Use it when you want to do the following:
   // (step1) replay the trace tr
@@ -136,7 +136,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
     sch_initial(false), sch_replay(true), sch_extend(false),
 		replay_trace(std::move(tr)),
 		threads_with_unannotated_read(unannot)
-  {}
+		{ prefix.reserve(replay_trace.size() + 16); }
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */

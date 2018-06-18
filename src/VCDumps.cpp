@@ -112,7 +112,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot)
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
     out << "("  << pr.first << ",\n"
-                << " "  << pr.second << ")\n";
+                << " "  << pr.second.first;
+		char loc = (pr.second.second == VCAnnotation::Loc::LOCAL)?'L':
+			((pr.second.second == VCAnnotation::Loc::REMOTE)?'R':'A');
+		out << loc << ")\n";
   }
   out << "}\n";
 
@@ -153,9 +156,13 @@ void VCGraphVclock::to_dot(const PartialOrder& po, const char *edge_params) cons
   llvm::errs() << "\ndigraph {\n";
   
   for (unsigned tid = 0; tid < processes.size(); ++tid) {
+		assert((int) tid == processes[tid][0]->getEvent()->iid.get_pid() / 2);
 		llvm::errs() << "subgraph cluster_" << tid << "{\n";
-		llvm::errs() << "label = \"Process" << (processes[tid][0]->getEvent()->iid.get_pid() / 2)
-								 << " " << processes[tid][0]->getEvent()->cpid << "\"\n";
+		llvm::errs() << "label = \"Process" << tid
+								 << " " << processes[tid][0]->getEvent()->cpid;
+		if (tid == this->starRoot())
+			llvm::errs() << " STAR-ROOT";
+		llvm::errs() << "\"\n";
 		for (unsigned evid = 0; evid < processes[tid].size(); ++evid) {
 			const Node *nd = processes[tid][evid];
 			llvm::errs() << "NODE"

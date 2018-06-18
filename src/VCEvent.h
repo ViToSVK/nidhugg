@@ -77,7 +77,7 @@ class VCEvent {
 		  value(0),
 		  instruction_order(oth.instruction_order) /**/,
 		  event_order(oth.event_order) /**/,
-		id(-1)
+		  id(-1)
       { assert(iid.get_pid() >= 0);
 			  assert(blank); }
 	

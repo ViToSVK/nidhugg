@@ -36,14 +36,8 @@ class VCExplorer {
 	std::unique_ptr<VCTrace> current;
 
 	//
-
-	std::unordered_set<const Node *> getNodesToMutate();
 	
-  std::list<PartialOrder> extensionWritesOrderings();
-
-  std::list<PartialOrder> mutationOrderings
-  (const PartialOrder& po, const Node *nd, int val,
-   const VCAnnotation& annot, bool wasAlreadyActive);
+  std::list<PartialOrder> extensionEventsOrderings();
 
 	void mutateRead(const PartialOrder& po, const Node *nd);
 

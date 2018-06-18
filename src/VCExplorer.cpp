@@ -49,7 +49,7 @@ void VCExplorer::explore()
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
-		auto nodesToMutate = getNodesToMutate();
+		auto nodesToMutate = current->graph.getNodesToMutate();
     if (nodesToMutate.empty()) {
 			// Fully executed trace
       ++executed_traces_full;
@@ -61,9 +61,9 @@ void VCExplorer::explore()
 		for (auto& nd : nodesToMutate)
 			current->unannot.emplace(nd->getProcessID());
 		
-		// Get partial-order refinements that order extension writes
+		// Get partial-order refinements that order extension events
 		// Each refinement will be a candidate for possible mutations
-    std::list<PartialOrder> extendedPOs = extensionWritesOrderings();
+    std::list<PartialOrder> extendedPOs = extensionEventsOrderings();
 		assert(!extendedPOs.empty() && "current->trace is one witness");
 
 		/**/ if (current->graph.getExtensionFrom() > 20) return;
@@ -94,97 +94,24 @@ void VCExplorer::explore()
 }
 
 /* *************************** */
-/* GET NODES TO MUTATE         */
+/* EXTENSION EVENTS ORDERINGS  */
 /* *************************** */
 
-std::unordered_set<const Node *> VCExplorer::getNodesToMutate()
-{
-  auto candidates = current->graph.getLastNodes();
-	
-	auto result = std::unordered_set<const Node *>();
-
-	for (auto& nd : candidates)
-		if ((isRead(nd->getEvent()) || isLock(nd->getEvent()))
-				&& !current->annotation.defines(*(nd->getEvent())))
-			result.emplace(nd);
-
-	return result;
-}
-
-/* *************************** */
-/* EXTENSION WRITES ORDERINGS  */
-/* *************************** */
-
-std::list<PartialOrder> VCExplorer::extensionWritesOrderings()
+std::list<PartialOrder> VCExplorer::extensionEventsOrderings()
 {
   assert(current.get());
 
 	current->graph.initWorklist();
-
-	if (current->annotation.empty()) {
-		// No write is active yet, so nothing has to be ordered
-		assert(current->graph.getExtensionFrom() == 0);
-    return current->graph.dumpDoneWorklist();
-	}
-
-	// Order extension writes (same ml, different val):
-	// active with active+nonactive, nonactive with active
+	
+	// Order extension reads + writes of non-star processes
+	// with conflicting writes of non-star processes
 	for (unsigned trace_idx = current->graph.getExtensionFrom();
 			 trace_idx < current->trace.size(); ++trace_idx) {
 		
     const VCEvent& ev = current->trace[trace_idx];
-		if (isWrite(ev) && current->annotation.isActiveMl(ev)) {
-      bool evIsActive = current->annotation.isActiveWrite(ev);
-			current->graph.orderWrite(current->annotation, &ev, evIsActive);
-		}
-		
-	}
-
-	return current->graph.dumpDoneWorklist();
-}
-
-/* *************************** */
-/* MUTATION ORDERINGS          */
-/* *************************** */
-
-std::list<PartialOrder> VCExplorer::mutationOrderings
-(const PartialOrder& po, const Node *nd, int val,
- const VCAnnotation& annot, bool wasAlreadyActive)
-{
-  assert(current.get());
-
-	// Close wrt annot including the new mutation 'nd sees val'
-  bool initialclosure = current->graph.initWorklistAndClose(po, annot);
-
-
-	if (!initialclosure) {
-		// This mutation is impossible		
-    return std::list<PartialOrder>();
-	}
-		
-	
-  if (wasAlreadyActive) {
-		// This mutation does not activate any new writes
-		// Our result is one unique mutated partial order in which
-		// initialclosure made each read have only good tail writes
-		// We get the above guarantee since
-		// 'mutation activates nothing' -> 'everything active was
-		// already fully ordered at the point of initialclosure'
-    return current->graph.dumpDoneWorklist();
-	}
-
-	// Order all newly-active writes
-	// TODO: RETAIN THESE FROM current->graph.getMutateValues ???
-	// BUT IN THERE SOME EVENTS WE DISREGARDED SINCE HIDDEN, CAN WE EVEN GET AWAY WITHOUT ORDERING THESE HERE ???
-	for (unsigned trace_idx = 0;
-			 trace_idx < current->trace.size(); ++trace_idx) {
-		
-    const VCEvent& ev = current->trace[trace_idx];
-		if (isWrite(ev) && ev.value == val && ev.ml == nd->getEvent()->ml) {
-			// newly-active write
-      assert(annot.isActiveWrite(ev)
-						 && "We didn't properly update the annotation");
-			current->graph.orderWrite(annot, &ev, true/*evIsActive*/);
+		const Node *nd = current->graph.getNode(ev);
+		if ((isWrite(ev) || isRead(ev)) && nd->getProcessID() != current->graph.starRoot()) {
+			current->graph.orderEventMaz(&ev);
 		}
 		
 	}
@@ -198,23 +125,27 @@ std::list<PartialOrder> VCExplorer::mutationOrderings
 
 void VCExplorer::mutateRead(const PartialOrder& po, const Node *nd)
 {
-  assert(isRead(nd->getEvent()));
 	const VCEvent& ev = *(nd->getEvent());
-
+  assert(isRead(ev));
+	bool isFromStarRoot =
+		(nd->getProcessID() == current->graph.starRoot());
+	
 	// Mutated 'threads with unannotated read'
 	std::unordered_set<int> mutUnannot(current->unannot);
 	assert(mutUnannot.count(nd->getProcessID()));
 	mutUnannot.erase(nd->getProcessID());
 	
-	auto mutateValues = current->graph.getMutateValues(po, nd);
+	auto mutateValues =
+		current->graph.getMutateValues(po, nd); // , isFromStarRoot
 
   /**/ llvm::errs() << "NODE[" << nd->getProcessID()
 										<< "][" << nd->getEventID() << "] should see:";
 	/**/ for (int val : mutateValues) llvm::errs() << " " << val;
 	/**/ llvm::errs() << "\n\n";
-	
+
+	/*
 	for (int val : mutateValues) {
-		/**/ llvm::errs() << "MUTATING " << val << ", solutions:\n";
+		llvm::errs() << "MUTATING " << val << ", solutions:\n"; ///////
 
 		// Mutated annotation
 		VCAnnotation mutAnnotation(current->annotation);
@@ -237,26 +168,28 @@ void VCExplorer::mutateRead(const PartialOrder& po, const Node *nd)
 			assert(!mutatedPOs.front().second.get());
 			mutatedPOs.pop_front();
 
-			/**/ current->graph.to_dot(mutPO, "");
+			current->graph.to_dot(mutPO, ""); ///////
 
 			std::vector<VCEvent> mutTrace =
 				extendTrace(current->graph.linearize(mutPO), mutUnannot);
 
-      VCGraphVclock mutGraph(current->graph, /*base for graph*/
-														 mutPO, /*base for 'original' po*/
-														 mutTrace /*to extend the graph*/,
-														 mutAnnotation /*to value-close extended 'original'*/);
-			
+      VCGraphVclock mutGraph(current->graph, // base for graph
+														 mutPO, // base for 'original' po
+														 mutTrace, // to extend the graph
+														 mutAnnotation); // to value-close extended 'original'
+      
 			std::unique_ptr<VCTrace> mutatedVCTrace
 				(new VCTrace(std::move(mutTrace),
 										 mutAnnotation,
 										 std::move(mutGraph)));
+			assert(mutTrace.empty() && mutGraph.empty());
 
 			worklist.push_back(std::move(mutatedVCTrace));
 			assert(!mutatedVCTrace.get());
 		}
 
 	}
+  */
 }
 
 /* *************************** */
@@ -265,7 +198,16 @@ void VCExplorer::mutateRead(const PartialOrder& po, const Node *nd)
 
 void VCExplorer::mutateLock(const PartialOrder& po, const Node *nd)
 {
-  // TODO
+	const VCEvent& ev = *(nd->getEvent());
+  assert(isLock(ev));
+
+	// Mutated 'threads with unannotated read'
+	std::unordered_set<int> mutUnannot(current->unannot);
+	assert(mutUnannot.count(nd->getProcessID()));
+	mutUnannot.erase(nd->getProcessID());
+
+	// TODO CONTINUE
+	
 }
 
 /* *************************** */
