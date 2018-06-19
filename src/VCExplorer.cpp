@@ -59,7 +59,7 @@ void VCExplorer::explore()
 
 		assert(current->unannot.empty());
 		for (auto& nd : nodesToMutate)
-			current->unannot.emplace(nd->getProcessID());
+			current->unannot.insert(nd->getProcessID());
 		
 		// Get partial-order refinements that order extension events
 		// Each refinement will be a candidate for possible mutations

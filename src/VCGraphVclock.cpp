@@ -18,6 +18,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <unordered_map>
 #include <stack>
 
@@ -142,11 +143,34 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 
     ++cur_evidx[proc_idx];
 
-		if (isWrite(ev) && nd->getProcessID() != starRoot()) {
-      auto itml = nonstar_writes.find(ev->ml);
-			if (itml == nonstar_writes.end())
-				nonstar_writes.emplace(ev->ml, std::unordered_set<const Node*>());
-			nonstar_writes[ev->ml].insert(nd);
+		if (isWrite(ev)) {
+      if (nd->getProcessID() == starRoot()) {
+        auto itml = wRoot.find(ev->ml);
+				if (itml == wRoot.end()) {
+          wRoot.emplace_hint(itml, ev->ml, std::vector<const Node*>());
+					wRoot[ev->ml].reserve(8);
+				}
+				wRoot[ev->ml].push_back(nd);
+			} else {
+				auto itml = wNonrootUnord.find(ev->ml);
+				if (itml == wNonrootUnord.end()) {
+          wNonrootUnord.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
+					wNonrootUnord[ev->ml].reserve(8);
+				}
+				wNonrootUnord[ev->ml].insert(nd);
+			}
+		}
+		if (isRead(ev)) {
+      auto itroot = wRoot.find(ev->ml);
+			if (itroot == wRoot.end()) {
+				wRoot.emplace_hint(itroot, ev->ml, std::vector<const Node*>());
+				wRoot[ev->ml].reserve(8);
+			}
+			auto itnonr = wNonrootUnord.find(ev->ml);
+			if (itnonr == wNonrootUnord.end()) {
+				wNonrootUnord.emplace_hint(itnonr, ev->ml, std::unordered_set<const Node*>());
+				wNonrootUnord[ev->ml].reserve(8);
+			}
 		}
 		if (isMutexInit(ev)) {
 			assert(!mutex_inits.count(ev->ml));
@@ -410,17 +434,9 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 	
 }
 
-
 /* *************************** */
 /* MAIN ALGORITHM              */
 /* *************************** */
-
-bool VCGraphVclock::valueClosure(const VCAnnotation& annot,
-																 const PartialOrder& po)
-{
-  return true;
-	// TODO
-}
 
 void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
 {
@@ -431,15 +447,15 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
 	assert(nd1->getEvent() == ev1);
 	assert(nd1->getProcessID() != starRoot());
 
-	auto itnsw = nonstar_writes.find(ev1->ml);
-	if (itnsw == nonstar_writes.end())
+	auto itnsw = wNonrootUnord.find(ev1->ml);
+	if (itnsw == wNonrootUnord.end())
 		return;
 
 	std::unordered_set<const Node *>& toOrder = itnsw->second;
 	
 	for (auto it = toOrder.begin(); it != toOrder.end(); ++it) {
     const Node *nd2 = *it;
-		if (nd1 == nd2)
+		if (nd1->getProcessID() == nd2->getProcessID())
 			continue;
 
 		worklist_ready.swap(worklist_done);

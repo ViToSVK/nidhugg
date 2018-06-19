@@ -26,6 +26,7 @@
 
 #include "VCTraceBuilder.h"
 #include "VCTrace.h"
+#include "VCValClosure.h"
 
 class VCExplorer {
 
@@ -38,6 +39,16 @@ class VCExplorer {
 	//
 	
   std::list<PartialOrder> extensionEventsOrderings();
+
+	// result: true iff succesfully closed
+  VCValClosure valueClose(const VCValClosure& tocopy, const PartialOrder& po,
+													const Node * newnd,
+													const std::pair<int, VCAnnotation::Loc> * newval) {
+    auto closure = VCValClosure(tocopy);
+		closure.prepare(po, newnd);
+		closure.valClose(po, newnd, newval);
+		return closure;
+	}
 
 	void mutateRead(const PartialOrder& po, const Node *nd);
 

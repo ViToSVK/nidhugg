@@ -420,10 +420,11 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
     mutexes[ml.addr] = Mutex();
   }
   assert(mutexes.count(ml.addr));
+	#ifndef NDEBUG
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_lock);
 	assert(mutex.locked && mutex.value < 0);
-	((void)(mutex));
+	#endif
 }
 
 std::vector<VCEvent> VCTraceBuilder::extendGivenTrace() {

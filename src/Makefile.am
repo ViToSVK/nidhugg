@@ -45,6 +45,7 @@ libnidhugg_a_SOURCES = \
   VCTrace.h \
   VCBasis.h \
   VCGraphVclock.cpp VCGraphVclock.h \
+  VCValClosure.cpp VCValClosure.h \
   VCInterpreter.cpp VCInterpreter.h \
   VCTraceBuilder.cpp VCTraceBuilder.h \
   VCExplorer.cpp VCExplorer.h \

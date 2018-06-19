@@ -52,7 +52,9 @@ class VCGraphVclock : public VCBasis {
 	std::set<const Node *> nodes;
 
 	std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
-		nonstar_writes;
+		wNonrootUnord;
+	
+	std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
 	
 	PartialOrder original;
 	
@@ -92,7 +94,8 @@ class VCGraphVclock : public VCBasis {
 	: VCBasis(),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
-		nonstar_writes(),
+		wNonrootUnord(),
+		wRoot(),
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
 						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
 		worklist_ready(),
@@ -109,12 +112,12 @@ class VCGraphVclock : public VCBasis {
 	// Trace that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
 							  const PartialOrder& po,
-								const std::vector<VCEvent>& trace,
-								const VCAnnotation& annot)
+								const std::vector<VCEvent>& trace)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
-		nonstar_writes(),
+		wNonrootUnord(),
+		wRoot(),
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
 						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second)))),
 		worklist_ready(),
@@ -134,8 +137,6 @@ class VCGraphVclock : public VCBasis {
 				// event_to_node -- fixed below
 				// lock_vciid_to_node -- no need to fix
 				extendGraph(trace);
-				bool res = valueClosure(annot, original);
-				assert(res); ((void)(res));
 	    }
 	
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
@@ -179,7 +180,17 @@ class VCGraphVclock : public VCBasis {
 			         [n1->getEventID()] <= (int) n2->getEventID();
   }
 
-  friend class POcomp; // for std::sort
+  class POcomp {
+		const VCGraphVclock& gr;
+		const PartialOrder& po;	
+	 public:
+		POcomp(const VCGraphVclock& gr, const PartialOrder& po) : gr(gr), po(po) {}
+		bool operator() (const Node *n1, const Node *n2) {
+			return (gr.hasEdge(n1, n2, po));
+		}
+	};
+	
+  friend class POcomp;
 	
   bool areOrdered(const Node *n1, const Node *n2, const PartialOrder& po) const {
     return hasEdge(n1, n2, po) || hasEdge(n2, n1, po);
@@ -239,8 +250,7 @@ class VCGraphVclock : public VCBasis {
   /* MAIN ALGORITHM              */
   /* *************************** */
 
-	// true iff succesfully closed
-  bool valueClosure(const VCAnnotation& annot, const PartialOrder& po);
+	friend class VCValClosure;
 
 	// used just before ordering non-star-root writes of trace extension
   void initWorklist() {
@@ -295,23 +305,6 @@ class VCGraphVclock : public VCBasis {
 	void dump_po() const { dump_po(original); }
 	
   void to_dot(const PartialOrder& po, const char *edge_params=nullptr) const;
-	
-};
-
-class POcomp {
-	
- public:
-
-  POcomp(const VCGraphVclock& gr, const PartialOrder& po) : gr(gr), po(po) {}
-
-	bool operator() (const Node *n1, const Node *n2) {
-		return (gr.hasEdge(n1, n2, po));
-	}
-
- private:
-
-	const VCGraphVclock& gr;
-	const PartialOrder& po;
 	
 };
 
