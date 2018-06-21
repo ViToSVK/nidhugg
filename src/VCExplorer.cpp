@@ -49,7 +49,21 @@ void VCExplorer::explore()
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
+    /**/ llvm::errs() << "********* TRACE *********\n";
+		/**/ current->annotation.dump();
+		/**/ current->graph.to_dot("");
+		/**/ if (current->graph.getExtensionFrom() > 20) return;
+		
 		auto nodesToMutate = current->graph.getNodesToMutate();
+		for (auto it = nodesToMutate.begin(); it != nodesToMutate.end(); ) {
+			const VCEvent& ev = *((*it)->getEvent());
+			assert(isRead(ev) || isLock(ev));
+			if ((isRead(ev) && current->annotation.defines(ev)) ||
+					(isLock(ev) && current->annotation.isLastLock(ev)))
+        it = nodesToMutate.erase(it);
+      else
+        ++it;
+    }
     if (nodesToMutate.empty()) {
 			// Fully executed trace
       ++executed_traces_full;
@@ -60,32 +74,47 @@ void VCExplorer::explore()
 		assert(current->unannot.empty());
 		for (auto& nd : nodesToMutate)
 			current->unannot.insert(nd->getProcessID());
+
+    auto vf = current->graph.getValueFunction(current->annotation);
 		
 		// Get partial-order refinements that order extension events
 		// Each refinement will be a candidate for possible mutations
     std::list<PartialOrder> extendedPOs = extensionEventsOrderings();
 		assert(!extendedPOs.empty() && "current->trace is one witness");
-
-		/**/ if (current->graph.getExtensionFrom() > 20) return;
-		/**/ llvm::errs() << "********* TRACE *********\n";
 		
     while (!extendedPOs.empty()) {
       auto po = std::move(extendedPOs.front());
-			assert(!extendedPOs.front().first.get());
-			assert(!extendedPOs.front().second.get());
+			assert(!extendedPOs.front().first.get() &&
+						 !extendedPOs.front().second.get());
 			extendedPOs.pop_front();
 
 			/**/ llvm::errs() << "********* EXTENSION *********\n";
 			/**/ current->graph.to_dot(po, "");
+			
+			auto withoutMutation = VCValClosure(current->graph, vf);
+			withoutMutation.valClose(po, nullptr, nullptr);
+			if (!withoutMutation.closed) {
+        // This ordering of extension events
+				// makes the original annotation unrealizable
+				// therefore no need to try any mutations
+				/**/ llvm::errs() << "Invalidates annotation we have so far\n";
+				po.first.reset();
+				po.second.reset();
+				continue;
+			}
 
+			// Try all possible mutations
 			for (auto nd : nodesToMutate) {
         if (isRead(nd->getEvent()))
-					mutateRead(po, nd);
+					mutateRead(po, withoutMutation, nd);
 				else {
           assert(isLock(nd->getEvent()));
-					mutateLock(po, nd);
+					mutateLock(po, withoutMutation, nd);
 				}
 			}
+
+			po.first.reset();
+			po.second.reset();
 		}
 		
 		// Delete managed VCTrace
@@ -123,91 +152,192 @@ std::list<PartialOrder> VCExplorer::extensionEventsOrderings()
 /* MUTATE READ                 */
 /* *************************** */
 
-void VCExplorer::mutateRead(const PartialOrder& po, const Node *nd)
+void VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd)
 {
-	const VCEvent& ev = *(nd->getEvent());
-  assert(isRead(ev));
-	bool isFromStarRoot =
-		(nd->getProcessID() == current->graph.starRoot());
+  assert(isRead(nd->getEvent()));
 	
-	// Mutated 'threads with unannotated read'
-	std::unordered_set<int> mutUnannot(current->unannot);
-	assert(mutUnannot.count(nd->getProcessID()));
-	mutUnannot.erase(nd->getProcessID());
+	std::unordered_set<int> mutatedUnannot(current->unannot);
+	assert(mutatedUnannot.count(nd->getProcessID()));
+	mutatedUnannot.erase(nd->getProcessID());
 	
 	auto mutateValues =
-		current->graph.getMutateValues(po, nd); // , isFromStarRoot
+		current->graph.getMutateValues(po, nd);
 
-  /**/ llvm::errs() << "NODE[" << nd->getProcessID()
-										<< "][" << nd->getEventID() << "] should see:";
-	/**/ for (int val : mutateValues) llvm::errs() << " " << val;
-	/**/ llvm::errs() << "\n\n";
+	/**/
+  llvm::errs() << "NODE[" << nd->getProcessID()
+							 << "][" << nd->getEventID() << "] should see:";
+	for (auto& val_pos : mutateValues) {
+    llvm::errs() << " " << val_pos.first << "-";
+		char loc = (val_pos.second == VCAnnotation::Loc::LOCAL)?'L':
+			((val_pos.second == VCAnnotation::Loc::REMOTE)?'R':'A');
+		llvm::errs() << loc;
+	}
+	llvm::errs() << "\n\n";
+	/**/
 
-	/*
-	for (int val : mutateValues) {
-		llvm::errs() << "MUTATING " << val << ", solutions:\n"; ///////
+	for (auto& val_pos : mutateValues) {
+		llvm::errs() << val_pos.first << "-";
+		char loc = (val_pos.second == VCAnnotation::Loc::LOCAL)?'L':
+			((val_pos.second == VCAnnotation::Loc::REMOTE)?'R':'A');
+		llvm::errs() << loc << "... ";
 
-		// Mutated annotation
-		VCAnnotation mutAnnotation(current->annotation);
-		mutAnnotation.add(ev, val);
-		bool wasAlreadyActive = mutAnnotation.isActiveMlVal(ev, val);
-		if (!wasAlreadyActive)
-			mutAnnotation.addActiveValue(ev, val);
-
-		// Get partial-order refinements that successfully mutate 'po'
-		// such that read event-node 'nd' observes value 'val'
-		std::list<PartialOrder> mutatedPOs =
-			mutationOrderings(po, nd, val, mutAnnotation, wasAlreadyActive);
-
-		// For each mutated partial order:
-	  // 1) linearize it into a trace 2) extend this linearization,
-		// 3) create a new corresponding graph 4) add to worklist
-    while (!mutatedPOs.empty()) {
-      auto mutPO = std::move(mutatedPOs.front());
-			assert(!mutatedPOs.front().first.get());
-			assert(!mutatedPOs.front().second.get());
-			mutatedPOs.pop_front();
-
-			current->graph.to_dot(mutPO, ""); ///////
-
-			std::vector<VCEvent> mutTrace =
-				extendTrace(current->graph.linearize(mutPO), mutUnannot);
-
-      VCGraphVclock mutGraph(current->graph, // base for graph
-														 mutPO, // base for 'original' po
-														 mutTrace, // to extend the graph
-														 mutAnnotation); // to value-close extended 'original'
-      
-			std::unique_ptr<VCTrace> mutatedVCTrace
-				(new VCTrace(std::move(mutTrace),
-										 mutAnnotation,
-										 std::move(mutGraph)));
-			assert(mutTrace.empty() && mutGraph.empty());
-
-			worklist.push_back(std::move(mutatedVCTrace));
-			assert(!mutatedVCTrace.get());
+		auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
+																	(new ThreadPairsVclocks(*(po.first))),
+																	std::unique_ptr<ThreadPairsVclocks>
+																	(new ThreadPairsVclocks(*(po.second))));
+		
+    auto withMutation = VCValClosure(withoutMutation);
+		withMutation.valClose(mutatedPo, nd, &val_pos);
+		
+		if (!withMutation.closed) {
+			// The mutation on 'mutatedPo' failed
+		  llvm::errs() << "FAILED\n";
+      current->graph.to_dot(mutatedPo, "");			
+			mutatedPo.first.reset();
+			mutatedPo.second.reset();
+			continue;
 		}
 
+		// The mutation on 'mutatedPo' succeeded
+		llvm::errs() << "SUCCEEDED\n";
+    current->graph.to_dot(mutatedPo, "");
+		
+		VCAnnotation mutatedAnnotation(current->annotation);
+		mutatedAnnotation.add(*(nd->getEvent()), val_pos);
+
+		std::vector<VCEvent> mutatedTrace =
+			extendTrace(current->graph.linearize(mutatedPo), mutatedUnannot);
+		assert(traceRespectsAnnotation(mutatedTrace, mutatedAnnotation));
+
+		VCGraphVclock mutatedGraph(current->graph,       // base for graph
+															 std::move(mutatedPo), // base for 'original' po
+														   mutatedTrace);        // to extend the graph
+    assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+		
+		std::unique_ptr<VCTrace> mutatedVCTrace
+			(new VCTrace(std::move(mutatedTrace),
+									 std::move(mutatedAnnotation),
+									 std::move(mutatedGraph)));
+		assert(mutatedTrace.empty() && mutatedAnnotation.empty() && mutatedGraph.empty());
+
+		worklist.push_back(std::move(mutatedVCTrace));
+		assert(!mutatedVCTrace.get());
 	}
-  */
+	
 }
 
 /* *************************** */
 /* MUTATE LOCK                 */
 /* *************************** */
 
-void VCExplorer::mutateLock(const PartialOrder& po, const Node *nd)
+void VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd)
 {
 	const VCEvent& ev = *(nd->getEvent());
   assert(isLock(ev));
-
-	// Mutated 'threads with unannotated read'
-	std::unordered_set<int> mutUnannot(current->unannot);
-	assert(mutUnannot.count(nd->getProcessID()));
-	mutUnannot.erase(nd->getProcessID());
-
-	// TODO CONTINUE
 	
+  auto lastLock = current->annotation.getLastLock(ev);
+
+  if (!lastLock.first) {
+    // This lock hasn't been touched before
+		// Trivially realizable
+
+		std::unordered_set<int> mutatedUnannot(current->unannot);
+		assert(mutatedUnannot.count(nd->getProcessID()));
+		mutatedUnannot.erase(nd->getProcessID());
+		
+		auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
+																	(new ThreadPairsVclocks(*(po.first))),
+																	std::unique_ptr<ThreadPairsVclocks>
+																	(new ThreadPairsVclocks(*(po.second))));
+		
+		VCAnnotation mutatedAnnotation(current->annotation);
+		mutatedAnnotation.setLastLock(ev);
+
+		std::vector<VCEvent> mutatedTrace =
+			extendTrace(current->graph.linearize(mutatedPo), mutatedUnannot);
+		assert(traceRespectsAnnotation(mutatedTrace, mutatedAnnotation));
+
+		VCGraphVclock mutatedGraph(current->graph,       // base for graph
+															 std::move(mutatedPo), // base for 'original' po
+														   mutatedTrace);        // to extend the graph
+    assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+
+		std::unique_ptr<VCTrace> mutatedVCTrace
+			(new VCTrace(std::move(mutatedTrace),
+									 std::move(mutatedAnnotation),
+									 std::move(mutatedGraph)));
+		assert(mutatedTrace.empty() && mutatedAnnotation.empty() && mutatedGraph.empty());
+
+		worklist.push_back(std::move(mutatedVCTrace));
+		assert(!mutatedVCTrace.get());
+		return;
+	}
+
+	assert(lastLock.first);
+	auto lastunlockit = current->graph.nodes_iterator(lastLock.second);
+  const Node * lastlocknd = *lastunlockit;
+	const Node * lastunlocknd = nullptr;
+	
+	while (!lastunlockit.atProcessEnd()) {
+    ++lastunlockit;
+		const VCEvent& cand = *((*lastunlockit)->getEvent());
+		if (isUnlock(cand) && cand.ml == nd->getEvent()->ml) {
+      assert(cand.ml == lastlocknd->getEvent()->ml);
+			lastunlocknd = (*lastunlockit);
+			break;
+		}
+	}
+
+	if (!lastunlocknd) {
+    // This lock is currently locked
+		// Trivially unrealizable
+		return;
+	}
+
+	assert(lastunlocknd);
+
+	auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
+																(new ThreadPairsVclocks(*(po.first))),
+																std::unique_ptr<ThreadPairsVclocks>
+																(new ThreadPairsVclocks(*(po.second))));
+
+	auto withMutation = VCValClosure(withoutMutation);
+	withMutation.valCloseLock(mutatedPo, nd, lastunlocknd);
+
+	if (!withMutation.closed) {
+		// The mutation on 'mutatedPo' failed
+		mutatedPo.first.reset();
+		mutatedPo.second.reset();
+		return;
+	}
+
+	// The mutation on 'mutatedPo' succeeded
+
+	std::unordered_set<int> mutatedUnannot(current->unannot);
+	assert(mutatedUnannot.count(nd->getProcessID()));
+	mutatedUnannot.erase(nd->getProcessID());
+	
+	VCAnnotation mutatedAnnotation(current->annotation);
+	mutatedAnnotation.setLastLock(ev);
+
+	std::vector<VCEvent> mutatedTrace =
+		extendTrace(current->graph.linearize(mutatedPo), mutatedUnannot);
+	assert(traceRespectsAnnotation(mutatedTrace, mutatedAnnotation));
+
+	VCGraphVclock mutatedGraph(current->graph,       // base for graph
+														 std::move(mutatedPo), // base for 'original' po
+														 mutatedTrace);        // to extend the graph
+	assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+
+	std::unique_ptr<VCTrace> mutatedVCTrace
+		(new VCTrace(std::move(mutatedTrace),
+								 std::move(mutatedAnnotation),
+								 std::move(mutatedGraph)));
+	assert(mutatedTrace.empty() && mutatedAnnotation.empty() && mutatedGraph.empty());
+
+	worklist.push_back(std::move(mutatedVCTrace));
+	assert(!mutatedVCTrace.get());
+
 }
 
 /* *************************** */
@@ -226,4 +356,56 @@ std::vector<VCEvent> VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
 	++executed_traces;
 
 	return res;
+}
+
+/* *************************** */
+/* TRACE RESPECTS ANNOTATION   */
+/* *************************** */
+
+bool VCExplorer::traceRespectsAnnotation(const std::vector<VCEvent>& trace,
+																				 const VCAnnotation& annotation) const {
+  for (unsigned i=0; i < trace.size(); ++i) {
+		const VCEvent& ev = trace[i];
+		if (isRead(ev) && annotation.defines(ev)) {
+      auto val = annotation.getVal(ev);
+			if (val.first != ev.value)
+				return false;
+			for (int j=i-1; j >= -1; --j) {
+        if (j == -1) {
+					
+          if (val.first != 0)
+						return false;
+					if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
+							val.second != VCAnnotation::Loc::LOCAL)
+						return false;
+					if ((int) current->graph.starRoot() != ev.iid.get_pid() / 2 &&
+							val.second != VCAnnotation::Loc::ANY)
+						return false;
+					
+				} else {
+					
+          const VCEvent& wrev = trace[j];
+          if (isWrite(wrev) && wrev.ml == ev.ml) {
+						if (val.first != wrev.value)
+							return false;
+						if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
+								ev.iid.get_pid() == wrev.iid.get_pid() &&
+								val.second != VCAnnotation::Loc::LOCAL)
+							return false;
+						if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
+								ev.iid.get_pid() != wrev.iid.get_pid() &&
+								val.second != VCAnnotation::Loc::REMOTE)
+							return false;						
+						if ((int) current->graph.starRoot() != ev.iid.get_pid() / 2 &&
+								val.second != VCAnnotation::Loc::ANY)
+							return false;
+						break;
+					}
+					
+				}
+			}
+		}
+	}
+
+	return true;
 }

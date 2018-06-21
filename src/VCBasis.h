@@ -61,19 +61,20 @@ class VCBasis {
   typedef std::vector<ProcessT> ProcessesT;
 
  private:
-	const unsigned star_root_index = 1;
+	const unsigned star_root_index;
 	
  protected:
   ProcessesT processes;
 	std::unordered_map<CPid, unsigned> cpid_to_processid;
 	std::unordered_map<const VCEvent *, Node *> event_to_node;
-	std::unordered_map<VCIID, Node *> lock_vciid_to_node;
+	std::unordered_map<VCIID, const Node *> lock_vciid_to_node,
+		                                      read_vciid_to_node;
 	
  public:	
 	// Basis is not responsible for any resources
 	// All Node* allocation and deletion happens
 	// in the graph classes that inherit Basis
-  VCBasis() = default;
+  VCBasis(int star_root_index) : star_root_index(star_root_index) {}
   VCBasis(VCBasis&& oth) = default;
   VCBasis& operator=(VCBasis&& oth) = delete;
   VCBasis(const VCBasis& oth) = default;
@@ -203,6 +204,9 @@ class VCBasis {
 			tmp.jumpToProcessStart();
 			return tmp;
 		}
+		bool atProcessStart() const {
+      return event_idx == 0;
+		}
 
 		// Last event of the current process
 		void jumpToProcessEnd() {
@@ -213,6 +217,10 @@ class VCBasis {
 			auto tmp = *this;
 			tmp.jumpToProcessEnd();
 			return tmp;
+		}
+		bool atProcessEnd() const {
+      return (process_idx < processes.size() &&
+							event_idx == processes[process_idx].size() - 1);
 		}
 
 		// First event of the next process
@@ -283,7 +291,7 @@ class VCBasis {
   }
 	
 	// Node corresponding to the given lock VCIID
-	const Node *getNode(const VCIID& vciid) const {
+	const Node *getLockNode(const VCIID& vciid) const {
     auto it = lock_vciid_to_node.find(vciid);
 		assert(it != lock_vciid_to_node.end()
 					 && "Given VCIID is not tied to any lock event");
@@ -292,7 +300,7 @@ class VCBasis {
 	
 	// Iterator corresponding to the given lock VCIID
   events_iterator nodes_iterator(const VCIID& vciid) const {
-    return nodes_iterator(getNode(vciid));
+    return nodes_iterator(getLockNode(vciid));
 	}
 
 	// Get an iterator pointing to (the beginning of) the given CPid

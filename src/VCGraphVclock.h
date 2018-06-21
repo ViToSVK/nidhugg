@@ -23,6 +23,7 @@
 
 #include <list>
 #include <vector>
+#include <unordered_set>
 
 #include "VCBasis.h"
 #include "VCAnnotation.h"
@@ -90,8 +91,9 @@ class VCGraphVclock : public VCBasis {
 	
 	VCGraphVclock() = delete;
 	
-  VCGraphVclock(const std::vector<VCEvent>& trace)
-	: VCBasis(),
+  VCGraphVclock(const std::vector<VCEvent>& trace,
+							  int star_root_index)
+	: VCBasis(star_root_index),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
 		wNonrootUnord(),
@@ -99,8 +101,12 @@ class VCGraphVclock : public VCBasis {
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
 						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
 		worklist_ready(),
-		worklist_done()		
-			{ extendGraph(trace); }
+		worklist_done()
+			{
+				extendGraph(trace);
+				assert(starRoot() < processes.size() &&
+							 "Star root index too big (not enough processes in the initial trace)");
+			}
 
   VCGraphVclock(VCGraphVclock&& oth) = default;
 
@@ -108,18 +114,17 @@ class VCGraphVclock : public VCBasis {
 
   VCGraphVclock(const VCGraphVclock& oth) = delete;
 
-	// Partial order that will be copied as original
+	// Partial order that will be moved as original
 	// Trace that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
-							  const PartialOrder& po,
+							  PartialOrder&& po,
 								const std::vector<VCEvent>& trace)
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
 		wNonrootUnord(),
 		wRoot(),
-		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
-						 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second)))),
+		original(std::move(po)),
 		worklist_ready(),
 		worklist_done()
 			{
@@ -136,6 +141,7 @@ class VCGraphVclock : public VCBasis {
 				// cpid_to_processid -- no need to fix
 				// event_to_node -- fixed below
 				// lock_vciid_to_node -- no need to fix
+				// read_vciid_to_node -- no need to fix
 				extendGraph(trace);
 	    }
 	
@@ -236,13 +242,13 @@ class VCGraphVclock : public VCBasis {
 	// This method maintains:
 	// 1) thread-pair-wise transitivity
 	// 2) complete transitivity
-  void addEdge(const Node *n1, const Node *n2, const PartialOrder& po);
+  void addEdge(const Node *n1, const Node *n2, const PartialOrder& po) const;
 
 	// Helper method for addEdge,
 	// maintains thread-pair-wise transitivity
 	void addEdgeHelp(unsigned ti, unsigned ti_evx,
 									 unsigned tj, unsigned tj_evx,
-									 const PartialOrder& po);
+									 const PartialOrder& po) const;
 	
  public:
 
@@ -252,6 +258,19 @@ class VCGraphVclock : public VCBasis {
 
 	friend class VCValClosure;
 
+  typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
+	
+	std::unordered_map<const Node *, AnnotationValueT> getValueFunction
+		(const VCAnnotation& annot) const {
+		auto result = std::unordered_map<const Node *, AnnotationValueT>();
+		result.reserve(annot.size());
+		
+    for (auto& key_val : annot)
+      result.emplace(read_vciid_to_node.at(key_val.first), key_val.second);
+
+		return result;
+	}
+	
 	// used just before ordering non-star-root writes of trace extension
   void initWorklist() {
     assert(worklist_ready.empty());
@@ -292,7 +311,7 @@ class VCGraphVclock : public VCBasis {
 		return result;
 	}
 
-  std::unordered_set<int> getMutateValues(const PartialOrder& po, const Node *nd) const;
+  std::unordered_set<AnnotationValueT> getMutateValues(const PartialOrder& po, const Node *nd) const;
 
 	std::vector<VCEvent> linearize(const PartialOrder& po) const;
 
@@ -301,10 +320,10 @@ class VCGraphVclock : public VCBasis {
   /* *************************** */
 	
   void dump_po(const PartialOrder& po) const;
-
 	void dump_po() const { dump_po(original); }
 	
-  void to_dot(const PartialOrder& po, const char *edge_params=nullptr) const;
+  void to_dot(const PartialOrder& po, const char *edge_params = nullptr) const;
+	void to_dot(const char *edge_params = nullptr) const { to_dot(original, edge_params); }
 	
 };
 

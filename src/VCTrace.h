@@ -49,17 +49,18 @@ class VCTrace {
 
   VCTrace() = delete;
 	
-  VCTrace(std::vector<VCEvent>&& trace)
+  VCTrace(std::vector<VCEvent>&& trace,
+				  int star_root_index)
 	: trace(std::move(trace)),
 		annotation(),
-		graph(this->trace),
+		graph(this->trace, star_root_index),
 		unannot() {};
 
   VCTrace(std::vector<VCEvent>&& trace,
-					VCAnnotation& annotation,
+					VCAnnotation&& annotation,
 					VCGraphVclock&& graph)
 	: trace(std::move(trace)),
-		annotation(annotation),
+		annotation(std::move(annotation)),
 		graph(std::move(graph)),
 		unannot() {};
 	

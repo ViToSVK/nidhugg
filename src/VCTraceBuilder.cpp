@@ -27,9 +27,11 @@
 
 bool VCTraceBuilder::reset()
 {
-  // Construct the explorer with the initial trace
-  VCExplorer explorer = VCExplorer(std::move(prefix), *this);
-	// prefix is empty now (as desired)
+  // Construct the explorer with
+	// the initial trace and
+	// the star_root_index
+  VCExplorer explorer = VCExplorer(std::move(prefix), *this, 1);
+	assert(prefix.empty());
 	
   // Call the main method
   explorer.explore();

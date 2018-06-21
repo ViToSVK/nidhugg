@@ -25,7 +25,6 @@
 #include "VCHelpers.h"
 
 #include <unordered_map>
-#include <unordered_set>
 
 class VCAnnotation {
  public:
@@ -68,7 +67,7 @@ class VCAnnotation {
 
  private:
 
-  void add(AnnotationKeyT&& a, AnnotationValueT&& b) {
+  void add(AnnotationKeyT&& a, const AnnotationValueT& b) {
 		auto it = mapping.find(a);
 		assert(it == mapping.end());
     mapping.emplace_hint(it, a, b);
@@ -77,10 +76,20 @@ class VCAnnotation {
  public:
 
   // We DO NOT keep locks in the mapping
-  void add(const VCEvent& ev, int val, Loc loc) {
+  void add(const VCEvent& ev, const AnnotationValueT& val_loc) {
 		assert(isRead(ev));
     add(AnnotationKeyT(ev.cpid, ev.instruction_order),
-				AnnotationValueT(val, loc));
+				val_loc);
+	}
+
+	bool defines(const VCEvent& ev) const {
+		assert(isRead(ev));
+    return (mapping.find(AnnotationKeyT(ev)) != mapping.end());
+	}
+
+	AnnotationValueT getVal(const VCEvent& ev) const {
+    assert(isRead(ev));
+		return mapping.at(AnnotationKeyT(ev));
 	}
 
   /* *************************** */
@@ -103,8 +112,29 @@ class VCAnnotation {
 			return {false, AnnotationKeyT()};
 		else
 			return {true, it->second};
-	}	
+	}
+
+	bool isLastLock(const VCEvent& ev) const {
+    assert(isLock(ev));
+		auto it = lastlock.find(ev.ml);
+		if (it == lastlock.end())
+			return false;
+		else
+			return (it->second != AnnotationKeyT(ev));		
+	}
 	
 };
+
+namespace std {
+  template <>
+	struct hash<std::pair<int, VCAnnotation::Loc>>
+  {
+    std::size_t operator()(const std::pair<int, VCAnnotation::Loc>& val_loc) const
+    {
+      return hash<int>()(val_loc.first) +
+				(size_t) val_loc.second;
+    }
+  };
+}
 
 #endif // _VC_ANNOTATION_H_

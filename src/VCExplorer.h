@@ -40,22 +40,15 @@ class VCExplorer {
 	
   std::list<PartialOrder> extensionEventsOrderings();
 
-	// result: true iff succesfully closed
-  VCValClosure valueClose(const VCValClosure& tocopy, const PartialOrder& po,
-													const Node * newnd,
-													const std::pair<int, VCAnnotation::Loc> * newval) {
-    auto closure = VCValClosure(tocopy);
-		closure.prepare(po, newnd);
-		closure.valClose(po, newnd, newval);
-		return closure;
-	}
+	void mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
 
-	void mutateRead(const PartialOrder& po, const Node *nd);
-
-	void mutateLock(const PartialOrder& po, const Node *nd);
+	void mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
 
   std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
 																	 const std::unordered_set<int>& unannot);
+
+	bool traceRespectsAnnotation(const std::vector<VCEvent>& trace,
+															 const VCAnnotation& annotation) const;
 	
   /* *************************** */
   /* STATISTICS                  */
@@ -77,9 +70,9 @@ class VCExplorer {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb)
+  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb, int star_root_index)
 		: originalTB(tb) {
-    worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace))));
+    worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace), star_root_index)));
   }
   
 };

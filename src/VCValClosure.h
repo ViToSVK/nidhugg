@@ -39,12 +39,34 @@ class VCValClosure {
 
 	//
 
+ private:
+	
   void prepareOne(const PartialOrder& po, const Node * readnd);
 	
-	void prepare(const PartialOrder& po, const Node * newread);  	
+	void prepare(const PartialOrder& po, const Node * newread);
+
+	void updateVisibleCache(const PartialOrder& po, const Node * readnd);
+
+	std::pair<bool, bool> ruleOne
+		(const PartialOrder& po, const Node * readnd,
+		 const std::pair<int, VCAnnotation::Loc>& val);
+
+  std::pair<bool, bool> ruleTwo
+		(const PartialOrder& po, const Node * readnd,
+		 const std::pair<int, VCAnnotation::Loc>& val);
+
+  std::pair<bool, bool> ruleThree
+		(const PartialOrder& po, const Node * readnd,
+		 const std::pair<int, VCAnnotation::Loc>& val);
+
+ public:
 	
 	void valClose(const PartialOrder& po, const Node * newread,
 								const std::pair<int, VCAnnotation::Loc> * newval);
+
+	void valCloseLock(const PartialOrder& po,
+										const Node * locknode,
+										const Node * lastunlocknode);
 
 	//
 
@@ -53,7 +75,7 @@ class VCValClosure {
 	const std::unordered_map
 	<const Node *, AnnotationValueT>& valFunction;
 	
-	bool result;
+	bool closed;
 	
 	std::unordered_map
 	<SymAddrSize, std::vector<const Node *>> wNonroot;
