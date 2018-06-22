@@ -40,6 +40,11 @@ class VCValClosure {
 	//
 
  private:
+
+	inline bool isGood(const Node * readnd,
+										 const std::pair<int, VCAnnotation::Loc>& val) {
+    return readnd->getEvent()->value == val.first;
+	}
 	
   void prepareOne(const PartialOrder& po, const Node * readnd);
 	

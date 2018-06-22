@@ -373,7 +373,7 @@ bool VCExplorer::traceRespectsAnnotation(const std::vector<VCEvent>& trace,
 			for (int j=i-1; j >= -1; --j) {
         if (j == -1) {
 					
-          if (val.first != 0)
+          if (val.first != 0 || ev.value != 0)
 						return false;
 					if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
 							val.second != VCAnnotation::Loc::LOCAL)
@@ -381,11 +381,13 @@ bool VCExplorer::traceRespectsAnnotation(const std::vector<VCEvent>& trace,
 					if ((int) current->graph.starRoot() != ev.iid.get_pid() / 2 &&
 							val.second != VCAnnotation::Loc::ANY)
 						return false;
+					break;
 					
 				} else {
 					
           const VCEvent& wrev = trace[j];
           if (isWrite(wrev) && wrev.ml == ev.ml) {
+						assert(wrev.value == ev.value);
 						if (val.first != wrev.value)
 							return false;
 						if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
