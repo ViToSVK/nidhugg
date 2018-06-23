@@ -59,6 +59,11 @@ class VCAnnotation {
   iterator end() { return mapping.end(); }
   const_iterator end() const { return mapping.end(); }
 
+  bool operator==(const VCAnnotation& oth) const {
+    return (mapping == oth.mapping &&
+						lastlock == oth.lastlock);		
+	}
+	
   void dump() const;
 	
   /* *************************** */
@@ -135,6 +140,19 @@ namespace std {
 				(size_t) val_loc.second;
     }
   };
+
+	template <>
+	struct hash<VCAnnotation>
+	{
+    std::size_t operator()(const VCAnnotation& annot) const
+    {
+			std::size_t result = (annot.size() << 12);
+			for (auto& an : annot)
+				result += (an.first.instruction_order +
+									 hash<std::pair<int, VCAnnotation::Loc>>()(an.second));
+      return result;
+    }
+	};
 }
 
 #endif // _VC_ANNOTATION_H_

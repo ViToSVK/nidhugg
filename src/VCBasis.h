@@ -29,8 +29,8 @@
 class Node {
 	// Indices into the basis
 	// (INT_MAX, INT_MAX) -> the initial node
-	unsigned process_id;
-	unsigned event_id;
+	const unsigned process_id;
+	const unsigned event_id;
 	// Pointer to the Event
 	// nullptr -> the initial node
 	const VCEvent *event;
@@ -52,7 +52,10 @@ class Node {
 	unsigned getProcessID() const { return process_id; }
 	unsigned getEventID() const { return event_id; }
 	const VCEvent *getEvent() const { return event; }
-	void setEvent(const VCEvent *ev) { event = ev; }
+	void setEvent(const VCEvent *ev) {
+		assert(process_id != INT_MAX);
+		event = ev;
+	}
 };
 
 class VCBasis {

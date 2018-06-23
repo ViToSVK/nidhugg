@@ -21,6 +21,7 @@
 #ifndef _VC_VALCLOSURE_H
 #define _VC_VALCLOSURE_H
 
+#include "Debug.h"
 #include "VCGraphVclock.h"
 
 class VCValClosure {
@@ -30,7 +31,9 @@ class VCValClosure {
 	
 	VCValClosure(const VCGraphVclock& gr, const std::unordered_map
 						 <const Node *, AnnotationValueT>& vf)
-	: graph(gr), valFunction(vf) {}
+	: graph(gr), valFunction(vf) {
+    assert(!(graph.initial_node->getEvent()));
+	}
 
 	VCValClosure(const VCValClosure& oth) = default;
 	VCValClosure& operator=(VCValClosure& oth) = delete;
@@ -41,9 +44,12 @@ class VCValClosure {
 
  private:
 
-	inline bool isGood(const Node * readnd,
+	inline bool isGood(const Node * writend,
 										 const std::pair<int, VCAnnotation::Loc>& val) {
-    return readnd->getEvent()->value == val.first;
+		if (!(writend->getEvent()))
+			return 0 == val.first;
+		else
+      return writend->getEvent()->value == val.first;
 	}
 	
   void prepareOne(const PartialOrder& po, const Node * readnd);

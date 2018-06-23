@@ -38,7 +38,7 @@ bool VCTraceBuilder::reset()
 
   // Print the result statistics
   explorer.print_stats();
-  
+	
   return false;
 }
 
@@ -226,12 +226,15 @@ void VCTraceBuilder::refuse_schedule()
   // Here used to be:
   // --threads[p].event_indices[p];
 
+  --threads[p].executed_instructions; //
+	
   if (curnode().size == 1) {
 		// Refused instruction wanted to create a new event,
 		// therefore this entire event needs to be deleted    
     // Unmark ownership of this new event
     assert((int) threads[p].event_indices.back() == prefix_idx);
 		threads[p].event_indices.pop_back();
+		--threads[p].executed_events; //
 		// Delete this new event
     prefix.pop_back();
     --prefix_idx;
@@ -255,10 +258,8 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
     curn.ml = *ml; // prev I had ml->addr which loses some info
   curn.instruction = current_inst;
 
-	if (sch_replay) {
-    assert(replay_trace[prefix_idx].instruction == current_inst);		
-		assert(replay_trace[prefix_idx].instruction == prefix[prefix_idx].instruction);
-	}
+	if (sch_replay)
+		assert(replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
 }
 
 void VCTraceBuilder::metadata(const llvm::MDNode *md)

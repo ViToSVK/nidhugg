@@ -131,13 +131,17 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			assert(nodes.count(nd));
 			assert(nd->getEvent()->equalVCIID(*ev)
 						 && "Original part of the basis is changed in 'trace'");
-			// since VCIID's are equal, lock_vciid_to_node is
-			// already set up for 'nd' in case 'nd' is a lock node
-			// same goes for read_vciid_to_node if 'nd' is a read node
-			assert(!isLock(ev) ||
-						 lock_vciid_to_node.at(VCIID(*ev)) == nd);
-			assert(!isRead(ev) ||
-						 read_vciid_to_node.at(VCIID(*ev)) == nd);
+
+			if (isLock(ev)) {
+        auto vciidit = lock_vciid_to_node.find(VCIID(*ev));
+				assert(vciidit != lock_vciid_to_node.end());
+				vciidit->second = nd;
+			}
+			if (isRead(ev)) {
+        auto vciidit = read_vciid_to_node.find(VCIID(*ev));
+				assert(vciidit != read_vciid_to_node.end());
+				vciidit->second = nd;
+			}
 			
 			auto etnit = event_to_node.find(nd->getEvent());
 			assert(etnit != event_to_node.end());
@@ -207,6 +211,8 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 		}
 
 	}
+
+	assert(!(initial_node->getEvent()));
 
 	assert(processes.size() == cur_evidx.size());
 	for (unsigned i = 0; i < cur_evidx.size(); ++i) {
@@ -606,6 +612,8 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 	auto current = std::vector<unsigned>(processes.size(), 0);
 	ThreadPairsVclocks& pred = *(po.second);
 
+  // llvm::errs() << "lin:";                                                             ///////////////////////
+	
   bool done = false;	
 	while (!done) {
 		// star-root process makes one step,
@@ -649,6 +657,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 			// perform the head, replace in reqNodes with its
 			// thread successor (if that one is also required)
 			result.push_back(headnd->getEvent()->blank_copy());
+			// llvm::errs() << " " << headnd->getProcessID() << "-" << headnd->getEventID();          ///////////////////////
 			unsigned tid = headnd->getProcessID();
 			++current[tid];
 			assert(reqNodes.count(headnd));
@@ -661,11 +670,14 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
       // perform one step of the star-root process
 			result.push_back(processes[starRoot()][ current[starRoot()] ]
 											 ->getEvent()->blank_copy());
+			// llvm::errs() << " " << starRoot() << "-" << current[starRoot()];                     ///////////////////////
 			++current[starRoot()];
 		} else
 			done = true;
 		
 	}
+
+	// llvm::errs() << "\n";                                                                  /////////////////////
 	
   return result;
 }

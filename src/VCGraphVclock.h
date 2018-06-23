@@ -25,6 +25,7 @@
 #include <vector>
 #include <unordered_set>
 
+#include "Debug.h"
 #include "VCBasis.h"
 #include "VCAnnotation.h"
 
@@ -50,6 +51,7 @@ class VCGraphVclock : public VCBasis {
 	// smaller b => 'stronger' edge
 	
   const Node *initial_node;
+	
 	std::set<const Node *> nodes;
 
 	std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
@@ -72,9 +74,11 @@ class VCGraphVclock : public VCBasis {
 	
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
-						event_to_node.empty() && lock_vciid_to_node.empty() &&
+						event_to_node.empty() &&
+						lock_vciid_to_node.empty() && read_vciid_to_node.empty() &&
 						!initial_node && nodes.empty() &&
 						!original.first.get() && !original.second.get() &&
+						wNonrootUnord.empty() && wRoot.empty() &&
 						worklist_ready.empty() && worklist_done.empty());
 	}
 	
@@ -108,7 +112,19 @@ class VCGraphVclock : public VCBasis {
 							 "Star root index too big (not enough processes in the initial trace)");
 			}
 
-  VCGraphVclock(VCGraphVclock&& oth) = default;
+  VCGraphVclock(VCGraphVclock&& oth)
+	: VCBasis(std::move(oth)),
+		initial_node(oth.initial_node),
+		nodes(std::move(oth.nodes)),
+		wNonrootUnord(std::move(oth.wNonrootUnord)),
+		wRoot(std::move(oth.wRoot)),
+		original(std::move(oth.original)),
+		worklist_ready(std::move(oth.worklist_ready)),
+		worklist_done(std::move(oth.worklist_done))
+			{
+        oth.initial_node = nullptr;
+				assert(oth.empty());
+			}
 
   VCGraphVclock& operator=(VCGraphVclock&& oth) = delete;
 
@@ -140,9 +156,10 @@ class VCGraphVclock : public VCBasis {
 				// processes -- fixed above
 				// cpid_to_processid -- no need to fix
 				// event_to_node -- fixed below
-				// lock_vciid_to_node -- no need to fix
-				// read_vciid_to_node -- no need to fix
+				// lock_vciid_to_node -- fixed below
+				// read_vciid_to_node -- fixed below
 				extendGraph(trace);
+				assert(!(initial_node->getEvent()));
 	    }
 	
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;

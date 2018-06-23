@@ -69,7 +69,7 @@ class VCEvent {
 	// Only /**/ attributes are copied
 	// Rest will be computed during the replay
  VCEvent(const VCEvent& oth, bool blank)
-    : kind(Kind::DUMMY),
+    : kind(oth.kind),
 		  iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
 	    size(oth.size) /**/, md(0), instruction(0),
 		  may_conflict(false),

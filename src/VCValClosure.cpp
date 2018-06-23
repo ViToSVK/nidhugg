@@ -38,6 +38,13 @@ void VCValClosure::prepareOne
 		wNonroot[ndml].reserve(itunord->second.size());
 		for (auto& nd : itunord->second)
 			wNonroot[ndml].push_back(nd);
+		#ifndef NDEBUG
+		for (auto it1 = wNonroot[ndml].begin();
+				 it1 != wNonroot[ndml].end(); ++it1)
+			for (auto it2 = wNonroot[ndml].begin();
+					 it2 != it1; ++it2)
+				assert(graph.areOrdered(*it1, *it2, po));
+		#endif		
 		std::sort(wNonroot[ndml].begin(), wNonroot[ndml].end(),
 							VCGraphVclock::POcomp(graph, po));
 	}
@@ -109,7 +116,7 @@ void VCValClosure::prepareOne
 
   const Node * localcandidate =
 		(idx >= 0) ? localwrites[idx] : graph.initial_node;
-
+	
   assert(graph.hasEdge(localcandidate, readnd, po));
 	
 	// Check if the local write is covered
@@ -167,8 +174,10 @@ void VCValClosure::prepare
 			}
 			#endif
 		} else {
-			for (auto& fun : valFunction)
-				prepareOne(po, fun.first);
+			for (auto& fun : valFunction) {
+        prepareOne(po, fun.first);
+			}
+				
 		}
 
 	}
@@ -314,8 +323,9 @@ std::pair<bool, bool> VCValClosure::ruleOne
 
 		while (!isGood(wRemote[low], val)) {
       ++low;
-			if (low > high)
+			if (low > high) {
 				return {true, false};
+			}
 		}
 
 		assert(isGood(wRemote[low], val) && low <= high &&
@@ -356,6 +366,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 
 	assert(low < (int) wRemote.size() && low <= high &&
 				 !graph.hasEdge(readnd, wRemote[low], po));
+	assert(!wLocal || !graph.hasEdge(wRemote[low], wLocal, po));
 	if (isGood(wRemote[low], val) &&
 			graph.hasEdge(wRemote[low], readnd, po)) {
 		// the remote head write is good and
@@ -419,26 +430,23 @@ std::pair<bool, bool> VCValClosure::ruleTwo
       return {false, false};
 		}
 
-		if (low <= high && isGood(wRemote[high], val)) {
+    assert(low <= high &&
+					 "either local not good then Rule1, or an edge local->remote");
+		
+		if (isGood(wRemote[high], val)) {
       // the remote tail is good
 			assert(!graph.hasEdge(readnd, wRemote[high], po));
 			assert(!wLocal || !graph.hasEdge(wRemote[high], wLocal, po));
 			return {false, false};
 		}
 
-		if (low > high)
-			return {true, false};
-
 		// there is no good tail, we need
 		// to create one by adding an edge
 		const Node * readbeforethis = nullptr;
 		while (!readbeforethis) {
       assert(low <= high && !isGood(wRemote[high], val));
-			if (graph.hasEdge(wRemote[high], readnd, po)) {
-        // there is one visible remote write and it HB readnode
-				assert(low == high);
-				return {true, false};
-			}
+			assert(!graph.hasEdge(wRemote[high], readnd, po)
+						 && "this can't be since it violates Rule1");
 			if (low <= high - 1 &&
 					isGood(wRemote[high-1], val)) {
 				// adding this edge will create a remote good tail
@@ -457,8 +465,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 				assert(!graph.areOrdered(readnd, readbeforethis, po));
 				break;
 			}
-			if (low == high)
-				return {true, false};
+			assert(low < high && "otherwise some previous if would go through");
 			--high;
 		}
 
@@ -475,27 +482,22 @@ std::pair<bool, bool> VCValClosure::ruleTwo
     // Root readnd with LOCAL location
     bool localGood = (wLocal && isGood(wLocal, val));
 
-    if (!localGood)
-			return {true, false};
+		assert(localGood && "Rule1");
 		
-		if (localGood &&
-				(low > high || !graph.hasEdge(wLocal, wRemote[high], po))) {
+		if (low > high || !graph.hasEdge(wLocal, wRemote[high], po)) {
 			// the local write is good and tail
       return {false, false};
 		}
 
-		assert(localGood && graph.hasEdge(wLocal, wRemote[high], po));
+		assert(graph.hasEdge(wLocal, wRemote[high], po));
 		
     // we need to make the local write a tail
 		const Node * readbeforethis = nullptr;
 		while (!readbeforethis) {
       assert(low <= high);
 			assert(graph.hasEdge(wLocal, wRemote[high], po));
-			if (graph.hasEdge(wRemote[high], readnd, po)) {
-        // there is one visible remote write and it HB readnode
-				assert(low == high);
-				return {true, false};
-			}
+			assert(!graph.hasEdge(wRemote[high], readnd, po)
+						 && "local is not hidden");
 			if (low == high || (low <= high - 1 &&
 													!graph.hasEdge(wLocal, wRemote[high-1], po))) {
         // adding this edge will make local write a good tail
@@ -504,8 +506,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 				assert(!graph.areOrdered(readnd, readbeforethis, po));
 				break;
 			}
-			if (low == high)
-				return {true, false};
+			assert(low < high && "otherwise the previous if would go through");
 			--high;
 		}
 
@@ -519,25 +520,21 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 	assert(val.second == VCAnnotation::Loc::REMOTE);
 
 	// Root readnd with REMOTE location
-	if (low <= high && isGood(wRemote[high], val)) {
+  assert(low <= high && "Rule1");
+	
+	if (isGood(wRemote[high], val)) {
 		// the remote tail is good
 		assert(!graph.hasEdge(readnd, wRemote[high], po));
 		assert(!wLocal || !graph.hasEdge(wRemote[high], wLocal, po));
 		return {false, false};
 	}
-	
-	if (low > high)
-		return {true, false};
 
 	// we need to make the remote tail good
 	const Node * readbeforethis = nullptr;
 	while (!readbeforethis) {
 		assert(low <= high && !isGood(wRemote[high], val));
-		if (graph.hasEdge(wRemote[high], readnd, po)) {
-			// there is one visible remote write and it HB readnode
-			assert(low == high);
-			return {true, false};
-		}
+		assert(!graph.hasEdge(wRemote[high], readnd, po)
+					 && "this can't be since it violates Rule1");
 		if (low <= high - 1 &&
 				isGood(wRemote[high-1], val)) {
 			// adding this edge will create a remote good tail
@@ -545,8 +542,8 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 			assert(!graph.areOrdered(readnd, readbeforethis, po));
 			break;
 		}
-		if (low == high)
-			return {true, false};
+		assert(low < high
+					 && "otherwise the if in prev iteration would go through");
 		--high;
 	}
 
@@ -591,19 +588,24 @@ std::pair<bool, bool> VCValClosure::ruleThree
     bool localBad = false;
 		if (wLocal && !isGood(wLocal, val)) {
       assert(low <= high && isGood(wRemote[low], val) &&
-						 graph.hasEdge(wRemote[low], readnd, po) && "Rule1");
+						 graph.hasEdge(wRemote[low], readnd, po) &&
+						 !graph.hasEdge(wRemote[low], wLocal, po) && "Rule1");
 			localBad = true;
 		}
 
 		bool remoteHeadBadAndHB = false;
     if (low <= high && !isGood(wRemote[low], val)) {
-      assert(wLocal && isGood(wLocal, val) && "Rule1");
-			assert(!graph.hasEdge(wRemote[low], wLocal, po));
-			if (graph.hasEdge(wRemote[low], readnd, po))
-				remoteHeadBadAndHB = true;
+      assert(wLocal && isGood(wLocal, val) && "Rule1" &&
+						 !graph.hasEdge(wRemote[low], wLocal, po));
+			if (graph.hasEdge(wRemote[low], readnd, po)) {
+				// since HB read, local can't HB it since local
+				// is not covered; this makes remote[low] a head
+				assert(!graph.hasEdge(wLocal, wRemote[low], po));
+        remoteHeadBadAndHB = true;
+			}
 		}
 
-		assert(!localBad || !remoteHeadBadAndHB);
+		assert((!localBad || !remoteHeadBadAndHB) && "Rule1");
 
 		if (!localBad && !remoteHeadBadAndHB)
 		  return {false, false};
@@ -627,17 +629,20 @@ std::pair<bool, bool> VCValClosure::ruleThree
 		}
 
 		assert(remoteHeadBadAndHB);
-		// first look if there is a good remote write
-		// if yes, no edges have to be added
-		for (int ridx = high; ridx>low; --ridx)
-			if (isGood(wRemote[ridx], val)) {
-        assert(!graph.areOrdered(wRemote[ridx], readnd, po));
+		// look if there is a good remote write
+		// if yes, no edges should be added
+		for (int ridx = high; ridx>low; --ridx) {
+      assert(!graph.areOrdered(wRemote[ridx], readnd, po));
+			if (isGood(wRemote[ridx], val))
 				return {false, false};
-			}
+		}
 
 		// it has to HB the remote write (ie the good tail)
+		// and therefore get covered
 		assert(wLocal && isGood(wLocal, val) &&
-					 !graph.areOrdered(wRemote[low], wLocal, po));
+					 !graph.areOrdered(wRemote[low], wLocal, po) &&
+					 !graph.areOrdered(wRemote[high], wLocal, po)
+					 && "Rule1 & 2 & no remote good tail & remote is head");
 		graph.addEdge(wRemote[low], wLocal, po);
 		++low;
 
@@ -649,14 +654,38 @@ std::pair<bool, bool> VCValClosure::ruleThree
 	if (val.second == VCAnnotation::Loc::LOCAL) {
     // Root readnd with LOCAL location
 
-		return {false, false};
+    assert(wLocal && isGood(wLocal, val) && "Rule1");
+		assert((low > high || !graph.hasEdge(wLocal, wRemote[high], po))
+					 && "Rule2");
+
+		if (low > high)
+		  return {false, false};
+
+		assert(!graph.areOrdered(wRemote[low], wLocal, po));
+		if (!graph.hasEdge(wRemote[low], readnd, po))
+			return {false, false};
+
+		graph.addEdge(wRemote[low], wLocal, po);
+		return {false, true};
 	}
 
 	assert(val.second == VCAnnotation::Loc::REMOTE);
 
 	// Root readnd with REMOTE location
 
-	return {false, false};
+  assert(low <= high && isGood(wRemote[low], val) &&
+				 (!wLocal || !graph.areOrdered(wRemote[low], wLocal, po))
+				 && graph.hasEdge(wRemote[low], readnd, po)
+				 && "Rule1");
+	assert(isGood(wRemote[high], val) &&
+				 (!wLocal || !graph.hasEdge(wRemote[high], wLocal, po))
+				 && "Rule2");
+
+	if (!wLocal || graph.hasEdge(wLocal, wRemote[high], po))
+		return {false, false};
+
+	graph.addEdge(wLocal, wRemote[high], po);
+	return {false, true};
 }
 
 /* *************************** */
@@ -680,12 +709,10 @@ void VCValClosure::valClose
 			if (res.first) { closed = false; return; }
 			if (res.second) change = true;
 			// Rule2
-      res = ruleTwo(po, read_val.first, read_val.second);
-			if (res.first) { closed = false; return; }
+      res = ruleTwo(po, read_val.first, read_val.second); assert(!res.first);
 			if (res.second) change = true;
       //Rule3
-      res = ruleThree(po, read_val.first, read_val.second);
-			if (res.first) { closed = false; return; }
+      res = ruleThree(po, read_val.first, read_val.second); assert(!res.first);
 			if (res.second) change = true;
 		}
 		if (newread) {
@@ -693,15 +720,12 @@ void VCValClosure::valClose
 			updateVisibleCache(po, newread);
       // Rule1
       auto res = ruleOne(po, newread, *newval);
-			if (res.first) { closed = false; return; }
 			if (res.second) change = true;
 			// Rule2
-      res = ruleTwo(po, newread, *newval);
-			if (res.first) { closed = false; return; }
+      res = ruleTwo(po, newread, *newval); assert(!res.first);
 			if (res.second) change = true;
       //Rule3
-      res = ruleThree(po, newread, *newval);
-			if (res.first) { closed = false; return; }
+      res = ruleThree(po, newread, *newval); assert(!res.first);
 			if (res.second) change = true;
 		}
 	}
