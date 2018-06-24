@@ -21,10 +21,10 @@
 #ifndef _VC_BASIS_H_
 #define _VC_BASIS_H_
 
+#include "VCEvent.h"
+
 #include <vector>
 #include <unordered_map>
-
-#include "VCIID.h"
 
 class Node {
 	// Indices into the basis
@@ -70,8 +70,6 @@ class VCBasis {
   ProcessesT processes;
 	std::unordered_map<CPid, unsigned> cpid_to_processid;
 	std::unordered_map<const VCEvent *, Node *> event_to_node;
-	std::unordered_map<VCIID, const Node *> lock_vciid_to_node,
-		                                      read_vciid_to_node;
 	
  public:	
 	// Basis is not responsible for any resources
@@ -130,7 +128,8 @@ class VCBasis {
 		: processes(processes), process_idx(end ? processes.size() : 0), event_idx(0) {}
 
 		events_iterator(const ProcessesT& processes, unsigned process, unsigned event)
-		: processes(processes), process_idx(process), event_idx(event) {}
+		: processes(processes), process_idx(process), event_idx(event)
+		{ assert(process < processes.size() && event < processes[process].size()); }
 
 		friend class VCBasis;
 		
@@ -270,10 +269,10 @@ class VCBasis {
   events_iterator nodes_iterator(unsigned process = 0, unsigned event = 0) const {
     return events_iterator(processes, process, event);
   }
-	events_iterator nodes_process_end(unsigned process = 0) const {
-    return events_iterator(processes, process, processes[process].size() - 1);
-	}
-
+  events_iterator nodes_iterator(std::pair<unsigned, unsigned> pid_evid) const {
+    return events_iterator(processes, pid_evid.first, pid_evid.second);
+  }
+	
 	// Iterator pointing to the given Node
   events_iterator nodes_iterator(const Node *nd) const {
 		assert(nd && "Do not have such node");
@@ -292,19 +291,19 @@ class VCBasis {
   events_iterator nodes_iterator(const VCEvent& ev) const {
     return nodes_iterator(getNode(ev));
   }
-	
-	// Node corresponding to the given lock VCIID
-	const Node *getLockNode(const VCIID& vciid) const {
-    auto it = lock_vciid_to_node.find(vciid);
-		assert(it != lock_vciid_to_node.end()
-					 && "Given VCIID is not tied to any lock event");
-    return it->second;
-  }
-	
-	// Iterator corresponding to the given lock VCIID
-  events_iterator nodes_iterator(const VCIID& vciid) const {
-    return nodes_iterator(getLockNode(vciid));
+
+	// Node corresponding to the given process id and event id
+  const Node *getNode(unsigned pid, unsigned evid) const {
+		assert(pid < processes.size() && evid < processes[pid].size());
+    return processes[pid][evid];
 	}
+
+	// Node corresponding to the given process id and event id
+  const Node *getNode(std::pair<unsigned, unsigned> pid_evid) const {
+		assert(pid_evid.first < processes.size() &&
+					 pid_evid.second < processes[pid_evid.first].size());
+    return processes[pid_evid.first][pid_evid.second];
+	}	
 
 	// Get an iterator pointing to (the beginning of) the given CPid
   events_iterator nodes_iterator(const CPid& cpid, unsigned evidx = 0) const {

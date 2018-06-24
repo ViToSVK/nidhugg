@@ -41,7 +41,6 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 	cpid_to_processid.reserve(trace.size() / 2);
 	processes.reserve(trace.size() / 2);
 	event_to_node.reserve(trace.size());
-	lock_vciid_to_node.reserve(trace.size());
 	
 	// Faster than cpid_to_processid
 	std::unordered_map<int, unsigned> ipid_mapping;
@@ -111,10 +110,6 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			processes[proc_idx].push_back(nd);
 			assert(processes[proc_idx].size() == ev_idx + 1);
 			event_to_node.emplace(ev, nd);
-			if (isLock(ev))
-				lock_vciid_to_node.emplace(VCIID(*ev), nd);
-			if (isRead(ev))
-				read_vciid_to_node.emplace(VCIID(*ev), nd);
 			
       // XXX: function pointer calls not handled
 			if (isSpawn(ev))
@@ -129,19 +124,8 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			nd = processes[proc_idx][ev_idx];
 			assert(nd);
 			assert(nodes.count(nd));
-			assert(nd->getEvent()->equalVCIID(*ev)
+			assert(nd->getEvent()->kind == ev->kind
 						 && "Original part of the basis is changed in 'trace'");
-
-			if (isLock(ev)) {
-        auto vciidit = lock_vciid_to_node.find(VCIID(*ev));
-				assert(vciidit != lock_vciid_to_node.end());
-				vciidit->second = nd;
-			}
-			if (isRead(ev)) {
-        auto vciidit = read_vciid_to_node.find(VCIID(*ev));
-				assert(vciidit != read_vciid_to_node.end());
-				vciidit->second = nd;
-			}
 			
 			auto etnit = event_to_node.find(nd->getEvent());
 			assert(etnit != event_to_node.end());
@@ -150,6 +134,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 
 			nd->setEvent(ev);			
 		}
+
+		assert(nd->getEvent()->event_order == nd->getEventID());
+		nd->getEvent()->setPID(nd->getProcessID());
 
     ++cur_evidx[proc_idx];
 
@@ -212,13 +199,13 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 
 	}
 
-	assert(!(initial_node->getEvent()));
-
+	#ifndef NDEBUG
 	assert(processes.size() == cur_evidx.size());
 	for (unsigned i = 0; i < cur_evidx.size(); ++i) {
     assert(cur_evidx[i] == processes[i].size()
 					 && "Didn't go through entire original part of the basis");
 	}
+	#endif
 	
 	// EDGES - extend for original processes
 

@@ -97,6 +97,8 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		// Create the new event
 		assert(replay_trace[prefix_idx].cpid ==
 					 threads[p].cpid && "Inconsistent scheduling");
+		// if above fails, search for p' tied to r_t[p_i].cpid,
+		// scan r_t down and swap p with p' in all found events
 		assert(replay_trace[prefix_idx].instruction_order ==
 					 threads[p].executed_instructions + 1 && "Inconsistent scheduling");
 		assert(replay_trace[prefix_idx].event_order ==

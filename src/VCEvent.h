@@ -60,6 +60,7 @@ class VCEvent {
 		  value(0),
 		  instruction_order(instruction_order),
 		  event_order(event_order),
+		  pid(1337),
 		  id(id)
       { assert(iid.get_pid() >= 0); }
 	
@@ -77,6 +78,7 @@ class VCEvent {
 		  value(0),
 		  instruction_order(oth.instruction_order) /**/,
 		  event_order(oth.event_order) /**/,
+		  pid(1337),
 		  id(-1)
       { assert(iid.get_pid() >= 0);
 			  assert(blank); }
@@ -116,16 +118,17 @@ class VCEvent {
 	/* Sequential number (within the thread) of this event
 	 * The first event of the thread is number 0 !!! */
 	unsigned event_order;
+	/* Process ID in our partial order */
+	mutable unsigned pid;
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
   VCEvent blank_copy() const {
     return VCEvent(*this, true);
   }
-
-	bool equalVCIID(const VCEvent& oth) const {
-		return std::tie(instruction_order, cpid)
-				== std::tie(oth.instruction_order, oth.cpid);
+  
+  void setPID(unsigned procid) const {
+		pid = procid;
 	}
 	
   void dump() const;

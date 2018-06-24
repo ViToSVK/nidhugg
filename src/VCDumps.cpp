@@ -6,7 +6,6 @@
 #include <llvm/IR/Instructions.h>
 
 #include "VCEvent.h"
-#include "VCIID.h"
 #include "VCAnnotation.h"
 #include "VCGraphVclock.h"
 
@@ -97,24 +96,13 @@ void VCEvent::dump() const {
   llvm::errs() << *this << "\n";
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCIID& iid)
-{
-  out << iid.cpid << "-" << iid.instruction_order;
-
-  return out;
-}
-
-void VCIID::dump() const {
-	llvm::errs() << *this << "\n";
-}
-
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot) {
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
-    out << "("  << pr.first << " observes "
-                << pr.second.first << "-";
-		char loc = (pr.second.second == VCAnnotation::Loc::LOCAL)?'L':
-			((pr.second.second == VCAnnotation::Loc::REMOTE)?'R':'A');
+    out << "( ["  << pr.first.first << "][" << pr.first.second
+    << "] observes " << pr.second.value << "-";
+		char loc = (pr.second.loc == VCAnnotation::Loc::LOCAL)?'L':
+			((pr.second.loc == VCAnnotation::Loc::REMOTE)?'R':'A');
 		out << loc << ")\n";
   }
   out << "}\n";

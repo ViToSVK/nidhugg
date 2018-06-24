@@ -75,7 +75,6 @@ class VCGraphVclock : public VCBasis {
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
 						event_to_node.empty() &&
-						lock_vciid_to_node.empty() && read_vciid_to_node.empty() &&
 						!initial_node && nodes.empty() &&
 						!original.first.get() && !original.second.get() &&
 						wNonrootUnord.empty() && wRoot.empty() &&
@@ -159,7 +158,6 @@ class VCGraphVclock : public VCBasis {
 				// lock_vciid_to_node -- fixed below
 				// read_vciid_to_node -- fixed below
 				extendGraph(trace);
-				assert(!(initial_node->getEvent()));
 	    }
 	
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
@@ -274,19 +272,6 @@ class VCGraphVclock : public VCBasis {
   /* *************************** */
 
 	friend class VCValClosure;
-
-  typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
-	
-	std::unordered_map<const Node *, AnnotationValueT> getValueFunction
-		(const VCAnnotation& annot) const {
-		auto result = std::unordered_map<const Node *, AnnotationValueT>();
-		result.reserve(annot.size());
-		
-    for (auto& key_val : annot)
-      result.emplace(read_vciid_to_node.at(key_val.first), key_val.second);
-
-		return result;
-	}
 	
 	// used just before ordering non-star-root writes of trace extension
   void initWorklist() {
@@ -328,6 +313,7 @@ class VCGraphVclock : public VCBasis {
 		return result;
 	}
 
+	typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
   std::unordered_set<AnnotationValueT> getMutateValues(const PartialOrder& po, const Node *nd) const;
 
 	std::vector<VCEvent> linearize(const PartialOrder& po) const;

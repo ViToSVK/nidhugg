@@ -59,8 +59,6 @@ class VCExplorer {
   unsigned executed_traces = 1;
 	// Number of fully executed traces
 	unsigned executed_traces_full = 0;
-	// Set of unique annotations
-	std::unordered_set<VCAnnotation> unique_annotations;
   
  public:
 

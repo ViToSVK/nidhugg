@@ -29,11 +29,8 @@ class VCValClosure {
 
 	typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
 	
-	VCValClosure(const VCGraphVclock& gr, const std::unordered_map
-						 <const Node *, AnnotationValueT>& vf)
-	: graph(gr), valFunction(vf) {
-    assert(!(graph.initial_node->getEvent()));
-	}
+	VCValClosure(const VCGraphVclock& gr, const VCAnnotation& an)
+	: graph(gr), annotation(an) {}
 
 	VCValClosure(const VCValClosure& oth) = default;
 	VCValClosure& operator=(VCValClosure& oth) = delete;
@@ -44,12 +41,8 @@ class VCValClosure {
 
  private:
 
-	inline bool isGood(const Node * writend,
-										 const std::pair<int, VCAnnotation::Loc>& val) {
-		if (!(writend->getEvent()))
-			return 0 == val.first;
-		else
-      return writend->getEvent()->value == val.first;
+	inline bool isGood(const Node * writend, const Node * readnd) {
+		return annotation.isGood(writend, readnd);
 	}
 	
   void prepareOne(const PartialOrder& po, const Node * readnd);
@@ -59,21 +52,18 @@ class VCValClosure {
 	void updateVisibleCache(const PartialOrder& po, const Node * readnd);
 
 	std::pair<bool, bool> ruleOne
-		(const PartialOrder& po, const Node * readnd,
-		 const std::pair<int, VCAnnotation::Loc>& val);
+		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleTwo
-		(const PartialOrder& po, const Node * readnd,
-		 const std::pair<int, VCAnnotation::Loc>& val);
+		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleThree
-		(const PartialOrder& po, const Node * readnd,
-		 const std::pair<int, VCAnnotation::Loc>& val);
+		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
  public:
 	
 	void valClose(const PartialOrder& po, const Node * newread,
-								const std::pair<int, VCAnnotation::Loc> * newval);
+								const VCAnnotation::Ann * newval);
 
 	void valCloseLock(const PartialOrder& po,
 										const Node * locknode,
@@ -82,9 +72,10 @@ class VCValClosure {
 	//
 
 	const VCGraphVclock& graph;
-	
-	const std::unordered_map
-	<const Node *, AnnotationValueT>& valFunction;
+
+  const VCAnnotation& annotation;
+
+	//
 	
 	bool closed;
 	

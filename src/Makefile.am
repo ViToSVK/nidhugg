@@ -39,7 +39,6 @@ libnidhugg_a_SOURCES = \
   VClock.cpp VClock.h VClock.tcc \
   vecset.h vecset.tcc \
   VCEvent.h \
-  VCIID.h \
   VCHelpers.h \
   VCAnnotation.h \
   VCTrace.h \
