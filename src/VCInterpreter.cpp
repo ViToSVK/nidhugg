@@ -39,6 +39,7 @@
 
 #include "VCInterpreter.h"
 #include "VCTraceBuilder.h"
+#include "VCEvent.h"
 
 
 static void SetValue(llvm::Value *V,
@@ -155,8 +156,9 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
   if(isPthreadMutexLock(I,&ptr)){
     if(PthreadMutexes.count(ptr) &&
        PthreadMutexes[ptr].isLocked()){
-      TB.mark_unavailable(CurrentThread);
-      TB.refuse_schedule();
+      assert(false && "why am I here?");
+      TB.mark_unavailable(CurrentThread);      
+      // TB.refuse_schedule();
       PthreadMutexes[ptr].waiting.insert(CurrentThread);
       return true;
     }else{

@@ -38,14 +38,17 @@ class VCExplorer {
 
 	//
 	
-  std::list<PartialOrder> extensionEventsOrderings();
+  std::list<PartialOrder> extensionWritesOrderings();
 
-	void mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
+	std::list<PartialOrder> readToBeMutatedOrderings(const PartialOrder& po, const Node * nd);
 
-	void mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
+	bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
 
-  std::vector<VCEvent> extendTrace(std::vector<VCEvent>&& tr,
-																	 const std::unordered_set<int>& unannot);
+	bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
+
+  std::pair<std::vector<VCEvent>,
+		std::unordered_map<int, int>> extendTrace(std::vector<VCEvent>&& tr,
+																							const std::unordered_set<int>& unannot);
 
 	bool traceRespectsAnnotation(const std::vector<VCEvent>& trace,
 															 const VCAnnotation& annotation) const;
@@ -62,7 +65,7 @@ class VCExplorer {
   
  public:
 
-  void explore();
+  bool explore();
 
   void print_stats();
   

@@ -41,8 +41,19 @@ class VCValClosure {
 
  private:
 
-	inline bool isGood(const Node * writend, const Node * readnd) {
-		return annotation.isGood(writend, readnd);
+	inline bool isGood(const Node * writend, const VCAnnotation::Ann& ann) {
+		assert(!writend->getEvent() || isWrite(writend->getEvent()));
+		auto key = std::pair<unsigned, unsigned>(writend->getProcessID(),
+																						 writend->getEventID());
+    if (ann.goodLocal && *(ann.goodLocal) == key) {
+			assert(ann.loc != VCAnnotation::Loc::REMOTE);
+      return true;
+		}
+		if (ann.goodRemote.count(key)) {
+      assert(ann.loc != VCAnnotation::Loc::LOCAL);
+			return true;
+		}
+    return false;
 	}
 	
   void prepareOne(const PartialOrder& po, const Node * readnd);

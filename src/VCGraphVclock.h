@@ -27,7 +27,7 @@
 
 #include "Debug.h"
 #include "VCBasis.h"
-#include "VCAnnotation.h"
+#include "VCAnnotationNeg.h"
 
 using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
 
@@ -55,6 +55,9 @@ class VCGraphVclock : public VCBasis {
 	std::set<const Node *> nodes;
 
 	std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
+		readsNonroot;
+	
+	std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
 		wNonrootUnord;
 	
 	std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
@@ -77,6 +80,7 @@ class VCGraphVclock : public VCBasis {
 						event_to_node.empty() &&
 						!initial_node && nodes.empty() &&
 						!original.first.get() && !original.second.get() &&
+						readsNonroot.empty() &&
 						wNonrootUnord.empty() && wRoot.empty() &&
 						worklist_ready.empty() && worklist_done.empty());
 	}
@@ -99,6 +103,7 @@ class VCGraphVclock : public VCBasis {
 	: VCBasis(star_root_index),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
+		readsNonroot(),
 		wNonrootUnord(),
 		wRoot(),
 		original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
@@ -115,12 +120,14 @@ class VCGraphVclock : public VCBasis {
 	: VCBasis(std::move(oth)),
 		initial_node(oth.initial_node),
 		nodes(std::move(oth.nodes)),
+		readsNonroot(std::move(oth.readsNonroot)),
 		wNonrootUnord(std::move(oth.wNonrootUnord)),
 		wRoot(std::move(oth.wRoot)),
 		original(std::move(oth.original)),
 		worklist_ready(std::move(oth.worklist_ready)),
 		worklist_done(std::move(oth.worklist_done))
 			{
+				extension_from = oth.extension_from;
         oth.initial_node = nullptr;
 				assert(oth.empty());
 			}
@@ -137,6 +144,7 @@ class VCGraphVclock : public VCBasis {
 	: VCBasis(oth),
 		initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
 		nodes(),
+		readsNonroot(),
 		wNonrootUnord(),
 		wRoot(),
 		original(std::move(po)),
@@ -283,7 +291,18 @@ class VCGraphVclock : public VCBasis {
 															 (new ThreadPairsVclocks(*(original.second))));
 	}
 
+	// used just before ordering a non-star read-to-be-mutated
+  void initWorklist(const PartialOrder& po) {
+    assert(worklist_ready.empty());
+		assert(worklist_done.empty());
+		worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(po.first))),
+															 std::unique_ptr<ThreadPairsVclocks>
+															 (new ThreadPairsVclocks(*(po.second))));
+	}	
+
 	// used after ordering writes of trace extension
+	// or after ordering a read-to-be-mutated
 	// each PO will be a target for mutations
 	std::list<PartialOrder> dumpDoneWorklist() {
     assert(worklist_ready.empty());
@@ -299,7 +318,7 @@ class VCGraphVclock : public VCBasis {
 
 	// Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-	void orderEventMaz(const VCEvent *ev1);
+	void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation);
 
 	std::unordered_set<const Node *> getNodesToMutate() const {
     auto result = std::unordered_set<const Node *>();
@@ -313,10 +332,24 @@ class VCGraphVclock : public VCBasis {
 		return result;
 	}
 
-	typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
-  std::unordered_set<AnnotationValueT> getMutateValues(const PartialOrder& po, const Node *nd) const;
+	std::vector<unsigned> getProcessLengths() const {
+    auto result = std::vector<unsigned>();
+		result.reserve(processes.size());
+		
+		for (unsigned tid = 0; tid < processes.size(); ++tid) {
+      assert(processes[tid].size() > 0);
+			result.push_back(processes[tid].size() - 1);
+		}
+		
+		return result;
+	}
 
-	std::vector<VCEvent> linearize(const PartialOrder& po) const;
+  std::unordered_map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
+		getMutationCandidates(const PartialOrder& po,
+													const VCAnnotationNeg& negative, const Node *readnd) const;
+
+
+	std::vector<VCEvent> linearize(const PartialOrder& po, const VCIID *mutatedLock) const;
 
   /* *************************** */
   /* DUMPS                       */

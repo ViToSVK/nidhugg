@@ -23,12 +23,13 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
   
   switch(ev.kind) {
    case VCEvent::Kind::DUMMY : {
-		 out << "<>";
+		 out << ev.id << "_<size: " << ev.size << ">";
 	 } break;
 			
    case VCEvent::Kind::LOAD  : {
-		 out << "read";
+		 out << ev.id << "_read " << ev.ml.addr.to_string();
 		 assert(ev.instruction);
+		 /*
 		 std::string str;
 		 llvm::raw_string_ostream rso(str);
 		 ev.instruction->print(rso);
@@ -36,11 +37,19 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
 		 if (i1 != std::string::npos) {
 			 std::string::size_type i2 = str.find(",", i1);
 			 out << " " << str.substr(i1, i2 - i1);
-		 } else out << str;
+		 } else {
+			 i1 = str.find("i32* %");
+			 if (i1 != std::string::npos) {
+				 std::string::size_type i2 = str.find("align", i1);
+				 out << " " << str.substr(i1, i2 - i1);
+			 } else out << str;
+		 }
+		 */
 	 } break;
       
    case VCEvent::Kind::STORE  : {
-		 out << "write " << ev.value;
+		 out << ev.id << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
+		 /*
 		 assert(ev.instruction);
 		 std::string str;
 		 llvm::raw_string_ostream rso(str);
@@ -50,44 +59,86 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
 			 std::string::size_type i2 = str.find(",", i1);
 			 out << " " << str.substr(i1, i2 - i1);
 			 //out << " v-" << ev.value;
-		 } else out << str;
+		 } else {
+			 i1 = str.find("i32* %");
+			 if (i1 != std::string::npos) {
+				 std::string::size_type i2 = str.find("align", i1);
+				 out << " " << str.substr(i1, i2 - i1);
+			 } else out << str;
+		 }
+		 */
 	 } break;
       
    case VCEvent::Kind::SPAWN  : {
-		 out << "spawn " << ev.childs_cpid;
+		 out << ev.id << "_spawn " << ev.childs_cpid;
      assert(ev.instruction);
 	 } break;
       
    case VCEvent::Kind::JOIN  : {
-     out << "join " << ev.childs_cpid;
-     assert(ev.instruction);		 
+     out << ev.id << "_join " << ev.childs_cpid;
+     assert(ev.instruction);
    } break;
 
    case VCEvent::Kind::M_INIT  : {
-     out << "mutexinit";
+     out << ev.id << "_mutexinit " << ev.ml.addr.to_string();
+		 /*
      assert(ev.instruction);
      out << *ev.instruction;
+		 */
    } break;
    
    case VCEvent::Kind::M_DESTROY  : {
-     out << "mutexdestroy";
+     out << ev.id << "_mutexdestroy " << ev.ml.addr.to_string();
+		 /*
      assert(ev.instruction);
      out << *ev.instruction;
+		 */
    } break;
       
    case VCEvent::Kind::M_LOCK  : {
-     out << "lock";
+     out << ev.id << "_lock " << ev.ml.addr.to_string();
+		 /*
      assert(ev.instruction);
-     out << *ev.instruction;
+		 std::string str;
+		 llvm::raw_string_ostream rso(str);
+		 ev.instruction->print(rso);
+		 std::string::size_type i1 = str.find("mutex_t");
+		 if (i1 != std::string::npos) {
+			 std::string::size_type i2 = str.find(")", i1);
+			 out << " " << str.substr(i1, i2 - i1);
+		 } else out << str;
+		 */
    } break;
    
+   case VCEvent::Kind::M_LOCKATTEMPT  : {
+     out << ev.id << "_lockattempt " << ev.ml.addr.to_string();
+     /*
+		 std::string str;
+		 llvm::raw_string_ostream rso(str);
+		 ev.instruction->print(rso);
+		 std::string::size_type i1 = str.find("mutex_t");
+		 if (i1 != std::string::npos) {
+			 std::string::size_type i2 = str.find(")", i1);
+			 out << " " << str.substr(i1, i2 - i1);
+		 } else out << str;
+		 */
+   } break;   
+   
    case VCEvent::Kind::M_UNLOCK  : {
-      out << "unlock";
-      assert(ev.instruction);
-      out << *ev.instruction;
+     out << ev.id << "_unlock " << ev.ml.addr.to_string();
+		 /*
+		 std::string str;
+		 llvm::raw_string_ostream rso(str);
+		 ev.instruction->print(rso);
+		 std::string::size_type i1 = str.find("mutex_t");
+		 if (i1 != std::string::npos) {
+			 std::string::size_type i2 = str.find(")", i1);
+			 out << " " << str.substr(i1, i2 - i1);
+		 } else out << str;
+		 */
    } break;
    default :
-      out << "unknown";
+      out << "_unknown";
 	}
   return out;
 }

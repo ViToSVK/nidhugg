@@ -51,7 +51,7 @@ class VCEvent {
  public:
   VCEvent(const IID<int> &iid, const CPid& cpid,
 					unsigned instruction_order, unsigned event_order,
-					unsigned id)
+					unsigned id, const VCEvent* unannotatedLock)
     : kind(Kind::DUMMY),
 		  iid(iid), cpid(cpid), childs_cpid(),
 	    size(1), md(0), instruction(0),
@@ -62,33 +62,46 @@ class VCEvent {
 		  event_order(event_order),
 		  pid(1337),
 		  id(id)
-      { assert(iid.get_pid() >= 0); }
+      {
+				assert(iid.get_pid() >= 0);
+				if (unannotatedLock) {
+					assert(unannotatedLock->kind == Kind::M_LOCKATTEMPT);
+					kind = unannotatedLock->kind;
+					instruction = unannotatedLock->instruction;
+					may_conflict = true;
+					ml = unannotatedLock->ml;
+					value = unannotatedLock->value;
+				}
+			}
 	
  private:
 	// Returns a 'blank copy' of the event
 	// The event will be a part of replay_trace
-	// Only /**/ attributes are copied
-	// Rest will be computed during the replay
- VCEvent(const VCEvent& oth, bool blank)
+ VCEvent(const VCEvent& oth, bool mutatedLock)
     : kind(oth.kind),
 		  iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
-	    size(oth.size) /**/, md(0), instruction(0),
+	    size(oth.size) /**/, md(0), instruction(oth.instruction),
 		  may_conflict(false),
-		  ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
-		  value(0),
+		  ml(oth.ml),
+		  value(oth.value),
 		  instruction_order(oth.instruction_order) /**/,
 		  event_order(oth.event_order) /**/,
 		  pid(1337),
 		  id(-1)
-      { assert(iid.get_pid() >= 0);
-			  assert(blank); }
+      {
+				assert(iid.get_pid() >= 0);
+				if (mutatedLock) {
+				  assert(kind == Kind::M_LOCKATTEMPT);
+				  this->kind = Kind::M_LOCK;
+				}
+			}
 	
  public:
   enum class Kind {
     DUMMY,
 		LOAD, STORE,
 		SPAWN, JOIN,
-    M_INIT, M_LOCK, M_UNLOCK, M_DESTROY
+    M_INIT, M_LOCKATTEMPT, M_LOCK, M_UNLOCK, M_DESTROY
   } kind;
 	
   /* A simple identifier of the thread that executed this event */
@@ -100,7 +113,7 @@ class VCEvent {
    * 2) this event joined (then this event is pthread_join) */
   CPid childs_cpid;
   /* The number of instructions in this event. */
-  int size;
+  mutable int size;
   /* Metadata corresponding to the LAST instruction in this event. */
   const llvm::MDNode *md;
   /* LAST instruction (the only visible one if any) in this event */
@@ -123,12 +136,16 @@ class VCEvent {
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
-  VCEvent blank_copy() const {
-    return VCEvent(*this, true);
+  VCEvent blank_copy(bool mutatedLock) const {
+    return VCEvent(*this, mutatedLock);
   }
   
   void setPID(unsigned procid) const {
 		pid = procid;
+	}
+	
+	void setSize(int sizeno) const {
+		size = sizeno;
 	}
 	
   void dump() const;

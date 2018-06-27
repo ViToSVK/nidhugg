@@ -124,7 +124,14 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			nd = processes[proc_idx][ev_idx];
 			assert(nd);
 			assert(nodes.count(nd));
-			assert(nd->getEvent()->kind == ev->kind
+			//llvm::dbgs() << " o:" << ((int) nd->getEvent()->kind)
+			//						 << " n:" << ((int) ev->kind)
+			//						 << " ||";
+			assert((nd->getEvent()->kind == ev->kind ||
+							(nd->getEvent()->kind == VCEvent::Kind::DUMMY &&
+							 ev_idx == processes[proc_idx].size() - 1) ||
+							(nd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT &&
+							 ev->kind == VCEvent::Kind::M_LOCK))
 						 && "Original part of the basis is changed in 'trace'");
 			
 			auto etnit = event_to_node.find(nd->getEvent());
@@ -167,6 +174,14 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			if (itnonr == wNonrootUnord.end()) {
 				wNonrootUnord.emplace_hint(itnonr, ev->ml, std::unordered_set<const Node*>());
 				wNonrootUnord[ev->ml].reserve(8);
+			}
+			if (nd->getProcessID() != starRoot()) {
+				auto itml = readsNonroot.find(ev->ml);
+				if (itml == readsNonroot.end()) {
+					readsNonroot.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
+					readsNonroot[ev->ml].reserve(8);
+				}
+				readsNonroot[ev->ml].insert(nd);
 			}
 		}
 		if (isMutexInit(ev)) {
@@ -437,7 +452,7 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 /* MAIN ALGORITHM              */
 /* *************************** */
 
-void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
+void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation)
 {
 	assert(isWrite(ev1) || isRead(ev1));
 	auto it = event_to_node.find(ev1);
@@ -446,15 +461,34 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
 	assert(nd1->getEvent() == ev1);
 	assert(nd1->getProcessID() != starRoot());
 
+	// collect writes to order
 	auto itnsw = wNonrootUnord.find(ev1->ml);
-	assert(itnsw != wNonrootUnord.end());
-	std::unordered_set<const Node *>& toOrder = itnsw->second;
+	assert(itnsw != wNonrootUnord.end());	
+	auto toOrder = std::unordered_set<const Node *>();
+	toOrder.reserve(itnsw->second.size());
+	for (auto& writend : itnsw->second) {
+    assert(writend->getProcessID() != starRoot());
+		if (nd1->getProcessID() != writend->getProcessID())
+			toOrder.insert(writend);
+	}	
+
+	// if ev1 is write, collect reads to order
+	if (isWrite(ev1)) {
+		auto itnsr = readsNonroot.find(ev1->ml);
+		if (itnsr != readsNonroot.end())
+			for (auto& readnd : itnsr->second)
+				if (nd1->getProcessID() != readnd->getProcessID()
+						&& annotation.defines(readnd))
+					toOrder.insert(readnd);
+	}
 	
 	for (auto it = toOrder.begin(); it != toOrder.end(); ++it) {
     const Node *nd2 = *it;
-		if (nd1->getProcessID() == nd2->getProcessID())
-			continue;
+		assert(nd1->getProcessID() != nd2->getProcessID() &&
+					 (isWrite(nd2->getEvent()) ||
+						(isRead(nd2->getEvent()) && annotation.defines(nd2))));
 
+		// prepare worklist
 		worklist_ready.swap(worklist_done);
 		assert(worklist_done.empty() &&
 					 !worklist_ready.empty());
@@ -466,10 +500,12 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
 			worklist_ready.pop_front();
 
       if (areOrdered(nd1, nd2, current)) {
+				// already ordered
         worklist_done.push_back(std::move(current));
 				assert(!current.first.get() &&
 							 !current.second.get());
 			} else {
+				// unordered, create two cases
 				PartialOrder otherorder = PartialOrder
 					(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
 					 std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
@@ -488,14 +524,15 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1)
 	}
 }
 
-std::unordered_set<std::pair<int, VCAnnotation::Loc>>
-VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
+std::unordered_map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
+VCGraphVclock::getMutationCandidates(const PartialOrder& po,
+																		 const VCAnnotationNeg& negative, const Node *readnd) const
 {	
-	assert(nodes.count(nd));
-	assert(isRead(nd->getEvent()));
+	assert(nodes.count(readnd));
+	assert(isRead(readnd->getEvent()));
 
-	int nd_tid = nd->getProcessID();
-	int nd_evid = nd->getEventID();
+	int nd_tid = readnd->getProcessID();
+	int nd_evid = readnd->getEventID();
 	assert(nd_evid == (int) processes[nd_tid].size() - 1);
 	
 	auto mutateWrites = std::unordered_set<const Node *>();
@@ -509,7 +546,7 @@ VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
 	// handle thread nd_tid
 	for (int evid = nd_evid - 1; evid >= 0; --evid) {
     const Node *wrnd = processes[nd_tid][evid];
-		if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml) {
+		if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml) {
 			// add to mayBeCovered
 			mayBeCovered.insert(wrnd);
       // update cover in other threads
@@ -535,7 +572,7 @@ VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
 			// (su-1, su-2, ..., pr+2, pr+1) unordered with nd
 			for (int evid = su-1; evid > pr; --evid) {
 				const Node *wrnd = processes[tid][evid];
-				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml)
+				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml)
 					mutateWrites.insert(wrnd);
 				// wrnd covers nothing since it is unordered with nd
 			}
@@ -543,7 +580,7 @@ VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
 			// handle nodes that happen before nd
 			for (int evid = pr; evid >= 0; --evid) {
 				const Node *wrnd = processes[tid][evid];
-				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == nd->getEvent()->ml) {
+				if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml) {
 					// add to mayBeCovered
 					mayBeCovered.insert(wrnd);
 					// update cover in other threads
@@ -566,32 +603,110 @@ VCGraphVclock::getMutateValues(const PartialOrder& po, const Node *nd) const
 		if (covered[wrnd->getProcessID()] < (int) wrnd->getEventID())
 			mutateWrites.emplace(wrnd);
 
-	// have mutateWrites, collect set of
-	// their values x Local/Remote/Any
-  auto result = std::unordered_set<std::pair<int, VCAnnotation::Loc>>();
-  if (nd->getProcessID() == starRoot()) {
-		for (auto& wrnd : mutateWrites)
-			if (wrnd->getProcessID() == starRoot())
-			  result.emplace(wrnd->getEvent()->value, VCAnnotation::Loc::LOCAL);
-		  else
-				result.emplace(wrnd->getEvent()->value, VCAnnotation::Loc::REMOTE);
-	} else {
-		for (auto& wrnd : mutateWrites)
-			result.emplace(wrnd->getEvent()->value, VCAnnotation::Loc::ANY);
+	bool considerInitEvent = mayBeCovered.empty();
+
+	// disregard those forbidden by the negative annotation
+  if (negative.forbidsInitialEvent(readnd)) {
+    considerInitEvent = false;
+		
+		for (auto it = mutateWrites.begin(); it != mutateWrites.end(); ) {
+			const Node * writend = *it;
+			assert(isWrite(writend->getEvent()));
+			if (negative.forbids(readnd, writend))
+				it = mutateWrites.erase(it);
+			else
+				++it;
+		}
 	}
-	
-	// if we have nothing to cover the init event
-	if (mayBeCovered.empty()) {
-		if (nd->getProcessID() == starRoot())
-		  result.emplace(0, VCAnnotation::Loc::LOCAL);
+
+	typedef std::pair<unsigned, unsigned> VCIID;
+
+  auto result = std::unordered_map<std::pair<int, VCAnnotation::Loc>,
+																	 VCAnnotation::Ann>();
+
+	// have mutateWrites,
+	// create possible annotations
+	while (!mutateWrites.empty()) {
+    auto it = mutateWrites.begin();
+		const Node * writend = *it;
+		
+		int value = writend->getEvent()->value;
+		VCAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
+			? VCAnnotation::Loc::ANY :
+			(writend->getProcessID() == readnd->getProcessID()
+			 ? VCAnnotation::Loc::LOCAL : VCAnnotation::Loc::REMOTE);
+
+		if (loc == VCAnnotation::Loc::LOCAL) {
+      // done with this Ann
+			auto goodRemote = std::unordered_set<VCIID>();
+			auto goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
+			assert(!result.count(std::pair<int, VCAnnotation::Loc>(value, loc)));
+			result.emplace(std::pair<int, VCAnnotation::Loc>(value, loc),
+										 VCAnnotation::Ann(value, loc, std::move(goodRemote), true, goodLocal));
+			mutateWrites.erase(it);
+			continue;
+		}
+
+		assert(loc != VCAnnotation::Loc::LOCAL);
+
+		auto goodRemote = std::unordered_set<VCIID>();
+		auto goodLocal = VCIID(31337, 47);
+
+		if (writend->getProcessID() == readnd->getProcessID()) {
+			assert(loc == VCAnnotation::Loc::ANY);
+      goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
+		}
 		else
-			result.emplace(0, VCAnnotation::Loc::ANY);
+			goodRemote.emplace(writend->getProcessID(), writend->getEventID());
+
+    if (considerInitEvent && value == 0 && loc == VCAnnotation::Loc::ANY) {
+      assert(goodLocal.first == 31337);
+			considerInitEvent = false;
+			goodLocal = VCIID(INT_MAX, INT_MAX);
+		}
+		
+		it = mutateWrites.erase(it);
+		while (it != mutateWrites.end()) {
+      const Node * writend = *it;
+			if (value != writend->getEvent()->value ||
+					(loc == VCAnnotation::Loc::REMOTE &&
+					 writend->getProcessID() == readnd->getProcessID())) {
+        ++it;
+			} else {
+        // good value and acceptable location
+				if (writend->getProcessID() == readnd->getProcessID()) {
+					assert(goodLocal.first == 31337);
+					goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
+				}
+				else
+					goodRemote.emplace(writend->getProcessID(), writend->getEventID());
+				it = mutateWrites.erase(it);
+			}
+		}
+
+		assert(!result.count(std::pair<int, VCAnnotation::Loc>(value, loc)));
+		result.emplace(std::pair<int, VCAnnotation::Loc>(value, loc),
+									 VCAnnotation::Ann(value, loc,
+																		 std::move(goodRemote),
+																		 (goodLocal.first != 31337),
+																		 goodLocal));
+	}
+
+	if (considerInitEvent) {
+		VCAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
+			? VCAnnotation::Loc::ANY : VCAnnotation::Loc::LOCAL;		
+    assert(!result.count(std::pair<int, VCAnnotation::Loc>(0, loc)));
+		result.emplace(std::pair<int, VCAnnotation::Loc>(0, loc),
+									 VCAnnotation::Ann(0, loc,
+																		 std::unordered_set<VCIID>(),
+																		 true,
+																		 {INT_MAX, INT_MAX}));		
 	}
 	
 	return result;
 }
 
-std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
+std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCIID *mutatedLock) const
 {
 	auto result = std::vector<VCEvent>();
 	result.reserve(nodes_size());
@@ -599,7 +714,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 	auto current = std::vector<unsigned>(processes.size(), 0);
 	ThreadPairsVclocks& pred = *(po.second);
 
-  // llvm::errs() << "lin:";                                                             ///////////////////////
+  //llvm::errs() << "lin:";                                                             ///////////////////////
 	
   bool done = false;	
 	while (!done) {
@@ -643,7 +758,10 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 			}
 			// perform the head, replace in reqNodes with its
 			// thread successor (if that one is also required)
-			result.push_back(headnd->getEvent()->blank_copy());
+			bool mlock = headnd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT
+				&& mutatedLock && mutatedLock->first == headnd->getProcessID()
+				&& mutatedLock->second == headnd->getEventID();
+			result.push_back(headnd->getEvent()->blank_copy(mlock));
 			// llvm::errs() << " " << headnd->getProcessID() << "-" << headnd->getEventID();          ///////////////////////
 			unsigned tid = headnd->getProcessID();
 			++current[tid];
@@ -655,8 +773,11 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 
 		if (current[starRoot()] < processes[starRoot()].size()) {
       // perform one step of the star-root process
-			result.push_back(processes[starRoot()][ current[starRoot()] ]
-											 ->getEvent()->blank_copy());
+			const Node * rootnd = processes[starRoot()][ current[starRoot()] ];
+			bool mlock = rootnd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT
+				&& mutatedLock && mutatedLock->first == rootnd->getProcessID()
+				&& mutatedLock->second == rootnd->getEventID();
+			result.push_back(rootnd->getEvent()->blank_copy(mlock));
 			// llvm::errs() << " " << starRoot() << "-" << current[starRoot()];                     ///////////////////////
 			++current[starRoot()];
 		} else
@@ -664,7 +785,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po) const
 		
 	}
 
-	// llvm::errs() << "\n";                                                                  /////////////////////
+	//llvm::errs() << "\n";                                                                  /////////////////////
 	
   return result;
 }

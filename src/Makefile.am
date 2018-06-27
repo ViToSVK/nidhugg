@@ -41,6 +41,7 @@ libnidhugg_a_SOURCES = \
   VCEvent.h \
   VCHelpers.h \
   VCAnnotation.h \
+  VCAnnotationNeg.h \
   VCTrace.h \
   VCBasis.h \
   VCGraphVclock.cpp VCGraphVclock.h \

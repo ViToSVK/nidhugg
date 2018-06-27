@@ -2779,7 +2779,7 @@ void Interpreter::callPthreadMutexLock(void *lck){
   TB.mutex_lock({GetSymAddr(lck),1}); // also acts as a fence
 
   if(DryRun) return;
-  PthreadMutexes[lck].lock(CurrentThread);
+  if(!TB.doNotLock) PthreadMutexes[lck].lock(CurrentThread);
 }
 
 void Interpreter::callPthreadMutexTryLock(Function *F,

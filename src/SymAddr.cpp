@@ -30,7 +30,8 @@ std::string SymMBlock::to_string(std::function<std::string(int)> pid_str) const 
       assert(is_heap());
       ret = "Heap(";
     }
-    ret += pid_str(pid) + ",";
+    ret += std::to_string(pid) + ",";
+    //ret += pid_str(pid) + ",";
   }
   ret += std::to_string(get_no()) + ")";
   return ret;

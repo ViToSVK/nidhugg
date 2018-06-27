@@ -214,7 +214,9 @@ public:
   virtual void register_alternatives(int alt_count) = 0;
   /* Notify the trace builder that this instruction is being executed
    */
-  virtual void executing_instruction(const llvm::Instruction *Instr) {}  
+  virtual void executing_instruction(const llvm::Instruction *Instr) {}
+  
+  bool doNotLock = false;
 };
 
 #endif

@@ -60,11 +60,19 @@ class VCTraceBuilder : public TSOTraceBuilder {
   bool sch_replay;
   // We want to get an extension of our trace
   bool sch_extend;
+
+ public:
+
+	bool replaying() const { return sch_replay; }
+
+ private:
   
   bool schedule_thread(int *proc, unsigned p);
   bool schedule_arbitrarily(int *proc);
   bool schedule_replay_trace(int *proc);
   void update_prefix(unsigned p);
+
+	std::unordered_map<int, int> in_critical_section;
 
   // This is the currently executed instruction
   const llvm::Instruction *current_inst = nullptr;
@@ -82,8 +90,9 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
 	// (we don't save anything about the invisible ones, just how many there are)
-  std::vector<VCEvent> prefix;
 
+	std::vector<VCEvent> prefix;
+ 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
   std::vector<VCEvent> replay_trace;
@@ -96,7 +105,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // The index into prefix corresponding to the last event that was
   // scheduled. Has the value -1 when no events have been scheduled.
   // This is defined in TSOPSOTraceBuilder.h where we inherit from
-  // int prefix_idx = -1;
+	// int prefix_idx = -1;
   
   // Number of executed instructions since init of this TB
   unsigned executed_instr = 0;
@@ -111,7 +120,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
-  };
+  };	
   
  public:
 
@@ -122,7 +131,8 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Use at the very beginning to get an initial trace
   VCTraceBuilder(const Configuration &conf, llvm::Module *m)
   : TSOTraceBuilder(conf), config(conf), M(m),
-    sch_initial(true), sch_replay(false), sch_extend(false)
+    sch_initial(true), sch_replay(false), sch_extend(false),
+		in_critical_section()
     {}
 
   // Use it when you want to do the following:
@@ -134,9 +144,12 @@ class VCTraceBuilder : public TSOTraceBuilder {
 								 const std::unordered_set<int>& unannot)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(false), sch_replay(true), sch_extend(false),
+		in_critical_section(),
 		replay_trace(std::move(tr)),
 		threads_with_unannotated_read(unannot)
-		{ prefix.reserve(replay_trace.size() + 16); }
+		{
+			prefix.reserve(replay_trace.size() + 16);
+		}
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */
@@ -185,10 +198,11 @@ class VCTraceBuilder : public TSOTraceBuilder {
 
 	// Called from VCExplorer on a TB created exclusively for this
 	// Schedule entire replay_trace, then extend it, and return it
-	std::vector<VCEvent> extendGivenTrace();
+	std::pair<std::vector<VCEvent>,
+		std::unordered_map<int, int>> extendGivenTrace();
 
 	// We store an error trace (in their format) here
-  Trace *error_trace = nullptr;	
+  //Trace *error_trace = nullptr;	
 	
   // Called by us when extending a trace, also called by DPORDriver
   // Inside the method, we translate an error trace (if we have any)

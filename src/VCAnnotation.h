@@ -23,17 +23,18 @@
 
 #include "VCBasis.h"
 #include "VCHelpers.h"
+#include "Debug.h"
 
-#include <memory>
-#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
+typedef std::pair<unsigned, unsigned> VCIID;
+
 namespace std {
   template <>
-	struct hash<std::pair<unsigned, unsigned>>
+	struct hash<VCIID>
   {
-    std::size_t operator()(const std::pair<unsigned, unsigned>& vciid) const
+    std::size_t operator()(const VCIID& vciid) const
     {
       return
 				(hash<unsigned>()(vciid.first) << 12) +
@@ -44,7 +45,7 @@ namespace std {
 
 class VCAnnotation {
  public:
-  typedef std::pair<unsigned, unsigned> VCIID;
+  
 	
   enum class Loc {
     LOCAL, REMOTE, ANY
@@ -54,9 +55,12 @@ class VCAnnotation {
 	public:
 		~Ann() { delete goodLocal; }
 
+	  Ann() : value(47), loc(Loc::ANY), goodRemote(), goodLocal(), ignore(true) {}
+
 		Ann(int v, Loc l, std::unordered_set<VCIID>&& gr, bool haslocal, VCIID gl)
 			: value(v), loc(l), goodRemote(std::move(gr)),
-			goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr) {}
+			goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr),
+			ignore(false) {}
 
     Ann(const Ann& oth)
 			: value(oth.value),
@@ -65,20 +69,23 @@ class VCAnnotation {
 			goodLocal(oth.goodLocal ?
 								new VCIID(oth.goodLocal->first,
 													oth.goodLocal->second) :
-								nullptr)
-				{}
+								nullptr),
+			ignore(oth.ignore) {}
 		
 	  Ann(Ann&& oth)
 			: value(oth.value),
 			loc(oth.loc),
 			goodRemote(std::move(oth.goodRemote)),
-			goodLocal(oth.goodLocal)
+			goodLocal(oth.goodLocal),
+			ignore(oth.ignore)
 				{oth.goodLocal = nullptr; }
 		
 		const int value;
 		const Loc loc;
 		const std::unordered_set<VCIID> goodRemote;
 		const VCIID * goodLocal;
+
+		bool ignore;
 	};
 
 	using MappingT = std::unordered_map<VCIID, Ann>;
@@ -115,14 +122,14 @@ class VCAnnotation {
 
  public:
 
-	void add(const Node * nd, Ann&& ann) {
+	void add(const Node * nd, const Ann& ann) {
 		assert(isRead(nd->getEvent()));
 		auto key = VCIID(nd->getProcessID(), nd->getEventID());
     auto it = mapping.find(key);
 		assert(it == mapping.end());
 		assert(ann.loc != Loc::REMOTE || !ann.goodLocal);
 		assert(ann.loc != Loc::LOCAL || ann.goodRemote.empty());
-		mapping.emplace_hint(it, key, std::move(ann));
+		mapping.emplace_hint(it, key, ann);
 	}
 
 	bool defines(const Node * nd) const {
@@ -136,16 +143,24 @@ class VCAnnotation {
 		return (mapping.find(key) != mapping.end());
 	}	
 
+	/*
 	bool isGood(const Node * writend, const Node * readnd) const {
     assert(isWrite(writend->getEvent()) && isRead(readnd->getEvent()));
 		auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
 		auto it = mapping.find(key);
 		assert(it != mapping.end());
 		auto val = VCIID(writend->getProcessID(), writend->getEventID());
-		return (it->second.goodRemote.count(val) ||
-						(it->second.goodLocal &&
-						 *(it->second.goodLocal) == val));
-	}
+		if (it->second.goodRemote.count(val)) {
+      assert(it->second.loc != VCAnnotation::Loc::LOCAL);
+			return true;
+		}
+		if (it->second.goodLocal &&
+				*(it->second.goodLocal) == val) {
+      assert(it->second.loc != VCAnnotation::Loc::REMOTE);
+			return true;
+		}
+		return false;
+	}*/
 
 	const Ann& getAnn(const Node * nd) const {
     assert(isRead(nd->getEvent()));
@@ -191,7 +206,7 @@ class VCAnnotation {
 		if (it == lastlock.end())
 			return false;
 		else
-			return (it->second != VCIID(nd->getProcessID(), nd->getEventID()));
+			return (it->second == VCIID(nd->getProcessID(), nd->getEventID()));
 	}
 	
 };

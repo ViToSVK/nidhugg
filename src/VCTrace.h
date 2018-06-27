@@ -23,7 +23,7 @@
 
 #include <vector>
 
-#include "VCAnnotation.h"
+#include "VCAnnotationNeg.h"
 #include "VCGraphVclock.h"
 
 class VCTrace {
@@ -36,11 +36,13 @@ class VCTrace {
   std::vector<VCEvent> trace;
 
 	VCAnnotation annotation;
-	//VCAnnotationNeg annotationNeg;
+	VCAnnotationNeg negative;
 
 	VCGraphVclock graph;
 
 	std::unordered_set<int> unannot;
+
+	std::unordered_map<int, int> in_critical_section;
 	
 
   /* *************************** */
@@ -53,16 +55,33 @@ class VCTrace {
 				  int star_root_index)
 	: trace(std::move(trace)),
 		annotation(),
+		negative(),
 		graph(this->trace, star_root_index),
-		unannot() {};
+		unannot(),
+		in_critical_section()
+			{
+        for (unsigned i = 0; i < trace.size(); ++i)
+          if (isRead(trace[i])) {
+            const Node *nd = graph.getNode(trace[i]);
+						if (!graph.nodes_iterator(nd).atProcessEnd()) {
+              assert(nd->getProcessID() == 0);
+							annotation.add(nd, VCAnnotation::Ann());
+						}
+					}
+			};
 
   VCTrace(std::vector<VCEvent>&& trace,
 					VCAnnotation&& annotation,
-					VCGraphVclock&& graph)
+					const VCAnnotationNeg& negative,
+					VCGraphVclock&& graph,
+					std::unordered_map<int, int>&& cs)
 	: trace(std::move(trace)),
 		annotation(std::move(annotation)),
+		negative(negative),
 		graph(std::move(graph)),
-		unannot() {};
+		unannot(),
+		in_critical_section(std::move(cs))
+			{};
 	
   VCTrace(VCTrace&& tr) = default;
   VCTrace& operator=(VCTrace&& tr) = delete;

@@ -34,12 +34,12 @@ bool VCTraceBuilder::reset()
 	assert(prefix.empty());
 	
   // Call the main method
-  explorer.explore();
+  bool error = explorer.explore();
 
   // Print the result statistics
   explorer.print_stats();
 	
-  return false;
+  return error;
 }
 
   /* *************************** */
@@ -73,7 +73,8 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
   // now only replaying the event sequence of replay_trace,
   // prefix_idx is also the index into replay_trace pointing
   // to the event we are currently replaying
-  
+
+	AFTER_FAKING_LOCK:
 	if (prefix_idx == -1 || replay_trace[prefix_idx].size == prefix[prefix_idx].size) {
 		++prefix_idx;
 		if (prefix_idx == (int) replay_trace.size()) {
@@ -103,14 +104,43 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 					 threads[p].executed_instructions + 1 && "Inconsistent scheduling");
 		assert(replay_trace[prefix_idx].event_order ==
 					 threads[p].executed_events && "Inconsistent scheduling");
+		
+		if (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT) {
+			// Next follows a lock that is not annotated yet
+      // We do not replay it, instead we push a lockattempt
+			// event and stop this thread 
+      #ifndef NDEBUG
+			// this is the last event of p
+      for (unsigned i = prefix_idx+1; i < replay_trace.size(); ++i)
+				assert(replay_trace[i].iid.get_pid() != (int) p);
+			#endif
+			prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+													threads[p].cpid,
+													threads[p].executed_instructions + 1, // +1 so that first will be 1
+													threads[p].executed_events, // so that first will be 0
+													prefix.size(),
+													&replay_trace[prefix_idx]);
+			prefix.back().setSize(replay_trace[prefix_idx].size);
+			++threads[p].executed_events;
+			threads[p].executed_instructions += 1 + replay_trace[prefix_idx].size;
+			assert(sch_replay);
+			// stop this thread
+		  threads_with_unannotated_read.insert(curnode().iid.get_pid());
+			assert(replay_trace[prefix_idx].size == prefix[prefix_idx].size);
+			goto AFTER_FAKING_LOCK;
+		}
+		
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
 												threads[p].cpid,
 												threads[p].executed_instructions + 1, // +1 so that first will be 1
 												threads[p].executed_events, // so that first will be 0
-												prefix.size());
+												prefix.size(),
+												nullptr);
 		// Mark that thread executes a new event
 		++threads[p].executed_events;
+		++threads[p].executed_instructions;
     assert(prefix.back().id == prefix.size() - 1);
+		//llvm::dbgs() << " ||| " << p << "-ev" << (threads[p].executed_events - 1);
 	} else {
 		// Next instruction is a continuation of the current event
 		assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
@@ -118,6 +148,8 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 		++prefix[prefix_idx].size;
 		assert(replay_trace[prefix_idx].size >=
 					 prefix[prefix_idx].size && "Inconsistent scheduling");
+		unsigned p = replay_trace[prefix_idx].iid.get_pid();
+		++threads[p].executed_instructions;
 	}
 
   assert((unsigned) prefix_idx < replay_trace.size());
@@ -131,7 +163,7 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
   // But I don't know why here, I would suspect to
   // run this only when we have a new event
 	// Mark that thread p executes a new instruction
-	++threads[p].executed_instructions;
+	// ++threads[p].executed_instructions;
 	
   bool ret = schedule_thread(proc, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
@@ -142,7 +174,18 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 bool VCTraceBuilder::schedule_arbitrarily(int *proc)
 {
   assert(!sch_replay && (sch_initial || sch_extend));
-
+	
+	if (!in_critical_section.empty()) {
+    assert(in_critical_section.size() == 1);
+		unsigned cs_ipid = (unsigned) in_critical_section.begin()->first;
+    if (!threads_with_unannotated_read.count(cs_ipid)) {
+			bool ret = schedule_thread(proc, cs_ipid);
+			assert(ret);
+			return true;
+		} else
+			return false;
+	}
+	
   for(unsigned p = 0; p < threads.size(); p += 2) {
 		if (!threads_with_unannotated_read.count(p)) {
 			// We only schedule threads that have not yet seen a new visible read
@@ -206,7 +249,8 @@ void VCTraceBuilder::update_prefix(unsigned p)
 												threads[p].cpid,
 												threads[p].executed_instructions, // first will be 1
 												threads[p].executed_events, // first will be 0
-												prefix.size());
+												prefix.size(),
+												nullptr);
 		++threads[p].executed_events;
 		assert(prefix.back().id == prefix.size() - 1);
 		assert((unsigned) prefix_idx == prefix.size() - 1);
@@ -219,7 +263,7 @@ void VCTraceBuilder::update_prefix(unsigned p)
 
 void VCTraceBuilder::refuse_schedule()
 {
-	// std::cout << "REFUSESCH" << std::flush;
+	// llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
   assert(!prefix.back().may_conflict);
 
@@ -259,9 +303,18 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
   if (ml)
     curn.ml = *ml; // prev I had ml->addr which loses some info
   curn.instruction = current_inst;
-
-	if (sch_replay)
-		assert(replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
+	
+	if (sch_replay) {
+		if ((replay_trace[prefix_idx].kind != VCEvent::Kind::M_LOCK || prefix[prefix_idx].kind != VCEvent::Kind::M_LOCKATTEMPT)
+				&& replay_trace[prefix_idx].kind != prefix[prefix_idx].kind) {
+			llvm::errs() << "\n\nREPLAYTRACEKIND: " << (int) replay_trace[prefix_idx].kind;
+			llvm::errs() << "\nPREFIXKIND:        " << (int) prefix[prefix_idx].kind << "\n";
+		}
+    assert(replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
+					 (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
+						prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
+	}
+		
 }
 
 void VCTraceBuilder::metadata(const llvm::MDNode *md)
@@ -282,7 +335,13 @@ IID<CPid> VCTraceBuilder::get_iid() const
 
 void VCTraceBuilder::spawn()
 {
-	// std::cout << "SPAWN" << std::flush;
+	//llvm::errs() << " SPAWN";
+		if (curnode().kind != VCEvent::Kind::DUMMY) {
+		llvm::dbgs() << "SPAWN IPID: " << curnode().iid.get_pid()
+								 << " KIND: " << (int) curnode().kind
+								 << " REPLAY: " << sch_replay <<  "\n";
+	}
+	//assert(curnode().kind == VCEvent::Kind::DUMMY);
 	curnode().kind = VCEvent::Kind::SPAWN;
   mayConflict();
   // store the CPid of the new thread
@@ -298,39 +357,50 @@ void VCTraceBuilder::spawn()
 
 void VCTraceBuilder::join(int tgt_proc)
 {
-	// std::cout << "JOIN" << std::flush;
+	//llvm::errs() << " JOIN";
+	assert(curnode().kind == VCEvent::Kind::DUMMY);
 	curnode().kind = VCEvent::Kind::JOIN;
   mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
 }
 
 void VCTraceBuilder::atomic_store(const SymData &sd, int val)
-{	
-	// std::cout << "STORE" << std::flush;
+{
   // stores to local memory on stack may not conflict
   assert(llvm::isa<llvm::StoreInst>(current_inst));
-  if (!llvm::isa<llvm::AllocaInst>(
-        current_inst->getOperand(1)->stripInBoundsOffsets() )) {
+  //if (!llvm::isa<llvm::AllocaInst>(
+  //      current_inst->getOperand(1)->stripInBoundsOffsets() )) {
+	if (sd.get_ref().addr.block.is_global()) {
+		assert(curnode().kind == VCEvent::Kind::DUMMY);
 		curnode().kind = VCEvent::Kind::STORE;
 		const SymAddrSize &ml = sd.get_ref();
     mayConflict(&ml);
 		curnode().value = val;
-		//std::cout << " # VISIBLE STORE WITH VALUE: " << curnode().value;
+		//llvm::errs() << " STORE_" << ml.to_string() << " ";
   }
 }
 
 void VCTraceBuilder::load(const SymAddrSize &ml, int val)
 {
-	// std::cout << "LOAD" << std::flush;
   // loads from stack may not conflict
   assert(llvm::isa<llvm::LoadInst>(current_inst));
-  if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
+  //if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
+	if (ml.addr.block.is_global()) {
+		if (curnode().kind != VCEvent::Kind::DUMMY) {
+			llvm::dbgs() << "LOAD IPID: " << curnode().iid.get_pid()
+									 << " KIND: " << (int) curnode().kind
+									 << " REPLAY: " << sch_replay <<  "\n";
+	  }		
+		assert(curnode().kind == VCEvent::Kind::DUMMY);
 		curnode().kind = VCEvent::Kind::LOAD;
     mayConflict(&ml);
 		curnode().value = val;
-		//std::cout << " # VISIBLE LOAD WITH VALUE: " << curnode().value;
+		//llvm::errs() << " LOAD_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";	
     if (sch_initial || sch_extend)
-			threads_with_unannotated_read.insert(curnode().iid.get_pid());
+			if (threads.size() > 2)
+			  threads_with_unannotated_read.insert(curnode().iid.get_pid());
+		// otherwise the value is determined
+		
   }
 }
 
@@ -341,9 +411,15 @@ void VCTraceBuilder::fence()
 
 void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
 {
-	// std::cout << "M_INIT" << std::flush;
+	//llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   fence();
   assert(mutexes.count(ml.addr) == 0);
+	if (curnode().kind != VCEvent::Kind::DUMMY) {
+		llvm::dbgs() << "M_INIT IPID: " << curnode().iid.get_pid()
+								 << " KIND: " << (int) curnode().kind
+								 << " REPLAY: " << sch_replay <<  "\n";
+	}
+	assert(curnode().kind == VCEvent::Kind::DUMMY);
 	curnode().kind = VCEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(prefix_idx);
@@ -352,13 +428,14 @@ void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
 
 void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
 {
-	// std::cout << "M_DESTROY" << std::flush;
+	//llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
     mutexes[ml.addr] = Mutex();
   }
   assert(mutexes.count(ml.addr));
+	assert(curnode().kind == VCEvent::Kind::DUMMY);
 	curnode().kind = VCEvent::Kind::M_DESTROY;
   mayConflict(&ml);
 
@@ -367,7 +444,7 @@ void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
 
 void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
 {
-  // std::cout << "M_UNLOCK" << std::flush;	
+  //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";	
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
@@ -381,6 +458,7 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
 	assert(mutex.value == - 1 - (curnode().iid.get_pid() * 1000000)
 				 && "Unlocked by different process than the one that locked");
 
+	assert(curnode().kind == VCEvent::Kind::DUMMY);
 	curnode().kind = VCEvent::Kind::M_UNLOCK;
   mayConflict(&ml);
 	curnode().value = ( curnode().iid.get_pid() * 1000000 )
@@ -390,11 +468,19 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   mutex.last_access = prefix_idx;
   mutex.locked = false;
 	mutex.value = curnode().value; // WRITE
+
+	int p = curnode().iid.get_pid();
+	assert(in_critical_section.count(p));
+	if (in_critical_section[p] > 1)
+			in_critical_section[p] =
+				in_critical_section[p] - 1;
+	else
+		in_critical_section.erase(p);
 }
 
 void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
 {
-	// std::cout << "M_LOCK" << std::flush;
+	//llvm::errs() << " M_LOCKATT_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
@@ -402,23 +488,46 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   }
   assert(mutexes.count(ml.addr));
 	Mutex &mutex = mutexes[ml.addr];
-  assert(!mutex.locked && mutex.value >= 0);
+
+	assert(curnode().kind == VCEvent::Kind::DUMMY);
+	curnode().kind = VCEvent::Kind::M_LOCKATTEMPT;
 	
-	curnode().kind = VCEvent::Kind::M_LOCK;
   mayConflict(&ml);
 	curnode().value = mutex.value; // READ
-	
-  mutex.last_lock = mutex.last_access = prefix_idx;
-  mutex.locked = true;
-	mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
-	              // mutex locked by this process (<0)
 
-	if (sch_initial || sch_extend) // READ
-		threads_with_unannotated_read.insert(curnode().iid.get_pid());
+	if (sch_initial || sch_extend) {
+		// We see this for the first time,
+		// note it down and stop here
+    threads_with_unannotated_read.insert(curnode().iid.get_pid());
+		doNotLock = true;
+		//llvm::errs() << "NO ";
+	}
+	else {
+		// This is a know and already annotated
+		// lock, we proceed normally
+
+    assert(!mutex.locked && mutex.value >= 0);
+		mutex.last_lock = mutex.last_access = prefix_idx;
+		mutex.locked = true;
+		mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
+									// mutex locked by this process (<0)
+		
+    assert(sch_replay);
+		assert(replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK);
+		curnode().kind = VCEvent::Kind::M_LOCK;
+		int p = curnode().iid.get_pid();
+		if (in_critical_section.count(p))
+			in_critical_section[p] = in_critical_section[p] + 1;
+		else
+			in_critical_section.emplace(p, 1);
+		doNotLock = false;
+		//llvm::errs() << "YES ";
+	}
+
 }
 
 void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
-	// std::cout << "M_LOCKFAIL" << std::flush;
+	//llvm::errs() << " M_LOCKFAIL" << &ml;
   assert(!dryrun);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
@@ -432,7 +541,9 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
 	#endif
 }
 
-std::vector<VCEvent> VCTraceBuilder::extendGivenTrace() {
+std::pair<std::vector<VCEvent>,
+					std::unordered_map<int, int>>
+VCTraceBuilder::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, config));
@@ -443,7 +554,7 @@ std::vector<VCEvent> VCTraceBuilder::extendGivenTrace() {
   // Run static destructors.
   EE->runStaticConstructorsDestructors(true);
 
-  return prefix;
+  return {prefix, in_critical_section};
 }
 
 Trace *VCTraceBuilder::get_trace() const
