@@ -94,7 +94,7 @@ class VCValClosure {
 	<SymAddrSize, std::vector<const Node *>> wNonroot;
 	
 	std::unordered_map
-	<const Node *, const std::vector<const Node *>&> wRem;
+	<const Node *, const std::vector<const Node *> *> wRem;
 
 	std::unordered_map
 	<const Node *, std::pair<int, int>> wBounds;

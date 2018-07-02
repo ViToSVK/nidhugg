@@ -51,48 +51,50 @@ void VCValClosure::prepareOne
 
 	// prepare wRem
 	if (readnd->getProcessID() == graph.starRoot())
-		wRem.emplace(readnd, wNonroot.at(ndml));
+		wRem.emplace(readnd, &(wNonroot.at(ndml)));
 	else
-		wRem.emplace(readnd, graph.wRoot.at(ndml));
+		wRem.emplace(readnd, &(graph.wRoot.at(ndml)));
 
+  const std::vector<const Node *>& wRemote = *(wRem.at(readnd));
+	
 	// prepare wBounds
 	// Note: replace with binary searches?
-	wBounds.emplace(readnd, std::pair<int, int>(0, wRem.at(readnd).size()-1));
+	wBounds.emplace(readnd, std::pair<int, int>(0, wRemote.size()-1));
 	int& low = wBounds[readnd].first;
 	int& high = wBounds[readnd].second;
-	assert(low >= high || graph.hasEdge(wRem.at(readnd)[low],
-																			wRem.at(readnd)[high], po));
+	assert(low >= high || graph.hasEdge(wRemote[low],
+																			wRemote[high], po));
 	while (high >= 0) {
-		if (graph.hasEdge(readnd, wRem.at(readnd)[high], po))
+		if (graph.hasEdge(readnd, wRemote[high], po))
 			--high; // this one is covered (since the read HB it)
 		else
 			break;
 	}
-	while (low < (int) wRem.at(readnd).size()) {
-		if (low + 1 < (int) wRem.at(readnd).size() &&
-				graph.hasEdge(wRem.at(readnd)[low + 1], readnd, po))
+	while (low < (int) wRemote.size()) {
+		if (low + 1 < (int) wRemote.size() &&
+				graph.hasEdge(wRemote[low + 1], readnd, po))
 			++low; // this one is covered
 		else
 			break;
 	}
-	assert(low >= high || graph.hasEdge(wRem.at(readnd)[low],
-																			wRem.at(readnd)[high], po));
-	assert((high == -1 || !graph.hasEdge(readnd, wRem.at(readnd)[high], po))
-				 && high + 1 <= (int) wRem.at(readnd).size() &&
-				 (high + 1 == (int) wRem.at(readnd).size() ||
-					graph.hasEdge(readnd, wRem.at(readnd)[high + 1], po))
+	assert(low >= high || graph.hasEdge(wRemote[low],
+																			wRemote[high], po));
+	assert((high == -1 || !graph.hasEdge(readnd, wRemote[high], po))
+				 && high + 1 <= (int) wRemote.size() &&
+				 (high + 1 == (int) wRemote.size() ||
+					graph.hasEdge(readnd, wRemote[high + 1], po))
 				 && "badly computed high index into wRem (during prepare)");
-	assert((low == (int) wRem.at(readnd).size()
+	assert((low == (int) wRemote.size()
 					||
 				 (
-					graph.hasEdge(wRem.at(readnd)[low], readnd, po)
+					graph.hasEdge(wRemote[low], readnd, po)
 					&&
-					(low + 1 == (int) wRem.at(readnd).size() ||
-					 !graph.hasEdge(wRem.at(readnd)[low + 1], readnd, po))
+					(low + 1 == (int) wRemote.size() ||
+					 !graph.hasEdge(wRemote[low + 1], readnd, po))
 				 )
 					||
 				 (
-					!graph.hasEdge(wRem.at(readnd)[low], readnd, po) &&
+					!graph.hasEdge(wRemote[low], readnd, po) &&
 					low == 0 // this also covers the case of read HB first write
 				 )) && "badly computed low index into wRem (during prepare)");
 
@@ -124,21 +126,21 @@ void VCValClosure::prepareOne
 	// only by the 'low' remote write since all
 	// remote writes after 'low' do not HB readnd
 	// (otherwise 'low' itself would be covered)
-	if (low < (int) wRem.at(readnd).size() &&
-			graph.hasEdge(wRem.at(readnd)[low], readnd, po) &&
-			graph.hasEdge(localcandidate, wRem.at(readnd)[low], po))
+	if (low < (int) wRemote.size() &&
+			graph.hasEdge(wRemote[low], readnd, po) &&
+			graph.hasEdge(localcandidate, wRemote[low], po))
 		wLoc.emplace(readnd, nullptr); // local write is covered
 	else {
 		wLoc.emplace(readnd, localcandidate); // local write is not covered
 		// now check if the local write covers
 		// the 'low' remote write
-		if (low < (int) wRem.at(readnd).size() &&
-				graph.hasEdge(wRem.at(readnd)[low], localcandidate, po)) {
+		if (low < (int) wRemote.size() &&
+				graph.hasEdge(wRemote[low], localcandidate, po)) {
 			// it does
-      assert(graph.hasEdge(wRem.at(readnd)[low], readnd, po));
+      assert(graph.hasEdge(wRemote[low], readnd, po));
 			++low;
-			assert(low == (int) wRem.at(readnd).size() ||
-						 !graph.hasEdge(wRem.at(readnd)[low], readnd, po));
+			assert(low == (int) wRemote.size() ||
+						 !graph.hasEdge(wRemote[low], readnd, po));
 		}
 	}
 
@@ -199,7 +201,7 @@ void VCValClosure::updateVisibleCache
 	int& low = wBounds[readnd].first;
 	int& high = wBounds[readnd].second;
 	const Node *& wLocal = wLoc[readnd];
-	const std::vector<const Node *>& wRemote = wRem.at(readnd);
+	const std::vector<const Node *>& wRemote = *(wRem.at(readnd));
 	
 	// Update remote
 	assert(low >= high || graph.hasEdge(wRemote[low],
@@ -305,7 +307,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 	int& low = wBounds[readnd].first;
 	int& high = wBounds[readnd].second;
 	const Node *& wLocal = wLoc[readnd];
-	const std::vector<const Node *>& wRemote = wRem.at(readnd);
+	const std::vector<const Node *>& wRemote = *(wRem.at(readnd));
 	// Rule1: there exists a write such that
 	// (i) GOOD (ii) HEAD (iii) HB read
 	//
@@ -435,7 +437,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 	int& low = wBounds[readnd].first;
 	int& high = wBounds[readnd].second;
 	const Node *& wLocal = wLoc[readnd];
-	const std::vector<const Node *>& wRemote = wRem.at(readnd);
+	const std::vector<const Node *>& wRemote = *(wRem.at(readnd));
 	// Rule2: there exists a write such that
 	// (i) GOOD (ii) TAIL
 	//
@@ -505,6 +507,17 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
 	if (ann.loc == VCAnnotation::Loc::LOCAL) {
     // Root readnd with LOCAL location
+		/*
+    if (!wLocal || !isGood(wLocal, ann)) {
+			graph.to_dot(po,"");
+			llvm::errs() << "\n\nREADNODE: [" << readnd->getProcessID() << " ][ " << readnd->getEventID() << " ]\n";
+			if (!wLocal)
+				llvm::errs() << "HAS NO LOCAL\n\n";
+			else {
+				llvm::errs() << "HAS LOCAL WRITE: [" << wLocal->getProcessID() << " ][ " << wLocal->getEventID() << " ]\n\n";
+			}
+		}
+		*/
 		assert(wLocal && isGood(wLocal, ann) && "Rule1");
 		
 		if (low > high || !graph.hasEdge(wLocal, wRemote[high], po)) {
@@ -593,7 +606,7 @@ std::pair<bool, bool> VCValClosure::ruleThree
 	int& low = wBounds[readnd].first;
 	int& high = wBounds[readnd].second;
 	const Node *& wLocal = wLoc[readnd];
-	const std::vector<const Node *>& wRemote = wRem.at(readnd);
+	const std::vector<const Node *>& wRemote = *(wRem.at(readnd));
 	// Rule3: for every write such that
 	// (i) BAD (ii) HEAD (iii) HB read
 	// it HB some visible GOOD one
@@ -744,6 +757,7 @@ void VCValClosure::valClose
 			updateVisibleCache(po, newread);
       // Rule1
       auto res = ruleOne(po, newread, *newann);
+			if (res.first) { closed = false; return; }
 			if (res.second) change = true;
 			// Rule2
       res = ruleTwo(po, newread, *newann); assert(!res.first);
