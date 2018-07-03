@@ -690,19 +690,19 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
 		
 		it = mutateWrites.erase(it);
 		while (it != mutateWrites.end()) {
-      const Node * writend = *it;
-			if (value != writend->getEvent()->value ||
+      const Node * anothernd = *it;
+			if (value != anothernd->getEvent()->value ||
 					(loc == VCAnnotation::Loc::REMOTE &&
-					 writend->getProcessID() == readnd->getProcessID())) {
+					 anothernd->getProcessID() == readnd->getProcessID())) {
         ++it;
 			} else {
         // good value and acceptable location
-				if (writend->getProcessID() == readnd->getProcessID()) {
+				if (anothernd->getProcessID() == readnd->getProcessID()) {
 					assert(goodLocal.first == 31337);
-					goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
+					goodLocal = VCIID(anothernd->getProcessID(), anothernd->getEventID());
 				}
 				else
-					goodRemote.emplace(writend->getProcessID(), writend->getEventID());
+					goodRemote.emplace(anothernd->getProcessID(), anothernd->getEventID());
 				it = mutateWrites.erase(it);
 			}
 		}

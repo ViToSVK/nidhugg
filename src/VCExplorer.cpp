@@ -89,7 +89,7 @@ bool VCExplorer::explore()
 			// Fully executed trace
       ++executed_traces_full;
 			//llvm::errs() << "********* FULL TRACE *********\n";                        ///////////////////////
-			current->annotation.dump();
+			//current->annotation.dump();
 			//current->graph.to_dot("");
 			current.reset();
 			continue;
@@ -108,6 +108,16 @@ bool VCExplorer::explore()
 			assert(nodesToMutate.size() == 1);
 		}
 
+		// ordering of nodes to try mutations
+		// in this branch we DON'T HAVE the preference node
+		auto orderedNodesToMutate = std::list<const Node *>();
+    for (auto& ndtomut : nodesToMutate) {
+      if (ndtomut->getProcessID() == current->graph.starRoot())
+				orderedNodesToMutate.push_front(ndtomut); // root first
+			else
+				orderedNodesToMutate.push_back(ndtomut); // non-root after
+		}
+		
 	  std::vector<unsigned> processLengths = current->graph.getProcessLengths();
 
 		assert(current->unannot.empty());
@@ -154,7 +164,9 @@ bool VCExplorer::explore()
 			//current->graph.to_dot(po, "");
 
 			// Try all possible mutations
-			for (auto nd : nodesToMutate) {
+			for (auto ndit = orderedNodesToMutate.begin();
+					 ndit != orderedNodesToMutate.end(); ++ndit) {
+				const Node * nd = *ndit;
         if (isRead(nd->getEvent())) {
           bool error = mutateRead(po, withoutMutation, nd);
 					if (error) {
