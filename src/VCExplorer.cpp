@@ -89,7 +89,7 @@ bool VCExplorer::explore()
 			// Fully executed trace
       ++executed_traces_full;
 			//llvm::errs() << "********* FULL TRACE *********\n";                        ///////////////////////
-			//current->annotation.dump();
+			current->annotation.dump();
 			//current->graph.to_dot("");
 			current.reset();
 			continue;

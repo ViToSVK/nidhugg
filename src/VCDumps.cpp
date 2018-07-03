@@ -154,7 +154,21 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot)
     << "] observes " << pr.second.value << "-";
 		char loc = (pr.second.loc == VCAnnotation::Loc::LOCAL)?'L':
 			((pr.second.loc == VCAnnotation::Loc::REMOTE)?'R':'A');
-		out << loc << ")\n";
+		out << loc << " ";
+		if (pr.second.loc != VCAnnotation::Loc::LOCAL) {
+      out << "rem: ";
+			for (auto& iid : pr.second.goodRemote)
+				out << "[" << iid.first << "][" << iid.second << "] ";
+		}
+		if (pr.second.loc != VCAnnotation::Loc::REMOTE
+				&& pr.second.goodLocal) {
+			if (pr.second.goodLocal->first == INT_MAX)
+				out << "loc: INIT ";
+			else
+				out << "loc: [" << pr.second.goodLocal->first
+						<< "][" << pr.second.goodLocal->second << "] ";
+		}
+		out << ")\n";
   }
   out << "}\n";
 
