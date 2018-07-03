@@ -124,9 +124,6 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 			nd = processes[proc_idx][ev_idx];
 			assert(nd);
 			assert(nodes.count(nd));
-			//llvm::dbgs() << " o:" << ((int) nd->getEvent()->kind)
-			//						 << " n:" << ((int) ev->kind)
-			//						 << " ||";
 			assert((nd->getEvent()->kind == ev->kind ||
 							(nd->getEvent()->kind == VCEvent::Kind::DUMMY &&
 							 ev_idx == processes[proc_idx].size() - 1) ||
@@ -175,7 +172,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 				wNonrootUnord.emplace_hint(itnonr, ev->ml, std::unordered_set<const Node*>());
 				wNonrootUnord[ev->ml].reserve(8);
 			}
-			if (nd->getProcessID() != starRoot()) {
+			if (nd->getProcessID() != starRoot()) {			
 				auto itml = readsNonroot.find(ev->ml);
 				if (itml == readsNonroot.end()) {
 					readsNonroot.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
@@ -399,7 +396,7 @@ void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& 
         const Node *n3 = processes[bef.first][bef.second];
 				const Node *n4 = processes[aft.first][aft.second];
 				assert(!hasEdge(n4, n3, po) && "Cycle");
-				if (!hasEdge(n4, n3, po))
+				if (!hasEdge(n3, n4, po))
 					addEdgeHelp(bef.first, bef.second,
 											aft.first, aft.second, po);
 			}
@@ -412,7 +409,7 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 																unsigned tj, unsigned tj_evx,
 																const PartialOrder& po) const
 {
-  ThreadPairsVclocks& succ = *(po.first);
+	ThreadPairsVclocks& succ = *(po.first);
 	ThreadPairsVclocks& pred = *(po.second);
 	assert( succ[ti][tj][ti_evx] > (int) tj_evx && // ! ti[ti_evx] HB tj[tj_evx]
 					succ[tj][ti][tj_evx] > (int) ti_evx && // ! tj[tj_evx] HB ti[ti_evx]
@@ -461,10 +458,35 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
 	assert(nd1->getEvent() == ev1);
 	assert(nd1->getProcessID() != starRoot());
 
+	/*
+	if ((nd1->getProcessID() == 3 && nd1->getEventID() == 0) || (nd1->getProcessID() == 6 && nd1->getEventID() == 1))
+	  llvm::errs() << "ORDERING NODE [ " << nd1->getProcessID() << " ][ " << nd1->getEventID()
+								 << "], ml --- " << nd1->getEvent()->ml.to_string() << "  ";
+	if (nd1->getProcessID() == 6 && nd1->getEventID() == 1 && processes.size() > 3 && processes[3].size() >= 0)
+		llvm::errs() << "read[3][0] EXISTS, ml --- " << processes[3][0]->getEvent()->ml.to_string() << " ";
+	if (nd1->getProcessID() == 3 && nd1->getEventID() == 0 && processes.size() > 6 && processes[6].size() >= 2)
+		llvm::errs() << "write[6][1] EXISTS, ml --- " << processes[6][1]->getEvent()->ml.to_string() << " ";
+
+	if (nd1->getProcessID() == 3 && nd1->getEventID() == 0 && processes.size() > 6 && processes[6].size() >= 2
+			&& ev1->ml == processes[6][1]->getEvent()->ml) {
+		to_dot("");
+		llvm::errs() << "\nWNONROOTUNORD:\n";
+		for (auto& ml_set : wNonrootUnord) {
+			llvm::errs() << ml_set.first.to_string() << " ";
+      for (auto& wrnd : ml_set.second)
+				llvm::errs() << "[" << wrnd->getProcessID() << "][" << wrnd->getEventID() << "] ";
+			llvm::errs() << "\n";
+		}
+		llvm::errs() << "READML: " << ev1->ml.to_string() << "   are they same? "
+								 << (ev1->ml == processes[6][1]->getEvent()->ml) << "\n";
+	}
+	*/
+	
 	// collect writes to order
 	auto itnsw = wNonrootUnord.find(ev1->ml);
 	assert(itnsw != wNonrootUnord.end());	
 	auto toOrder = std::unordered_set<const Node *>();
+
 	toOrder.reserve(itnsw->second.size());
 	for (auto& writend : itnsw->second) {
     assert(writend->getProcessID() != starRoot());
@@ -474,14 +496,15 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
 
 	// if ev1 is write, collect reads to order
 	if (isWrite(ev1)) {
-		auto itnsr = readsNonroot.find(ev1->ml);
-		if (itnsr != readsNonroot.end())
+		auto itnsr = readsNonroot.find(ev1->ml);	
+		if (itnsr != readsNonroot.end()) {
 			for (auto& readnd : itnsr->second)
 				if (nd1->getProcessID() != readnd->getProcessID()
 						&& annotation.defines(readnd))
 					toOrder.insert(readnd);
+		}
 	}
-	
+
 	for (auto it = toOrder.begin(); it != toOrder.end(); ++it) {
     const Node *nd2 = *it;
 		assert(nd1->getProcessID() != nd2->getProcessID() &&

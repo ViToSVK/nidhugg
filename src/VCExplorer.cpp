@@ -49,12 +49,12 @@ bool VCExplorer::explore()
 		assert(!worklist.front().get());
 		worklist.pop_front();
 
-		/*
-    llvm::errs() << "********* TRACE *********\n";                               ///////////////////////
-		current->annotation.dump();
-		current->graph.to_dot("");
+		
+    //llvm::errs() << "********* TRACE *********\n";                               ///////////////////////
+		//current->annotation.dump();
+		//current->graph.to_dot("");
 		// if (current->graph.getExtensionFrom() > 0) return;
-		*/
+		
 
 		/*
 		current->graph.to_dot("");
@@ -115,12 +115,10 @@ bool VCExplorer::explore()
 						 !extendedPOs.front().second.get());
 			extendedPOs.pop_front();
 
-			/*
-			llvm::errs() << "********* EXTENSION *********\n";                           ///////////////////////
-			current->graph.to_dot(po, "");
-			*/
+
 			
 			auto withoutMutation = VCValClosure(current->graph, current->annotation);
+			//llvm::errs() << "\nclosure after extension writes orderings...\n";
 			withoutMutation.valClose(po, nullptr, nullptr);
 			if (!withoutMutation.closed) {
         // This ordering of extension events
@@ -131,6 +129,9 @@ bool VCExplorer::explore()
 				po.second.reset();
 				continue;
 			}
+			
+			//llvm::errs() << "********* EXTENSION *********\n";                           ///////////////////////
+			//current->graph.to_dot(po, "");
 
 			// Try all possible mutations
 			for (auto nd : nodesToMutate) {
@@ -229,6 +230,8 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 					 !readOrderedPOs.front().second.get());
 		readOrderedPOs.pop_front();
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////// SHOULD DO CLOSURE HERE
+		
 		auto mutationCandidates =
 			current->graph.getMutationCandidates(roPo, current->negative, nd);
 		
@@ -255,6 +258,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 																		(new ThreadPairsVclocks(*(roPo.second))));
 
 			auto withMutation = VCValClosure(withoutMutation);
+			//llvm::errs() << "\nclosure after read orderings and mutation...\n";
 			withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
 
 			if (!withMutation.closed) {
