@@ -23,6 +23,7 @@
 
 #include <list>
 #include <memory>
+#include <time.h>
 
 #include "VCTraceBuilder.h"
 #include "VCTrace.h"
@@ -62,7 +63,21 @@ class VCExplorer {
   unsigned executed_traces = 1;
 	// Number of fully executed traces
 	unsigned executed_traces_full = 0;
-  
+  // Total time spent on closure
+	double time_closure = 0;
+	// Total time spent on copying
+	double time_graphcopy = 0;
+	// Total time spent on linearization and replaying
+	double time_replaying = 0;
+	// Total time spent on mazurkiewicz ordering
+	double time_maz = 0;
+	unsigned cl_ordering_failed = 0;
+	unsigned cl_ordering_succeeded = 0;
+	unsigned cl_mutation_failed = 0;
+	unsigned cl_mutation_succeeded = 0;
+	
+
+	
  public:
 
   bool explore();

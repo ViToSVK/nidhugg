@@ -19,16 +19,26 @@
  */
 
 #include <iostream>
+#include <iomanip>
 
 #include "VCExplorer.h"
 #include "VCHelpers.h"
 
 void VCExplorer::print_stats()
 {
-	llvm::dbgs() << "\n";	
-	llvm::dbgs() << "Fully executed traces:            " << executed_traces_full << "\n";
-	llvm::dbgs() << "Fully+partially executed traces:  " << executed_traces << "\n";	
-	llvm::dbgs() << "\n";
+	std::setprecision(4);
+	std::cout << "\n";	
+	std::cout << "Fully executed traces:            " << executed_traces_full << "\n";
+	std::cout << "Fully+partially executed traces:  " << executed_traces << "\n";
+	std::cout << "Total time spent on copying:      " << time_graphcopy << "\n";
+	std::cout << "Total time spent on replaying:    " << time_replaying << "\n";
+	std::cout << "Total time spent on mazurkiewicz: " << time_maz << "\n";	
+	std::cout << "Total time spent on closure:      " << time_closure << "\n";
+	std::cout << "Closure after ordering failed:    " << cl_ordering_failed << "\n";
+	std::cout << "Closure after ordering succeeded: " << cl_ordering_succeeded << "\n";
+	std::cout << "Closure after mutation failed:    " << cl_mutation_failed << "\n";
+	std::cout << "Closure after mutation succeeded: " << cl_mutation_succeeded << "\n";
+	std::cout << "\n";
 
 	// Change to false to test if assertions are on
 	// To disable assertions (i.e. build as Release),
@@ -103,11 +113,15 @@ bool VCExplorer::explore()
 		assert(current->unannot.empty());
 		for (auto& nd : nodesToMutate)
 			current->unannot.insert(nd->getEvent()->iid.get_pid());
+
+    clock_t init = std::clock();
 		
 		// Get partial-order refinements that order extension events
 		// Each refinement will be a candidate for possible mutations
     std::list<PartialOrder> extendedPOs = extensionWritesOrderings();
 		assert(!extendedPOs.empty() && "current->trace is one witness");
+
+    time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 		
     while (!extendedPOs.empty()) {
       auto po = std::move(extendedPOs.front());
@@ -116,10 +130,16 @@ bool VCExplorer::explore()
 			extendedPOs.pop_front();
 
 
+			init = std::clock();
 			
 			auto withoutMutation = VCValClosure(current->graph, current->annotation);
 			//llvm::errs() << "\nclosure after extension writes orderings...\n";
 			withoutMutation.valClose(po, nullptr, nullptr);
+
+			time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+      if (!withoutMutation.closed) ++cl_ordering_failed;
+			else ++cl_ordering_succeeded;
+			
 			if (!withoutMutation.closed) {
         // This ordering of extension events
 				// makes the original annotation unrealizable
@@ -221,9 +241,13 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 	assert(mutatedUnannot.count(nd->getEvent()->iid.get_pid()));
 	mutatedUnannot.erase(nd->getEvent()->iid.get_pid());
 
+  clock_t init = std::clock();
+	
   std::list<PartialOrder> readOrderedPOs = readToBeMutatedOrderings(po, nd);
 	assert(!readOrderedPOs.empty());
 
+  time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
+	
 	while (!readOrderedPOs.empty()) {
 		auto roPo = std::move(readOrderedPOs.front());
 		assert(!readOrderedPOs.front().first.get() &&
@@ -257,10 +281,16 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 																		std::unique_ptr<ThreadPairsVclocks>
 																		(new ThreadPairsVclocks(*(roPo.second))));
 
+      init = std::clock();
+			
 			auto withMutation = VCValClosure(withoutMutation);
 			//llvm::errs() << "\nclosure after read orderings and mutation...\n";
 			withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
 
+			time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+      if (!withMutation.closed) ++cl_mutation_failed;
+			else ++cl_mutation_succeeded;
+			
 			if (!withMutation.closed) {
 				// The mutation on 'mutatedPo' failed
 				// llvm::errs() << "FAILED\n";                                                         ///////////////////////
@@ -277,13 +307,20 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 			VCAnnotation mutatedAnnotation(current->annotation);
 			mutatedAnnotation.add(nd, valpos_ann.second);
 
+      init = std::clock();
+			
 			auto mutatedTrace =
 				extendTrace(current->graph.linearize(mutatedPo, nullptr),
 										mutatedUnannot);
+
+			time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
+			
 			if (mutatedTrace.first.empty())
 				return true; // found an error
 			assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
 
+      init = std::clock();
+			
 			VCGraphVclock mutatedGraph(current->graph,       // base for graph
 																 std::move(mutatedPo), // base for 'original' po
 																 mutatedTrace.first); // to extend the graph
@@ -297,6 +334,8 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 										 std::move(mutatedTrace.second)));	
 			assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
 						 && mutatedGraph.empty() && mutatedTrace.second.empty());
+
+      time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 			
 			worklist.push_front(std::move(mutatedVCTrace));
 			assert(!mutatedVCTrace.get());
