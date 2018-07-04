@@ -163,19 +163,21 @@ bool VCExplorer::explore()
 			//llvm::errs() << "********* EXTENSION *********\n";                           ///////////////////////
 			//current->graph.to_dot(po, "");
 
+			auto negativeWriteMazBranch = VCAnnotationNeg(current->negative);
+
 			// Try all possible mutations
 			for (auto ndit = orderedNodesToMutate.begin();
 					 ndit != orderedNodesToMutate.end(); ++ndit) {
 				const Node * nd = *ndit;
         if (isRead(nd->getEvent())) {
-          bool error = mutateRead(po, withoutMutation, nd);
+          bool error = mutateRead(po, withoutMutation, negativeWriteMazBranch, nd);
 					if (error) {
             assert(originalTB.error_trace);
 						current.reset();
 						worklist.clear();
 						return error;
 					}
-				  current->negative.update(nd, processLengths);
+				  negativeWriteMazBranch.update(nd, processLengths);
 				}
 				else {
           assert(isLock(nd->getEvent()));
@@ -245,7 +247,8 @@ std::list<PartialOrder> VCExplorer::readToBeMutatedOrderings(const PartialOrder&
 /* MUTATE READ                 */
 /* *************************** */
 
-bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd)
+bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
+														const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isRead(nd->getEvent()));
 	
@@ -269,7 +272,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
     ///////////////////////////////////////////////////////////////////////////////////////////////// SHOULD DO CLOSURE HERE
 		
 		auto mutationCandidates =
-			current->graph.getMutationCandidates(roPo, current->negative, nd);
+			current->graph.getMutationCandidates(roPo, negativeWriteMazBranch, nd);
 		
 		/*
 		llvm::errs() << "NODE[" << nd->getProcessID() << "][" << nd->getEventID() << "] should see:";
@@ -341,7 +344,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 			std::unique_ptr<VCTrace> mutatedVCTrace
 				(new VCTrace(std::move(mutatedTrace.first),
 										 std::move(mutatedAnnotation),
-										 current->negative,
+										 negativeWriteMazBranch,
 										 std::move(mutatedGraph),
 										 std::move(mutatedTrace.second)));	
 			assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()

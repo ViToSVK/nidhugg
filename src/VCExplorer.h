@@ -43,7 +43,8 @@ class VCExplorer {
 
 	std::list<PartialOrder> readToBeMutatedOrderings(const PartialOrder& po, const Node * nd);
 
-	bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
+	bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
+									const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
 	bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
 
