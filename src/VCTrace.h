@@ -29,65 +29,61 @@
 class VCTrace {
  public:
 
-  /* *************************** */
-  /* INFORMATION                 */
-  /* *************************** */
-  
   std::vector<VCEvent> trace;
 
-	VCAnnotation annotation;
-	VCAnnotationNeg negative;
+  VCAnnotation annotation;
+  VCAnnotationNeg negative;
 
-	VCGraphVclock graph;
+  VCGraphVclock graph;
 
-	std::unordered_set<int> unannot;
+  std::unordered_set<int> unannot;
 
-	std::unordered_map<int, int> in_critical_section;
-	
+  std::unordered_map<int, int> in_critical_section;
+
 
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
 
   VCTrace() = delete;
-	
+
   VCTrace(std::vector<VCEvent>&& trace,
-				  int star_root_index)
-	: trace(std::move(trace)),
-		annotation(),
-		negative(),
-		graph(this->trace, star_root_index),
-		unannot(),
-		in_critical_section()
-			{
+          int star_root_index)
+  : trace(std::move(trace)),
+    annotation(),
+    negative(),
+    graph(this->trace, star_root_index),
+    unannot(),
+    in_critical_section()
+      {
         for (unsigned i = 0; i < trace.size(); ++i)
           if (isRead(trace[i])) {
             const Node *nd = graph.getNode(trace[i]);
-						if (!graph.nodes_iterator(nd).atProcessEnd()) {
+            if (!graph.nodes_iterator(nd).atProcessEnd()) {
               assert(nd->getProcessID() == 0);
-							annotation.add(nd, VCAnnotation::Ann());
-						}
-					}
-			};
+              annotation.add(nd, VCAnnotation::Ann());
+            }
+          }
+      };
 
   VCTrace(std::vector<VCEvent>&& trace,
-					VCAnnotation&& annotation,
-					const VCAnnotationNeg& negative,
-					VCGraphVclock&& graph,
-					std::unordered_map<int, int>&& cs)
-	: trace(std::move(trace)),
-		annotation(std::move(annotation)),
-		negative(negative),
-		graph(std::move(graph)),
-		unannot(),
-		in_critical_section(std::move(cs))
-			{};
-	
+          VCAnnotation&& annotation,
+          const VCAnnotationNeg& negative,
+          VCGraphVclock&& graph,
+          std::unordered_map<int, int>&& cs)
+  : trace(std::move(trace)),
+    annotation(std::move(annotation)),
+    negative(negative),
+    graph(std::move(graph)),
+    unannot(),
+    in_critical_section(std::move(cs))
+      {};
+
   VCTrace(VCTrace&& tr) = default;
   VCTrace& operator=(VCTrace&& tr) = delete;
   VCTrace(const VCTrace&) = delete;
   VCTrace& operator=(const VCTrace&) = delete;
-  
+
 };
 
 #endif

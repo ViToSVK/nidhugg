@@ -27,80 +27,80 @@
 class VCValClosure {
  public:
 
-	typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
-	
-	VCValClosure(const VCGraphVclock& gr, const VCAnnotation& an)
-	: graph(gr), annotation(an) {}
+  typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
 
-	VCValClosure(const VCValClosure& oth) = default;
-	VCValClosure& operator=(VCValClosure& oth) = delete;
-	VCValClosure(VCValClosure&& oth) = default;
-	VCValClosure& operator=(VCValClosure&& oth) = delete;
+  VCValClosure(const VCGraphVclock& gr, const VCAnnotation& an)
+  : graph(gr), annotation(an) {}
 
-	//
+  VCValClosure(const VCValClosure& oth) = default;
+  VCValClosure& operator=(VCValClosure& oth) = delete;
+  VCValClosure(VCValClosure&& oth) = default;
+  VCValClosure& operator=(VCValClosure&& oth) = delete;
+
+  //
 
  private:
 
-	inline bool isGood(const Node * writend, const VCAnnotation::Ann& ann) {
-		assert(!writend->getEvent() || isWrite(writend->getEvent()));
-		auto key = std::pair<unsigned, unsigned>(writend->getProcessID(),
-																						 writend->getEventID());
+  inline bool isGood(const Node * writend, const VCAnnotation::Ann& ann) {
+    assert(!writend->getEvent() || isWrite(writend->getEvent()));
+    auto key = std::pair<unsigned, unsigned>(writend->getProcessID(),
+                                             writend->getEventID());
     if (ann.goodLocal && *(ann.goodLocal) == key) {
-			assert(ann.loc != VCAnnotation::Loc::REMOTE);
+      assert(ann.loc != VCAnnotation::Loc::REMOTE);
       return true;
-		}
-		if (ann.goodRemote.count(key)) {
+    }
+    if (ann.goodRemote.count(key)) {
       assert(ann.loc != VCAnnotation::Loc::LOCAL);
-			return true;
-		}
+      return true;
+    }
     return false;
-	}
-	
+  }
+
   void prepareOne(const PartialOrder& po, const Node * readnd);
-	
-	void prepare(const PartialOrder& po, const Node * newread);
 
-	void updateVisibleCache(const PartialOrder& po, const Node * readnd);
+  void prepare(const PartialOrder& po, const Node * newread);
 
-	std::pair<bool, bool> ruleOne
-		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+  void updateVisibleCache(const PartialOrder& po, const Node * readnd);
+
+  std::pair<bool, bool> ruleOne
+    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleTwo
-		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleThree
-		(const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
  public:
-	
-	void valClose(const PartialOrder& po, const Node * newread,
-								const VCAnnotation::Ann * newval);
 
-	void valCloseLock(const PartialOrder& po,
-										const Node * locknode,
-										const Node * lastunlocknode);
+  void valClose(const PartialOrder& po, const Node * newread,
+                const VCAnnotation::Ann * newval);
 
-	//
+  void valCloseLock(const PartialOrder& po,
+                    const Node * locknode,
+                    const Node * lastunlocknode);
 
-	const VCGraphVclock& graph;
+  //
+
+  const VCGraphVclock& graph;
 
   const VCAnnotation& annotation;
 
-	//
-	
-	bool closed;
-	
-	std::unordered_map
-	<SymAddrSize, std::vector<const Node *>> wNonroot;
-	
-	std::unordered_map
-	<const Node *, const std::vector<const Node *> *> wRem;
+  //
 
-	std::unordered_map
-	<const Node *, std::pair<int, int>> wBounds;
+  bool closed;
 
-	std::unordered_map
-	<const Node *, const Node *> wLoc;
+  std::unordered_map
+  <SymAddrSize, std::vector<const Node *>> wNonroot;
+
+  std::unordered_map
+  <const Node *, const std::vector<const Node *> *> wRem;
+
+  std::unordered_map
+  <const Node *, std::pair<int, int>> wBounds;
+
+  std::unordered_map
+  <const Node *, const Node *> wLoc;
 };
-	
+
 #endif // _VC_VALCLOSURE_H

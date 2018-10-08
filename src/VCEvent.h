@@ -47,63 +47,63 @@
  * it must be the first event in the sequence.
  */
 class VCEvent {
-	
+
  public:
   VCEvent(const IID<int> &iid, const CPid& cpid,
-					unsigned instruction_order, unsigned event_order,
-					unsigned id, const VCEvent* unannotatedLock)
+          unsigned instruction_order, unsigned event_order,
+          unsigned id, const VCEvent* unannotatedLock)
     : kind(Kind::DUMMY),
-		  iid(iid), cpid(cpid), childs_cpid(),
-	    size(1), md(0), instruction(0),
-		  may_conflict(false),
-		  ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
-		  value(0),
-		  instruction_order(instruction_order),
-		  event_order(event_order),
-		  pid(1337),
-		  id(id)
+      iid(iid), cpid(cpid), childs_cpid(),
+      size(1), md(0), instruction(0),
+      may_conflict(false),
+      ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
+      value(0),
+      instruction_order(instruction_order),
+      event_order(event_order),
+      pid(1337),
+      id(id)
       {
-				assert(iid.get_pid() >= 0);
-				if (unannotatedLock) {
-					assert(unannotatedLock->kind == Kind::M_LOCKATTEMPT);
-					kind = unannotatedLock->kind;
-					instruction = unannotatedLock->instruction;
-					may_conflict = true;
-					ml = unannotatedLock->ml;
-					value = unannotatedLock->value;
-				}
-			}
-	
+        assert(iid.get_pid() >= 0);
+        if (unannotatedLock) {
+          assert(unannotatedLock->kind == Kind::M_LOCKATTEMPT);
+          kind = unannotatedLock->kind;
+          instruction = unannotatedLock->instruction;
+          may_conflict = true;
+          ml = unannotatedLock->ml;
+          value = unannotatedLock->value;
+        }
+      }
+
  private:
-	// Returns a 'blank copy' of the event
-	// The event will be a part of replay_trace
- VCEvent(const VCEvent& oth, bool mutatedLock)
+  // Returns a 'blank copy' of the event
+  // The event will be a part of replay_trace
+  VCEvent(const VCEvent& oth, bool mutatedLock)
     : kind(oth.kind),
-		  iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
-	    size(oth.size) /**/, md(0), instruction(oth.instruction),
-		  may_conflict(false),
-		  ml(oth.ml),
-		  value(oth.value),
-		  instruction_order(oth.instruction_order) /**/,
-		  event_order(oth.event_order) /**/,
-		  pid(1337),
-		  id(-1)
+      iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
+      size(oth.size) /**/, md(0), instruction(oth.instruction),
+      may_conflict(false),
+      ml(oth.ml),
+      value(oth.value),
+      instruction_order(oth.instruction_order) /**/,
+      event_order(oth.event_order) /**/,
+      pid(1337),
+      id(-1)
       {
-				assert(iid.get_pid() >= 0);
-				if (mutatedLock) {
-				  assert(kind == Kind::M_LOCKATTEMPT);
-				  this->kind = Kind::M_LOCK;
-				}
-			}
-	
+        assert(iid.get_pid() >= 0);
+        if (mutatedLock) {
+          assert(kind == Kind::M_LOCKATTEMPT);
+          this->kind = Kind::M_LOCK;
+        }
+      }
+
  public:
   enum class Kind {
     DUMMY,
-		LOAD, STORE,
-		SPAWN, JOIN,
+    LOAD, STORE,
+    SPAWN, JOIN,
     M_INIT, M_LOCKATTEMPT, M_LOCK, M_UNLOCK, M_DESTROY
   } kind;
-	
+
   /* A simple identifier of the thread that executed this event */
   IID<int> iid;
   /* A complex identifier of the thread that executed this event */
@@ -123,33 +123,32 @@ class VCEvent {
   bool may_conflict;
   /* Memory location (if any) modified/read by this event */
   SymAddrSize ml;
-	/* Value (if any) stored/loaded by this event */
-	int value;
-	/* Sequential number (within the thread) of the LAST instruction in this event
-	 * The first instruction of the thread is number 1 !!! */
-	unsigned instruction_order;
-	/* Sequential number (within the thread) of this event
-	 * The first event of the thread is number 0 !!! */
-	unsigned event_order;
-	/* Process ID in our partial order */
-	mutable unsigned pid;
+  /* Value (if any) stored/loaded by this event */
+  int value;
+  /* Sequential number (within the thread) of the LAST instruction in this event
+   * The first instruction of the thread is number 1 !!! */
+  unsigned instruction_order;
+  /* Sequential number (within the thread) of this event
+   * The first event of the thread is number 0 !!! */
+  unsigned event_order;
+  /* Process ID in our partial order */
+  mutable unsigned pid;
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
   VCEvent blank_copy(bool mutatedLock) const {
     return VCEvent(*this, mutatedLock);
   }
-  
+
   void setPID(unsigned procid) const {
-		pid = procid;
-	}
-	
-	void setSize(int sizeno) const {
-		size = sizeno;
-	}
-	
+    pid = procid;
+  }
+
+  void setSize(int sizeno) const {
+    size = sizeno;
+  }
+
   void dump() const;
-	
 };
 
 #endif // _VC_EVENT_H_

@@ -40,20 +40,20 @@
 class VCTraceBuilder : public TSOTraceBuilder {
 
  public:
-	
+
   /* *************************** */
   /* INTERNALS                   */
   /* *************************** */
-  
+
   const Configuration &config;
   llvm::Module *M;
 
  private:
-	
+
   /* *************************** */
   /* SCHEDULING                  */
   /* *************************** */
-  
+
   // We want to get some initial trace
   bool sch_initial;
   // We want to replay 'replay_trace'
@@ -61,18 +61,14 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // We want to get an extension of our trace
   bool sch_extend;
 
- public:
-
-	bool replaying() const { return sch_replay; }
-
- private:
-  
   bool schedule_thread(int *proc, unsigned p);
   bool schedule_arbitrarily(int *proc);
   bool schedule_replay_trace(int *proc);
   void update_prefix(unsigned p);
 
-	std::unordered_map<int, int> in_critical_section;
+  // Size of the map is always 0 or 1, when 1:
+  // key: id of process in CS; value: how deep in CS
+  std::unordered_map<int, int> in_critical_section;
 
   // This is the currently executed instruction
   const llvm::Instruction *current_inst = nullptr;
@@ -81,18 +77,17 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* *************************** */
   /* TRACES                      */
   /* *************************** */
-	
+
   // We consider the global's initialization event
-	// It 'writes' initial value 0 to all global variables
+  // It 'writes' initial value 0 to all global variables
   // const VCEvent initial_event = VCEvent(IID<IPid>(0,0));
 
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
-	// (we don't save anything about the invisible ones, just how many there are)
+  // (we don't save anything about the invisible ones, just how many there are)
+  std::vector<VCEvent> prefix;
 
-	std::vector<VCEvent> prefix;
- 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
   std::vector<VCEvent> replay_trace;
@@ -105,8 +100,9 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // The index into prefix corresponding to the last event that was
   // scheduled. Has the value -1 when no events have been scheduled.
   // This is defined in TSOPSOTraceBuilder.h where we inherit from
-	// int prefix_idx = -1;
-  
+  // I'm commenting it here so I'm aware of it
+  // int prefix_idx = -1;
+
   // Number of executed instructions since init of this TB
   unsigned executed_instr = 0;
 
@@ -120,8 +116,8 @@ class VCTraceBuilder : public TSOTraceBuilder {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
-  };	
-  
+  };
+
  public:
 
   /* *************************** */
@@ -132,33 +128,33 @@ class VCTraceBuilder : public TSOTraceBuilder {
   VCTraceBuilder(const Configuration &conf, llvm::Module *m)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(true), sch_replay(false), sch_extend(false),
-		in_critical_section()
+    in_critical_section()
     {}
 
-  // Use it when you want to do the following:
+  // Use when you want to do the following:
   // (step1) replay the trace tr
   // (step2) extend it until each thread has a new
-	//         unannotated read (or we can not extend further)
+  //         unannotated read (or we can not extend further)
   VCTraceBuilder(const Configuration &conf,
                  llvm::Module *m, std::vector<VCEvent>&& tr,
-								 const std::unordered_set<int>& unannot)
+                 const std::unordered_set<int>& unannot)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(false), sch_replay(true), sch_extend(false),
-		in_critical_section(),
-		replay_trace(std::move(tr)),
-		threads_with_unannotated_read(unannot)
-		{
-			prefix.reserve(replay_trace.size() + 16);
-		}
+    in_critical_section(),
+    replay_trace(std::move(tr)),
+    threads_with_unannotated_read(unannot)
+    {
+      prefix.reserve(replay_trace.size() + 16);
+    }
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */
   /* *************************** */
-  
+
   // Called from DPORDriver::run() at the beginning,
   // from here we create the explorer and explore
   virtual bool reset();
-  
+
   // Called by Interpreter (Execution.cpp) while executing the scheduled instruction
   virtual void executing_instruction(const llvm::Instruction *Instr) {
     current_inst = Instr;
@@ -171,12 +167,12 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Called by Interpreter (Execution.cpp) in order to schedule one instruction
   // (not an entire event, just one (visible or invisible) instruction)
   virtual bool schedule(int *proc, int *aux, int *alt, bool *dryrun);
-  
+
   // Called by Interpreter (Execution.cpp) to inform us
   // of a given special type of instruction happening
-  virtual void refuse_schedule();  // called when scheduling got refused  
+  virtual void refuse_schedule();  // called when scheduling got refused
   virtual void metadata(const llvm::MDNode *md);
-  virtual IID<CPid> get_iid() const; // called from Interpreter::callFree   
+  virtual IID<CPid> get_iid() const; // called from Interpreter::callFree
   virtual void spawn();
   virtual void join(int tgt_proc);
   virtual void atomic_store(const SymData &sd, int val); // WRITE (val)
@@ -185,32 +181,32 @@ class VCTraceBuilder : public TSOTraceBuilder {
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);
   virtual void mutex_unlock(const SymAddrSize &ml); // WRITE (val=ipid << 16 + event_order)
-	virtual void mutex_lock(const SymAddrSize &ml); // READ (val)
+  virtual void mutex_lock(const SymAddrSize &ml); // READ (val)
   virtual void mutex_lock_fail(const SymAddrSize &ml);
-	virtual void mutex_trylock(const SymAddrSize &ml) {
+  virtual void mutex_trylock(const SymAddrSize &ml) {
     llvm::errs() << "No support for pthread_mutex_trylock\n";
     abort();
-	}
+  }
   virtual void full_memory_conflict() {
     llvm::errs() << "No support for full memory conflict\n";
     abort();
   }
 
-	// Called from VCExplorer on a TB created exclusively for this
-	// Schedule entire replay_trace, then extend it, and return it
-	std::pair<std::vector<VCEvent>,
-		std::unordered_map<int, int>> extendGivenTrace();
+  // Called from VCExplorer on a TB created exclusively for this
+  // Schedule entire replay_trace, then extend it, and return it
+  std::pair<std::vector<VCEvent>,
+    std::unordered_map<int, int>> extendGivenTrace();
 
-	// We store an error trace (in their format) here
-  //Trace *error_trace = nullptr;	
-	
+  // We store an error trace (in their format) here
+  // Trace *error_trace = nullptr;
+
   // Called by us when extending a trace, also called by DPORDriver
   // Inside the method, we translate an error trace (if we have any)
   // from our format into their format and then we return it
-  virtual Trace *get_trace() const;  
+  virtual Trace *get_trace() const;
   virtual bool has_error() const { return (error_trace != nullptr)
                                             || (errors.size() > 0); };
-	
+
 };
-  
+
 #endif

@@ -28,55 +28,55 @@
 class VCAnnotationNeg {
  public:
   VCAnnotationNeg()
-		: forbids_init(false) {}
+    : forbids_init(false) {}
 
-	VCAnnotationNeg(const VCAnnotationNeg& oth) = default;
-	VCAnnotationNeg(VCAnnotationNeg&& oth) = default;
+  VCAnnotationNeg(const VCAnnotationNeg& oth) = default;
+  VCAnnotationNeg(VCAnnotationNeg&& oth) = default;
 
-	bool forbidsInitialEvent(const Node * readnd) const {
-		assert(isRead(readnd->getEvent()));
-		auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
-		return forbids_init.count(key);
-	}
-
-	bool forbids(const Node * readnd, const Node * writend) const {
-		assert(isRead(readnd->getEvent()));
-		assert(writend->getEvent() &&
-					 "should call the special function for init event");
-    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
-		auto it = mapping.find(key);
-		if (it == mapping.end())
-			return false;
-		if (writend->getProcessID() >= it->second.size())
-			return false;
-
-		return (it->second[writend->getProcessID()]
-						>= writend->getEventID());
-	}
-
-	void update(const Node * readnd, const std::vector<unsigned>& newneg) {
+  bool forbidsInitialEvent(const Node * readnd) const {
     assert(isRead(readnd->getEvent()));
-		auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
-		forbids_init.insert(key);
-		auto it = mapping.find(key);
-		if (it == mapping.end())
-			mapping.emplace_hint(it, key, newneg);
-		else {
+    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+    return forbids_init.count(key);
+  }
+
+  bool forbids(const Node * readnd, const Node * writend) const {
+    assert(isRead(readnd->getEvent()));
+    assert(writend->getEvent() &&
+           "should call the special function for init event");
+    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+    auto it = mapping.find(key);
+    if (it == mapping.end())
+      return false;
+    if (writend->getProcessID() >= it->second.size())
+      return false;
+
+    return (it->second[writend->getProcessID()]
+            >= writend->getEventID());
+  }
+
+  void update(const Node * readnd, const std::vector<unsigned>& newneg) {
+    assert(isRead(readnd->getEvent()));
+    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+    forbids_init.insert(key);
+    auto it = mapping.find(key);
+    if (it == mapping.end())
+      mapping.emplace_hint(it, key, newneg);
+    else {
       assert(it->second.size() <= newneg.size());
-			it->second.reserve(newneg.size());
-			for (unsigned i = 0; i < newneg.size(); ++i)
-				if (i < it->second.size()) {
+      it->second.reserve(newneg.size());
+      for (unsigned i = 0; i < newneg.size(); ++i)
+        if (i < it->second.size()) {
           assert(it->second[i] <= newneg[i]);
-					it->second[i] = newneg[i];
-				} else
-					it->second.push_back(newneg[i]);
-		}
-	}
-	
+          it->second[i] = newneg[i];
+        } else
+          it->second.push_back(newneg[i]);
+    }
+  }
+
  private:
-	std::unordered_set<VCIID> forbids_init;
-	std::unordered_map<VCIID, std::vector<unsigned>> mapping;
-	
+  std::unordered_set<VCIID> forbids_init;
+  std::unordered_map<VCIID, std::vector<unsigned>> mapping;
+
 };
 
 #endif // _VC_ANNOTATIONNEG_H_

@@ -145,13 +145,13 @@ inline bool isGlobalLoad(const llvm::Instruction *I)
 
 inline bool isJoin(const llvm::Instruction *I) {
   if (!I)
-    return false;	
+    return false;
   return is_function_call(I, "pthread_join");
 }
 
 inline bool isPthreadCreate(const llvm::Instruction *I) {
   if (!I)
-    return false;		
+    return false;
   return is_function_call(I, "pthread_create");
 }
 

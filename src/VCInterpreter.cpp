@@ -1,5 +1,5 @@
 /* Copyright (C) 2014-2016 Carl Leonardsson
- * Copyright (C) 2016-2017 Marek Chalupa 
+ * Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2018 Viktor Toman
  *
  * This file is part of Nidhugg.
@@ -100,13 +100,8 @@ void VCInterpreter::visitLoadInst(llvm::LoadInst &I)
   if(!CheckedLoadValueFromMemory(Result, Ptr, I.getType()))
     return;
 
-	TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue());
-
-	//std::cout << " # LOADING VALUE: " << Result.IntVal.getSExtValue();
-	
-  // for debugging
-  // assert((int)Result.IntVal.getSExtValue() != -1);
-  // TB.setValue((int)Result.IntVal.getSExtValue());
+  // Loading value Result.IntVal.getSExtValue()
+  TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue());
 
   SetValue(&I, Result, SF);
 }
@@ -119,16 +114,12 @@ void VCInterpreter::visitStoreInst(llvm::StoreInst &I)
   GenericValue Val = getOperandValue(I.getOperand(0), SF);
   GenericValue *Ptr = (GenericValue *)GVTOP(getOperandValue(I.getPointerOperand(), SF));
 
+  // Storing value Val.IntVal.getSExtValue()
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
-  TB.atomic_store(sd, (int) Val.IntVal.getSExtValue());  
+  TB.atomic_store(sd, (int) Val.IntVal.getSExtValue());
 
   assert(tso_threads[CurrentThread].store_buffer.empty());
 
-	//std::cout << " # STORING VALUE: " << Val.IntVal.getSExtValue();
-
-  // for debugging
-  // TB.setValue((int)Val.IntVal.getSExtValue());
-  
   CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
 }
 
@@ -138,10 +129,10 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
   if(isPthreadJoin(I,&tid)){
     if(0 <= tid && tid < int(Threads.size()) && tid != CurrentThread){
       if(Threads[tid].ECStack.size()){
-        /* The awaited thread is still executing. */
+        // The awaited thread is still executing.
         TB.mark_unavailable(CurrentThread);
         TB.refuse_schedule();
-        // upon the threads termination, this thread is made
+        // Upon the threads termination, this thread is made
         // available in Interperter::terminate()
         Threads[tid].AwaitingJoin.push_back(CurrentThread);
         return true;
@@ -157,7 +148,7 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
     if(PthreadMutexes.count(ptr) &&
        PthreadMutexes[ptr].isLocked()){
       assert(false && "why am I here?");
-      TB.mark_unavailable(CurrentThread);      
+      TB.mark_unavailable(CurrentThread);
       // TB.refuse_schedule();
       PthreadMutexes[ptr].waiting.insert(CurrentThread);
       return true;
