@@ -67,6 +67,9 @@ class VCExplorer {
 
   std::list<PartialOrder> readToBeMutatedOrderings(const PartialOrder& po, const Node * nd);
 
+  std::list<PartialOrder> newlyObservableWritesOrderings
+    (const PartialOrder& po, const std::unordered_set<const Node *> newobs);
+
   bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
                   const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 

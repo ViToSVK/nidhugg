@@ -85,11 +85,13 @@ class VCAnnotation {
 
   using MappingT = std::unordered_map<VCIID, Ann>;
   using LastLockT = std::unordered_map<SymAddrSize, VCIID>;
+  using ObservableT = std::unordered_map<SymAddrSize, std::unordered_set<VCIID>>;
 
  private:
 
   MappingT mapping;
   LastLockT lastlock;
+  ObservableT observable;
 
  public:
 
@@ -117,7 +119,8 @@ class VCAnnotation {
 
  public:
 
-  void add(const Node * nd, const Ann& ann) {
+  // Retuns VCIIDs of newly observable writes in ann
+  std::unordered_set<VCIID> add(const Node * nd, const Ann& ann) {
     assert(isRead(nd->getEvent()));
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
     auto it = mapping.find(key);
@@ -125,6 +128,26 @@ class VCAnnotation {
     assert(ann.loc != Loc::REMOTE || !ann.goodLocal);
     assert(ann.loc != Loc::LOCAL || ann.goodRemote.empty());
     mapping.emplace_hint(it, key, ann);
+
+    // Maintain the set of observable writes
+    // Collect and return newly observable writes
+    auto result = std::unordered_set<VCIID>();
+    auto mlit = observable.find(nd->getEvent()->ml);
+    if (mlit == observable.end())
+      mlit = observable.emplace_hint(mlit, nd->getEvent()->ml,
+                                   std::unordered_set<VCIID>());
+    if (ann.goodLocal) {
+      auto newobs = mlit->second.emplace(ann.goodLocal->first,
+                                         ann.goodLocal->second);
+      if (newobs.second)
+        result.emplace(ann.goodLocal->first, ann.goodLocal->second);
+    }
+    for (auto& vciid : ann.goodRemote) {
+      auto newobs = mlit->second.emplace(vciid.first, vciid.second);
+      if (newobs.second)
+        result.emplace(vciid.first, vciid.second);
+    }
+    return result;
   }
 
   bool defines(const Node * nd) const {
@@ -136,6 +159,16 @@ class VCAnnotation {
   bool defines(unsigned pid, unsigned evid) const {
     auto key = VCIID(pid, evid);
     return (mapping.find(key) != mapping.end());
+  }
+
+  bool isObservable(const Node * nd) const {
+    assert(isWrite(nd->getEvent()));
+    auto mlit = observable.find(nd->getEvent()->ml);
+    if (mlit == observable.end()) {
+      return false;
+    }
+    return mlit->second.count(VCIID(nd->getProcessID(),
+                                    nd->getEventID()));
   }
 
   const Ann& getAnn(const Node * nd) const {

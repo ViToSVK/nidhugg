@@ -62,6 +62,12 @@ class VCGraphVclock : public VCBasis {
 
   std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
 
+  // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
+  // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
+  // returns -1 if there is no such write
+  std::unordered_map<SymAddrSize, std::vector<std::vector<int>>>
+    tw_candidate;
+
   PartialOrder original;
 
   // Partial orders that are refinements of original
@@ -80,6 +86,7 @@ class VCGraphVclock : public VCBasis {
             !original.first.get() && !original.second.get() &&
             readsNonroot.empty() &&
             wNonrootUnord.empty() && wRoot.empty() &&
+            tw_candidate.empty() &&
             worklist_ready.empty() && worklist_done.empty());
   }
 
@@ -104,6 +111,7 @@ class VCGraphVclock : public VCBasis {
     readsNonroot(),
     wNonrootUnord(),
     wRoot(),
+    tw_candidate(),
     original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
     worklist_ready(),
@@ -121,6 +129,7 @@ class VCGraphVclock : public VCBasis {
     readsNonroot(std::move(oth.readsNonroot)),
     wNonrootUnord(std::move(oth.wNonrootUnord)),
     wRoot(std::move(oth.wRoot)),
+    tw_candidate(std::move(oth.tw_candidate)),
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
     worklist_done(std::move(oth.worklist_done))
@@ -145,6 +154,7 @@ class VCGraphVclock : public VCBasis {
     readsNonroot(),
     wNonrootUnord(),
     wRoot(),
+    tw_candidate(),
     original(std::move(po)),
     worklist_ready(),
     worklist_done()
@@ -279,6 +289,23 @@ class VCGraphVclock : public VCBasis {
 
   friend class VCValClosure;
 
+  // Given 'nd', returns a candidate for a tail write from
+  // the thread 'thr_id' using 'succ' and 'tw_candidate'
+  const Node *getTailWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
+
+  // Given 'nd', returns {root tail write, nonroot tail writes} in 'po'
+  std::pair<const Node *, std::unordered_set<const Node *>>
+    getTailWrites(const Node *nd, const PartialOrder& po) const;
+
+  // Given 'nd', returns a candidates for a head write from the thread 'thr_id' that
+  // happens before nd, second are indices from-to for unordered candidate search
+  std::pair<const Node *, std::pair<int, int>>
+    getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
+
+  // Given 'nd', returns {root head write, nonroot head writes} in 'po'
+  std::pair<const Node *, std::unordered_set<const Node *>>
+    getHeadWrites(const Node *nd, const PartialOrder& po) const;
+
   // Used just before ordering non-star-root writes of trace extension
   void initWorklist() {
     assert(worklist_ready.empty());
@@ -315,7 +342,8 @@ class VCGraphVclock : public VCBasis {
 
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation);
+  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
+                     bool isNewlyObservableWrite);
 
   // Returns last nodes of processes that are reads or locks
   std::unordered_set<const Node *> getNodesToMutate() const {

@@ -201,14 +201,14 @@ std::list<PartialOrder> VCExplorer::extensionWritesOrderings()
   current->graph.initWorklist();
 
   // Order extension writes of non-root processes
-  // with conflicting writes of non-root processes
+  // with conflicting observable writes of non-root processes
   for (unsigned trace_idx = current->graph.getExtensionFrom();
        trace_idx < current->trace.size(); ++trace_idx) {
     const VCEvent& ev = current->trace[trace_idx];
     const Node *nd = current->graph.getNode(ev);
     assert(!isRead(ev) || !current->annotation.defines(nd));
     if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
-      current->graph.orderEventMaz(&ev, current->annotation);
+      current->graph.orderEventMaz(&ev, current->annotation, false);
     }
   }
 
@@ -223,7 +223,19 @@ std::list<PartialOrder> VCExplorer::readToBeMutatedOrderings(const PartialOrder&
   current->graph.initWorklist(po);
 
   if (nd->getProcessID() != current->graph.starRoot())
-    current->graph.orderEventMaz(nd->getEvent(), current->annotation);
+    current->graph.orderEventMaz(nd->getEvent(), current->annotation, true);
+
+  return current->graph.dumpDoneWorklist();
+}
+
+std::list<PartialOrder> VCExplorer::newlyObservableWritesOrderings
+(const PartialOrder& po, const std::unordered_set<const Node *> newobs)
+{
+  assert(current.get());
+  current->graph.initWorklist(po);
+  for (auto& newobsnd : newobs)
+    if (newobsnd->getProcessID() != current->graph.starRoot())
+      current->graph.orderEventMaz(newobsnd->getEvent(), current->annotation, true);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -253,68 +265,85 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
            !readOrderedPOs.front().second.get());
     readOrderedPOs.pop_front();
 
-    // Could do closure here to already rule out some po-s, but don't have to
+    // We could do closure here to already rule out some po-s, but don't have to
     auto mutationCandidates =
       current->graph.getMutationCandidates(roPo, negativeWriteMazBranch, nd);
 
     for (auto& valpos_ann : mutationCandidates) {
-      auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
-                                    (new ThreadPairsVclocks(*(roPo.first))),
-                                    std::unique_ptr<ThreadPairsVclocks>
-                                    (new ThreadPairsVclocks(*(roPo.second))));
 
-      // Closure after read orderings and mutation
-      init = std::clock();
-      auto withMutation = VCValClosure(withoutMutation);
-      withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
-      time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-      if (!withMutation.closed) {
-        // The mutation on 'mutatedPo' failed
-        ++cl_mutation_failed;
-        // llvm::errs() << "FAILED\n";
-        // current->graph.to_dot(mutatedPo, "");
-        mutatedPo.first.reset();
-        mutatedPo.second.reset();
-        continue;
+      // Collect writes that become newly observable by performing this mutation
+      // We will have to order them with conflicting unobservable writes
+      VCAnnotation mutatedAnnotation(current->annotation);
+      auto newlyObservableVCIIDs = mutatedAnnotation.add(nd, valpos_ann.second);
+      auto newlyObservableWrites = std::unordered_set<const Node *>();
+      for (auto& vciid : newlyObservableVCIIDs) {
+        if (vciid.first != INT_MAX) {
+          assert(isWrite(current->graph.getNode(vciid.first, vciid.second)->getEvent()));
+          newlyObservableWrites.insert(current->graph.getNode(vciid.first, vciid.second));
+        }
       }
 
-      // The mutation on 'mutatedPo' succeeded
-      ++cl_mutation_succeeded;
-      // llvm::errs() << "SUCCEEDED\n";
-      // current->graph.to_dot(mutatedPo, "");
+      // Orderings of newly observable writes
+      std::list<PartialOrder> newlyObsWpos =
+        newlyObservableWritesOrderings(roPo, newlyObservableWrites);
 
-      VCAnnotation mutatedAnnotation(current->annotation);
-      mutatedAnnotation.add(nd, valpos_ann.second);
+      while (!newlyObsWpos.empty()) {
+        auto mutatedPo = std::move(newlyObsWpos.front());
+        assert(!newlyObsWpos.front().first.get() &&
+               !newlyObsWpos.front().second.get());
+        newlyObsWpos.pop_front();
 
-      init = std::clock();
-      auto mutatedTrace =
-        extendTrace(current->graph.linearize(mutatedPo, nullptr),
-                    mutatedUnannot);
-      time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-      if (mutatedTrace.first.empty())
-        return true; // found an error
-      assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
+        // Closure after read+newobs orderings and mutation
+        init = std::clock();
+        auto withMutation = VCValClosure(withoutMutation);
+        withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
+        time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-      init = std::clock();
-      VCGraphVclock mutatedGraph(current->graph,       // base for graph
-                                 std::move(mutatedPo), // base for 'original' po
-                                 mutatedTrace.first); // to extend the graph
-      assert(!mutatedPo.first.get() && !mutatedPo.second.get());
-      std::unique_ptr<VCTrace> mutatedVCTrace
-        (new VCTrace(std::move(mutatedTrace.first),
-                     std::move(mutatedAnnotation),
-                     negativeWriteMazBranch,
-                     std::move(mutatedGraph),
-                     std::move(mutatedTrace.second)));
-      assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
-             && mutatedGraph.empty() && mutatedTrace.second.empty());
-      time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
+        if (!withMutation.closed) {
+          // The mutation on 'mutatedPo' failed
+          ++cl_mutation_failed;
+          // llvm::errs() << "FAILED\n";
+          // current->graph.to_dot(mutatedPo, "");
+          mutatedPo.first.reset();
+          mutatedPo.second.reset();
+          continue;
+        }
 
-      worklist.push_front(std::move(mutatedVCTrace));
-      assert(!mutatedVCTrace.get());
-    }
-  }
+        // The mutation on 'mutatedPo' succeeded
+        ++cl_mutation_succeeded;
+        // llvm::errs() << "SUCCEEDED\n";
+        // current->graph.to_dot(mutatedPo, "");
+
+        init = std::clock();
+        auto mutatedTrace =
+          extendTrace(current->graph.linearize(mutatedPo, nullptr),
+                      mutatedUnannot);
+        time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
+        if (mutatedTrace.first.empty())
+          return true; // found an error
+        assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
+
+        init = std::clock();
+        VCGraphVclock mutatedGraph(current->graph,       // base for graph
+                                   std::move(mutatedPo), // base for 'original' po
+                                   mutatedTrace.first); // to extend the graph
+        assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+        std::unique_ptr<VCTrace> mutatedVCTrace
+          (new VCTrace(std::move(mutatedTrace.first),
+                       std::move(mutatedAnnotation),
+                       negativeWriteMazBranch,
+                       std::move(mutatedGraph),
+                       std::move(mutatedTrace.second)));
+        assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
+               && mutatedGraph.empty() && mutatedTrace.second.empty());
+        time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+        worklist.push_front(std::move(mutatedVCTrace));
+        assert(!mutatedVCTrace.get());
+
+      } // end of loop for newObsWritesOrdered partial order
+    } // end of loop for mutation annotation
+  } // end of loop for readOrdered partial order
 
   return false;
 }
