@@ -494,8 +494,9 @@ const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
     ev_id = processes[thr_id].size() - 1;
   assert(ev_id < (int) processes[thr_id].size());
 
-  if (ev_id == -1)
-    return nullptr; // There are no writes in thr_id not happening after nd
+  if (ev_id == -1) // There are no writes in thr_id not happening after nd
+    return (nd->getProcessID() == thr_id)
+      ? initial_node : nullptr; // Initial node treated as from same thread
 
   // TAIL WRITE CANDIDATES CACHE
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
@@ -511,7 +512,8 @@ const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
   // Use tail write candidates cache to get the result
   int tw_evidx = ml_cache->second[thr_id][ev_id];
   if (tw_evidx == -1)
-    return nullptr;
+    return (nd->getProcessID() == thr_id)
+      ? initial_node : nullptr; // Initial node treated as from same thread
   assert(tw_evidx >= 0 && tw_evidx <= ev_id);
   const Node *result = processes[thr_id][tw_evidx];
   assert(isWrite(result->getEvent()) &&
@@ -550,7 +552,8 @@ VCGraphVclock::getTailWrites(const Node *nd, const PartialOrder& po) const
   // Return root tail write separately
   const Node *rootTail = nullptr;
   for (auto it = result.begin(); it != result.end(); ) {
-    if ((*it)->getProcessID() == starRoot()) {
+    if ((*it)->getProcessID() == starRoot() ||
+        (nd->getProcessID() == starRoot() && *it == initial_node)) {
       assert(rootTail == nullptr);
       rootTail = *it;
       it = result.erase(it);
@@ -572,7 +575,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
   if (nd->getProcessID() == thr_id) {
     // Looking for a HB candidate from the same thread
     if (nd->getEventID() == 0)
-      return {nullptr, {0, -1}};
+      return {initial_node, {0, -1}}; // Initial node treated as from same thread
     // Use cache to get the candidate happening before nd
     int ev_id = nd->getEventID() - 1;
     auto ml_cache = tw_candidate.find(nd->getEvent()->ml);
@@ -583,7 +586,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
     int tw_evidx = ml_cache->second[thr_id][ev_id];
 
     if (tw_evidx == -1)
-      return {nullptr, {0, -1}};
+      return {initial_node, {0, -1}}; // Initial node treated as from same thread
     assert(tw_evidx >= 0 && tw_evidx <= ev_id);
     const Node *before_nd = processes[thr_id][tw_evidx];
     assert(isWrite(before_nd->getEvent()) &&
@@ -715,7 +718,8 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
   auto result = std::unordered_set<const Node *>();
   for (const Node *before : befores)
     if (before != nullptr) {
-      if (before->getProcessID() == starRoot()) {
+      if (before->getProcessID() == starRoot() ||
+          (nd->getProcessID() == starRoot() && before == initial_node)) {
         assert(rootHead == nullptr);
         rootHead = before;
       } else
@@ -723,7 +727,8 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
     }
   for (const Node *unord : unords)
     if (unord != nullptr) {
-      if (unord->getProcessID() == starRoot()) {
+      if (unord->getProcessID() == starRoot() ||
+          (nd->getProcessID() == starRoot() && unord == initial_node)) {
         assert(rootHead == nullptr);
         rootHead = unord;
       } else
