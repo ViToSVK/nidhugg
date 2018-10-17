@@ -27,8 +27,6 @@
 class VCValClosure {
  public:
 
-  typedef std::pair<int, VCAnnotation::Loc> AnnotationValueT;
-
   VCValClosure(const VCGraphVclock& gr, const VCAnnotation& an)
   : graph(gr), annotation(an) {}
 
@@ -36,8 +34,6 @@ class VCValClosure {
   VCValClosure& operator=(VCValClosure& oth) = delete;
   VCValClosure(VCValClosure&& oth) = default;
   VCValClosure& operator=(VCValClosure&& oth) = delete;
-
-  //
 
  private:
 
@@ -56,11 +52,11 @@ class VCValClosure {
     return false;
   }
 
-  void prepareOne(const PartialOrder& po, const Node * readnd);
-
   void prepare(const PartialOrder& po, const Node * newread);
 
-  void updateVisibleCache(const PartialOrder& po, const Node * readnd);
+  void prepareBounds(const PartialOrder& po, const Node * readnd);
+
+  void updateBounds(const PartialOrder& po, const Node * readnd);
 
   std::pair<bool, bool> ruleOne
     (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
@@ -69,6 +65,9 @@ class VCValClosure {
     (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleThree
+    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+
+  std::pair<bool, bool> rules
     (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
 
  public:
@@ -80,27 +79,16 @@ class VCValClosure {
                     const Node * locknode,
                     const Node * lastunlocknode);
 
-  //
-
   const VCGraphVclock& graph;
 
   const VCAnnotation& annotation;
 
-  //
-
   bool closed;
 
-  std::unordered_map
-  <SymAddrSize, std::vector<const Node *>> wNonroot;
-
-  std::unordered_map
-  <const Node *, const std::vector<const Node *> *> wRem;
-
+  // Bounds for NONROOT reads
+  // on visibility of ROOT writes
   std::unordered_map
   <const Node *, std::pair<int, int>> wBounds;
-
-  std::unordered_map
-  <const Node *, const Node *> wLoc;
 };
 
 #endif // _VC_VALCLOSURE_H
