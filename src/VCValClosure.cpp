@@ -103,6 +103,11 @@ void VCValClosure::updateBounds
           &&
           (low + 1 == (int) wRemote.size() ||
            !graph.hasEdge(wRemote[low + 1], readnd, po))
+         )
+          ||
+         (
+          !graph.hasEdge(wRemote[low], readnd, po)
+          && low == 0
          )) && "badly computed low index into root writes");
 }
 

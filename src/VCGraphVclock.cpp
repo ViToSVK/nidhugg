@@ -658,7 +658,7 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
   // All remaining befores are head writes
   // Threads without before can have a head write
   // that is unordered with nd, search for first
-  // one like that not covered by some before
+  // one like that (it can't be covered by any before)
   auto unords = std::vector<const Node *>(processes.size(), nullptr);
   for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id)
     if (befores[thr_id] == nullptr) {
@@ -668,24 +668,18 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
         const Node *unord_nd = processes[thr_id][unord_ev_id];
         if (isWrite(unord_nd->getEvent()) &&
             unord_nd->getEvent()->ml == nd->getEvent()->ml) {
-          // Got a conflicting write unordered with nd
+          // Got a conflicting write unordered with nd, this is
+          // the only possible unord head candidate for this thread
           assert(!areOrdered(nd, unord_nd, po));
-          // If it is covered by some before, then some
-          // other unordered below this one could be head
-          // If it is not covered, it is the only possible
-          // unord head candidate for this thread
-          bool covered = false;
-          for (const Node *other_before : befores) {
-            if (other_before != nullptr && hasEdge(unord_nd, other_before, po)) {
-              assert(hasEdge(other_before, nd, po));
-              covered = true;
-              break;
-            }
-          }
-          if (!covered) {
-            unords[thr_id] = unord_nd;
-            break;
-          }
+          #ifndef NDEBUG
+          // Assert it is not covered by any before
+          // (because otherwise it would HB nd)
+          for (const Node *before_nd : befores)
+            assert(before_nd == nullptr ||
+                   !hasEdge(unord_nd, before_nd, po));
+          #endif
+          unords[thr_id] = unord_nd;
+          break;
         }
       }
     }
