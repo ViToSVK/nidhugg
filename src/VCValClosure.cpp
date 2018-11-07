@@ -134,6 +134,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
     /* ***************** */
     /* NONROOT   ANY     */
     /* ***************** */
+
     assert(ann.loc == VCAnnotation::Loc::ANY);
     // Since readnd is nonroot, all its nonroot heads
     // are ordered with (i.e. happen before) him
@@ -147,11 +148,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 
     // Nonroot 'lost for good', need root head
     const Node *roothead = heads.first;
-    if (!roothead) {
-      // No root head, no way to get some
-      return {true, false}; // impossible
-    }
-    if (isGood(roothead, ann)) {
+    if (roothead && isGood(roothead, ann)) {
       // We have good root head, now we
       // just need to check the HB edge
       assert(!graph.hasEdge(readnd, roothead, po));
@@ -171,19 +168,28 @@ std::pair<bool, bool> VCValClosure::ruleOne
       }
     }
 
-    // Current root head bad, but some root write below
-    // can be good, locate the first one like that
+    // Either no root head or a bad one, but some root write
+    // still can be good, locate the first one like that
     assert(!isGood(roothead, ann));
     assert(wBounds.count(readnd));
     int& low = wBounds[readnd].first;
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
-    if (roothead != wRemote[low])
+    if (roothead && roothead != wRemote[low]) {
+      // Original 'low' was covered, correct the bound
+      assert(graph.hasEdge(wRemote[low], readnd, po));
       low++;
-    assert(low <= high && roothead == wRemote[low]);
-
-    low++;
+      assert(low <= high && roothead == wRemote[low] &&
+             !graph.hasEdge(roothead, readnd, po));
+    }
+    if (roothead) {
+      // Since there is a root head, it is bad,
+      // increment 'low' to start search for a good write
+      assert(roothead == wRemote[low] &&
+             !isGood(roothead, ann));
+      low++;
+    }
     while (low <= high) {
       assert(!graph.areOrdered(wRemote[low], readnd, po));
       if (isGood(wRemote[low], ann)) {
@@ -230,8 +236,6 @@ std::pair<bool, bool> VCValClosure::ruleOne
   // Check nonroot head(s)
   auto heads = graph.getHeadWrites(readnd, po);
   const auto& nonrootheads = heads.second;
-  if (nonrootheads.size() == 0)
-    return {true, false}; // impossible
   if (nonrootheads.size() == 1 &&
       isGood(*(nonrootheads.begin()), ann)) {
     const Node *nonrhead = *(nonrootheads.begin());
@@ -255,6 +259,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
     }
   }
 
+  // Either no nonroot head(s) or bad nonroot head(s)
   // Remote good writes are fully ordered, quicksort them
   auto remoteGoodWrites = std::vector<const Node *>();
   auto itunord = graph.wNonrootUnord.find(readnd->getEvent()->ml);
@@ -284,19 +289,21 @@ std::pair<bool, bool> VCValClosure::ruleOne
       return {true, false}; // impossible
     }
     if (graph.hasEdge(rgw_current, readnd, po)) {
-      // This one is even before the heads, we have to go further
+      // This one is covered, we have to go further
       #ifndef NDEBUG
-      auto newheads = graph.getHeadWrites(readnd, po);
-      for (const Node * nonroothead : newheads.second)
-        assert(graph.hasEdge(rgw_current, nonroothead, po));
+      if (nonrootheads.size() == 0)
+        assert(heads.first && graph.hasEdge(rgw_current, heads.first, po));
+      else
+        for (const Node * nonroothead : nonrootheads)
+          assert(graph.hasEdge(rgw_current, nonroothead, po));
       #endif
       rgw_id++;
       continue;
     }
     assert(!graph.areOrdered(rgw_current, readnd, po));
-    // First add the edge to readnd
+    // Add the edge to readnd
     graph.addEdge(rgw_current, readnd, po);
-    // This edge makes rgw_current the head
+    // This edge makes rgw_current the nonroot head
     #ifndef NDEBUG
     auto newheads = graph.getHeadWrites(readnd, po);
     assert(newheads.second.size() == 1 &&
