@@ -176,19 +176,26 @@ std::pair<bool, bool> VCValClosure::ruleOne
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
-    if (roothead && roothead != wRemote[low]) {
-      // Original 'low' was covered, correct the bound
-      assert(graph.hasEdge(wRemote[low], readnd, po));
+    if (!roothead && graph.hasEdge(wRemote[low], readnd, po)) {
+      // wRemote[low] has edge but it's not head,
+      // so it is covered, correct the bound
       low++;
-      assert(low <= high && roothead == wRemote[low] &&
-             !graph.hasEdge(roothead, readnd, po));
+      assert(low > high || !graph.areOrdered(wRemote[low], readnd, po));
     }
     if (roothead) {
-      // Since there is a root head, it is bad,
-      // increment 'low' to start search for a good write
-      assert(roothead == wRemote[low] &&
-             !isGood(roothead, ann));
+      // Since there is a root head, it is bad
+      // First make sure 'low' points to it
+      if (roothead != wRemote[low]) {
+        // Original 'low' is covered, correct the bound
+        assert(graph.hasEdge(wRemote[low], readnd, po));
+        low++;
+        assert(low <= high && roothead == wRemote[low] &&
+               !graph.areOrdered(roothead, readnd, po));
+      }
+      assert(roothead == wRemote[low] && !isGood(roothead, ann));
+      // Increment 'low' to start search for a good write
       low++;
+      assert(low > high || !graph.areOrdered(wRemote[low], readnd, po));
     }
     while (low <= high) {
       assert(!graph.areOrdered(wRemote[low], readnd, po));
