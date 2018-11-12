@@ -356,7 +356,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
-    assert(high < wRemote.size());
+    assert(high < (int) wRemote.size());
 
     bool change = false;
     while (true) {
@@ -392,7 +392,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
           assert(low < high);
           high--;
         }
-        assert(isGood(wRemote[high], ann) && (high + 1) < wRemote.size() &&
+        assert(isGood(wRemote[high], ann) && (high + 1) < (int) wRemote.size() &&
                !isGood(wRemote[high + 1], ann) &&
                !graph.areOrdered(readnd, wRemote[high + 1], po));
         // We make wRemote[high] the good tail
@@ -501,18 +501,74 @@ std::pair<bool, bool> VCValClosure::ruleThree
     /* ***************** */
     assert(ann.loc == VCAnnotation::Loc::ANY);
 
-    // Get heads,
-    // (because of Rule1 at most one of I, II can happen
+    auto heads = graph.getHeadWrites(readnd, po);
+    const Node *roothead = heads.first;
+    const auto& nonrootheads = heads.second;
 
-    // (I) if bad root head and HB read: check root writes
-    // (using wbounds) if there is some good, if there
-    // isn't, get tails, assert nonroot good and HB readnd,
-    // badroothead -> goodnonrtail, ++low (got covered)
+    bool rootSituation = (roothead && !isGood(roothead, ann) &&
+                          graph.hasEdge(roothead, readnd, po));
+    bool nonrootSituation = (nonrootheads.size() > 1 ||
+                             (nonrootheads.size() == 1 &&
+                              !isGood(*(nonrootheads.begin()), ann)));
 
-    // (II) if bad nonroot head(s): assert all hb read,
-    // wbounds[high] assert good, assert it's root tail
-    // if any heads don't have, add -> goodroottail
+    assert(!rootSituation || !nonrootSituation); // After rule 1
+    if (!rootSituation && !nonrootSituation)
+      return {false, false}; // always done, no change
 
+    assert(wBounds.count(readnd));
+    int& low = wBounds[readnd].first;
+    int& high = wBounds[readnd].second;
+    const std::vector<const Node *>&
+      wRemote = graph.wRoot.at(readnd->getEvent()->ml);
+
+    if (rootSituation) {
+      // First check root writes, if there is
+      // any good, nothing needs to be done
+      assert(roothead == wRemote[low] &&
+             "Can't be low+1 because there's an edge");
+      for (int idx = high; idx > low; --idx)
+        if (isGood(wRemote[idx], ann))
+          return {false, false}; // always done, no change
+
+      // None was, to nonroot tail has to be good
+      auto tails = graph.getTailWrites(readnd, po);
+      const auto& nonroottails = tails.second;
+      assert(nonroottails.size() == 1);
+      const Node *singleNonrTail = *(nonroottails.begin());
+      assert(isGood(singleNonrTail, ann) &&
+             graph.hasEdge(singleNonrTail, readnd, po));
+      assert(!graph.areOrdered(roothead, singleNonrTail, po));
+      graph.addEdge(roothead, singleNonrTail, po);
+      // Low got covered but we don't update the bounds in order
+      // not to violate update assertions (low+1 has no edge)
+      return {false, true}; // always done, change
+    }
+
+    assert(nonrootSituation);
+    for (const Node * badNonrootHead : nonrootheads) {
+      assert(!isGood(badNonrootHead, ann));
+      assert(graph.hasEdge(badNonrootHead, readnd, po));
+    }
+
+    // Get root tail, it is good
+    const Node *roottail = wRemote[high];
+    assert(isGood(roottail, ann));
+    #ifndef NDEBUG
+    auto tails = graph.getTailWrites(readnd, po);
+    assert(tails.first && tails.first == roottail);
+    #endif
+
+    bool change = false;
+    for (const Node * badNonrootHead : nonrootheads) {
+      // If any heads dont have an edge
+      // to the good root tail, add it
+      if (!graph.hasEdge(badNonrootHead, roottail, po)) {
+        graph.addEdge(badNonrootHead, roottail, po);
+        change = true;
+      }
+    }
+
+    return {false, change}; // always done, change-bool
   }
 
   assert(readnd->getProcessID() == graph.starRoot());
@@ -522,14 +578,39 @@ std::pair<bool, bool> VCValClosure::ruleThree
     /* ROOT   LOCAL      */
     /* ***************** */
 
-    // (*) Get heads, check nonroot heads
-    // if bad and HB readnd, because LOCAL they have
-    // to be made to HB the root head
-    // (which is also tail, assert good),
-    // that covers them and there may be
-    // new nonroot heads, but those can't
+    auto heads = graph.getHeadWrites(readnd, po);
+    const auto& nonrootheads = heads.second;
+    assert(heads.first && isGood(heads.first, ann));
+
+    if (nonrootheads.size() == 0)
+      return {false, false}; // always done, no change
+
+    bool change = false;
+    for (const Node * badNonrootHead : nonrootheads) {
+      // Trivially bad since nonroot
+      assert(!isGood(badNonrootHead, ann));
+      // Not covered by the good root head
+      assert(!graph.areOrdered(badNonrootHead, heads.first, po));
+      // If HB readnd we have to make it
+      // also HB the good root head
+      if (graph.hasEdge(badNonrootHead, readnd, po)) {
+        graph.addEdge(badNonrootHead, heads.first, po);
+        change = true;
+      }
+    }
+
+    // All bad heads are now covered, there may
+    // be new nonroot heads now, but those can't
     // HB readnd otherwise they would cover
-    // the previous nonroot heads, so done
+    // the previous nonroot heads
+    #ifndef NDEBUG
+    auto newheads = graph.getHeadWrites(readnd, po);
+    for (const Node * badNonrootHead : newheads.second) {
+      assert(!graph.areOrdered(badNonrootHead, readnd, po));
+    }
+    #endif
+
+    return {false, change}; // always done, change-bool
   }
 
   assert(ann.loc == VCAnnotation::Loc::REMOTE);
@@ -538,12 +619,32 @@ std::pair<bool, bool> VCValClosure::ruleThree
   /* ROOT   REMOTE     */
   /* ***************** */
 
-  // Get heads, assert |nonr| = 1, good, hb read,
-  // if root head exists, trivially bad,
-  // get tails, assert |nonr| = 1, good,
-  // if not already, rootbadhead -> nonrootgoodtail
+  auto heads = graph.getHeadWrites(readnd, po);
+  const auto& nonrootheads = heads.second;
+  assert(nonrootheads.size() == 1 &&
+         isGood(*(nonrootheads.begin()), ann) &&
+         graph.hasEdge(*(nonrootheads.begin()), readnd, po));
 
-  return {false, false};
+  if (!heads.first)
+    return {false, false}; // always done, no change
+
+  // If root head exists, trivially bad
+  assert(!isGood(heads.first, ann));
+
+  auto tails = graph.getTailWrites(readnd, po);
+  const auto& nonroottails = tails.second;
+  assert(nonroottails.size() == 1);
+  const Node *singleNonrTail = *(nonroottails.begin());
+  assert(isGood(singleNonrTail, ann) &&
+         !graph.hasEdge(singleNonrTail, heads.first, po));
+
+  if (!graph.hasEdge(heads.first, singleNonrTail, po)) {
+    // This edge is needed for rule 3
+    graph.addEdge(heads.first, singleNonrTail, po);
+    return {false, true}; // always done, change
+  }
+
+  return {false, false}; // always done, no change
 }
 
 /* *************************** */
