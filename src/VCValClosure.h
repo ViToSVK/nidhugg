@@ -38,6 +38,7 @@ class VCValClosure {
  private:
 
   inline bool isGood(const Node * writend, const VCAnnotation::Ann& ann) {
+    assert(writend && "Checking nullptr for good");
     assert(!writend->getEvent() || isWrite(writend->getEvent()));
     auto key = std::pair<unsigned, unsigned>(writend->getProcessID(),
                                              writend->getEventID());

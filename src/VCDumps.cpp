@@ -72,27 +72,36 @@ void Node::dump() const {
   llvm::errs() << *this << "\n";
 }
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Ann& ann) {
+  char loc = (ann.loc == VCAnnotation::Loc::LOCAL)?'L':
+    ((ann.loc == VCAnnotation::Loc::REMOTE)?'R':'A');
+  out << ann.value << "-" << loc << "_";
+  if (ann.loc != VCAnnotation::Loc::LOCAL) {
+    out << "remotegood:";
+    for (auto& iid : ann.goodRemote)
+      out << "[" << iid.first << "][" << iid.second << "] ";
+  }
+  if (ann.loc != VCAnnotation::Loc::REMOTE
+      && ann.goodLocal) {
+    if (ann.goodLocal->first == INT_MAX)
+      out << "_localgood:INIT ";
+    else
+      out << "_localgood:[" << ann.goodLocal->first
+          << "][" << ann.goodLocal->second << "] ";
+  }
+  return out;
+}
+
+void VCAnnotation::Ann::dump() const {
+  llvm::errs() << *this << "\n";
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot) {
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
     out << "( ["  << pr.first.first << "][" << pr.first.second
-    << "] observes " << pr.second.value << "-";
-    char loc = (pr.second.loc == VCAnnotation::Loc::LOCAL)?'L':
-      ((pr.second.loc == VCAnnotation::Loc::REMOTE)?'R':'A');
-    out << loc << " ";
-    if (pr.second.loc != VCAnnotation::Loc::LOCAL) {
-      out << "rem: ";
-      for (auto& iid : pr.second.goodRemote)
-        out << "[" << iid.first << "][" << iid.second << "] ";
-    }
-    if (pr.second.loc != VCAnnotation::Loc::REMOTE
-        && pr.second.goodLocal) {
-      if (pr.second.goodLocal->first == INT_MAX)
-        out << "loc: INIT ";
-      else
-        out << "loc: [" << pr.second.goodLocal->first
-            << "][" << pr.second.goodLocal->second << "] ";
-    }
+    << "] observes:: ";
+    out << pr.second;
     out << ")\n";
   }
   out << "}\n";

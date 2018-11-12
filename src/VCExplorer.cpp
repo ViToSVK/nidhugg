@@ -133,7 +133,9 @@ bool VCExplorer::explore()
       init = std::clock();
 
       auto withoutMutation = VCValClosure(current->graph, current->annotation);
+      //llvm::errs() << "no-mutation-closure...";
       withoutMutation.valClose(po, nullptr, nullptr);
+      //llvm::errs() << "done\n";
 
       time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
       if (!withoutMutation.closed) ++cl_ordering_failed;
@@ -296,7 +298,9 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         // Closure after read+newobs orderings and mutation
         init = std::clock();
         auto withMutation = VCValClosure(withoutMutation);
+        //llvm::errs() << "closure...";
         withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
+        //llvm::errs() << "done\n";
         time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
         if (!withMutation.closed) {

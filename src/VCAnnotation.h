@@ -81,6 +81,8 @@ class VCAnnotation {
     const VCIID * goodLocal;
 
     bool ignore; // whether this Ann is just a dummy
+
+    void dump() const;
   };
 
   using MappingT = std::unordered_map<VCIID, Ann>;

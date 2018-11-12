@@ -170,12 +170,15 @@ std::pair<bool, bool> VCValClosure::ruleOne
 
     // Either no root head or a bad one, but some root write
     // still can be good, locate the first one like that
-    assert(!isGood(roothead, ann));
+    assert(!roothead || !isGood(roothead, ann));
     assert(wBounds.count(readnd));
     int& low = wBounds[readnd].first;
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
+    if (wRemote.size() == 0)
+      return {true, false}; // impossible
+    assert(low <= high && low < (int) wRemote.size());
     if (!roothead && graph.hasEdge(wRemote[low], readnd, po)) {
       // wRemote[low] has edge but it's not head,
       // so it is covered, correct the bound
@@ -360,7 +363,6 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
     bool change = false;
     while (true) {
-      assert(low <= high || wRemote.size() == 0);
       auto tails = graph.getTailWrites(readnd, po);
       const Node *roottail = tails.first;
       if (roottail && isGood(roottail, ann)) {
@@ -500,8 +502,8 @@ std::pair<bool, bool> VCValClosure::ruleThree
     /* ***************** */
     /* NONROOT   ANY     */
     /* ***************** */
-    assert(ann.loc == VCAnnotation::Loc::ANY);
 
+    assert(ann.loc == VCAnnotation::Loc::ANY);
     auto heads = graph.getHeadWrites(readnd, po);
     const Node *roothead = heads.first;
     const auto& nonrootheads = heads.second;
@@ -656,6 +658,10 @@ std::pair<bool, bool> VCValClosure::rules
 (const PartialOrder& po, const Node * readnd,
  const VCAnnotation::Ann& ann)
 {
+  assert(readnd && isRead(readnd->getEvent()));
+  //graph.to_dot(po,"");
+  //readnd->dump();
+  //ann.dump();
   // Update the bounds if it is a nonroot write
   if (readnd->getProcessID() != graph.starRoot())
     updateBounds(po, readnd);
