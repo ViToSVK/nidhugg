@@ -409,10 +409,12 @@ std::pair<bool, bool> VCValClosure::ruleTwo
       // Nonroottails are not bad which means there are none currently,
       // there could be a good nonroot write possible to become tail,
       // so we have to check both options by another loop-iteration
-      assert(nonroottails.size() == 0 && roottail &&
-             roottail == wRemote[high] && !isGood(wRemote[high], ann) &&
+      assert(nonroottails.size() == 0);
+      assert(roottail && roottail == wRemote[high]);
+      assert(!isGood(wRemote[high], ann) &&
              !graph.areOrdered(readnd, wRemote[high], po));
       graph.addEdge(readnd, wRemote[high], po);
+      high--; // Original high now happens after readnd
       change = true;
     }
   }
