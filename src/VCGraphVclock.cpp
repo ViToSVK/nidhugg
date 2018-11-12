@@ -165,6 +165,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
     }
     if (isRead(ev)) {
       // Read
+      auto ittw = tw_candidate.find(ev->ml);
+      if (ittw == tw_candidate.end())
+        tw_candidate.emplace_hint(ittw, ev->ml, std::vector<std::vector<int>>());
       auto itroot = wRoot.find(ev->ml);
       if (itroot == wRoot.end()) {
         wRoot.emplace_hint(itroot, ev->ml, std::vector<const Node*>());

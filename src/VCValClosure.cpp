@@ -360,7 +360,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
     bool change = false;
     while (true) {
-      assert(low <= high);
+      assert(low <= high || wRemote.size() == 0);
       auto tails = graph.getTailWrites(readnd, po);
       const Node *roottail = tails.first;
       if (roottail && isGood(roottail, ann)) {
@@ -383,6 +383,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
                  graph.hasEdge(badNonrootTail, readnd, po));
       #endif
 
+      assert(low <= high && wRemote.size() > 0);
       // If nonroottails are bad they are lost
       // for good and we can focus only on root
       if (badNonrootTails) {

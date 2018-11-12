@@ -56,6 +56,8 @@ class Node {
     assert(process_id != INT_MAX);
     event = ev;
   }
+
+  void dump() const;
 };
 
 class VCBasis {

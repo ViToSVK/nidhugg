@@ -60,6 +60,18 @@ void VCEvent::dump() const {
   llvm::errs() << *this << "\n";
 }
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const Node& nd)
+{
+  out << "[" << nd.getProcessID() << "][" << nd.getEventID() << "]";
+  if (nd.getEvent())
+    out << *(nd.getEvent());
+  return out;
+}
+
+void Node::dump() const {
+  llvm::errs() << *this << "\n";
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot) {
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
