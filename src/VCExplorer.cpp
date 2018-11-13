@@ -115,13 +115,11 @@ bool VCExplorer::explore()
     for (auto& nd : nodesToMutate)
       current->unannot.insert(nd->getEvent()->iid.get_pid());
 
-    clock_t init = std::clock();
-
     // Get partial-order refinements that order extension events
     // Each refinement will be a candidate for possible mutations
-    std::list<PartialOrder> extendedPOs = extensionWritesOrderings();
+    clock_t init = std::clock();
+    std::list<PartialOrder> extendedPOs = orderingsAfterExtension();
     assert(!extendedPOs.empty() && "current->trace is one witness");
-
     time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     while (!extendedPOs.empty()) {
@@ -197,47 +195,56 @@ bool VCExplorer::explore()
 /* EXTENSION EVENTS ORDERINGS  */
 /* *************************** */
 
-std::list<PartialOrder> VCExplorer::extensionWritesOrderings()
+std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
 {
   assert(current.get());
   current->graph.initWorklist();
 
-  // Order extension writes of non-root processes
-  // with conflicting everGood writes of non-root processes
-  for (unsigned trace_idx = current->graph.getExtensionFrom();
+  // Go through all nonroot writes
+  for (unsigned trace_idx = 0;
        trace_idx < current->trace.size(); ++trace_idx) {
     const VCEvent& ev = current->trace[trace_idx];
     const Node *nd = current->graph.getNode(ev);
-    assert(!isRead(ev) || !current->annotation.defines(nd));
     if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
-      current->graph.orderEventMaz(&ev, current->annotation, false);
+      // Order with all nonroot annotated reads,
+      // and with all nonroot writes such that:
+      // 1) at least one is everGood
+      // 2) both are observable
+      current->graph.orderEventMaz(&ev, current->annotation);
     }
   }
 
   return current->graph.dumpDoneWorklist();
 }
 
-std::list<PartialOrder> VCExplorer::readToBeMutatedOrderings(const PartialOrder& po, const Node * nd)
+std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder& po, const Node * nd)
 {
   assert(isRead(nd->getEvent()));
   assert(current.get());
   assert(!current->annotation.defines(nd));
   current->graph.initWorklist(po);
 
+  // If the read is nonroot,
+  // order it with all nonroot writes
   if (nd->getProcessID() != current->graph.starRoot())
-    current->graph.orderEventMaz(nd->getEvent(), current->annotation, true);
+    current->graph.orderEventMaz(nd->getEvent(), current->annotation);
 
   return current->graph.dumpDoneWorklist();
 }
 
-std::list<PartialOrder> VCExplorer::newlyEverGoodWritesOrderings
+std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 (const PartialOrder& po, const std::unordered_set<const Node *> newEverGood)
 {
   assert(current.get());
   current->graph.initWorklist(po);
+
+  // After mutation choice, some nonrootwrites
+  // become everGood, so they are from now required
+  // to be ordered with other nonroot writes which
+  // are notEverGood (if both are observable)
   for (auto& newEGnd : newEverGood)
     if (newEGnd->getProcessID() != current->graph.starRoot())
-      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true);
+      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -257,7 +264,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
   // Orderings of the read just before mutating it
   clock_t init = std::clock();
-  std::list<PartialOrder> readOrderedPOs = readToBeMutatedOrderings(po, nd);
+  std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
   assert(!readOrderedPOs.empty());
   time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -286,16 +293,19 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       }
 
       // Orderings of newly everGood writes
-      std::list<PartialOrder> newlyEverGoodPOs =
-        newlyEverGoodWritesOrderings(roPo, newlyEverGoodWrites);
+      clock_t init = std::clock();
+      std::list<PartialOrder> afterMutationChoicePOs =
+        orderingsAfterMutationChoice(roPo, newlyEverGoodWrites);
+      assert(!afterMutationChoicePOs.empty());
+      time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-      while (!newlyEverGoodPOs.empty()) {
-        auto mutatedPo = std::move(newlyEverGoodPOs.front());
-        assert(!newlyEverGoodPOs.front().first.get() &&
-               !newlyEverGoodPOs.front().second.get());
-        newlyEverGoodPOs.pop_front();
+      while (!afterMutationChoicePOs.empty()) {
+        auto mutatedPo = std::move(afterMutationChoicePOs.front());
+        assert(!afterMutationChoicePOs.front().first.get() &&
+               !afterMutationChoicePOs.front().second.get());
+        afterMutationChoicePOs.pop_front();
 
-        // Closure after read+newEverGood orderings and mutation
+        // Closure after read+mutationChoice orderings and the actual mutation
         init = std::clock();
         auto withMutation = VCValClosure(withoutMutation);
         //llvm::errs() << "closure...";

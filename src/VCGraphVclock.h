@@ -340,10 +340,13 @@ class VCGraphVclock : public VCBasis {
     return result;
   }
 
+  // Given a write node 'nd' and a partial order 'po',
+  // determines whether 'nd' is observable in that 'po'
+  bool isObservable(const Node *nd, const PartialOrder& po) const;
+
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                     bool isNewlyEverGoodWrite);
+  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation);
 
   // Returns last nodes of processes that are reads or locks
   std::unordered_set<const Node *> getNodesToMutate() const {

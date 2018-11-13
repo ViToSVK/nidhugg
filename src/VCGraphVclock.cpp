@@ -735,8 +735,13 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
   return {rootHead, result};
 }
 
-void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                                  bool isNewlyEverGoodWrite)
+bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
+{
+  assert(isWrite(nd->getEvent()));
+  return true; // TODO: implement
+}
+
+void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation)
 {
   assert(isWrite(ev1) || isRead(ev1));
   auto it = event_to_node.find(ev1);
@@ -745,25 +750,27 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   assert(nd1->getEvent() == ev1);
   assert(nd1->getProcessID() != starRoot());
 
-  // Collect writes to order
+  bool readOrEverGoodWrite = (isRead(ev1) || annotation.isEverGood(nd1));
+
+  // Collect conflicting nonroot writes to order
   auto itnsw = wNonrootUnord.find(ev1->ml);
   assert(itnsw != wNonrootUnord.end());
   auto toOrder = std::unordered_set<const Node *>();
-
   toOrder.reserve(itnsw->second.size());
+
   for (auto& writend : itnsw->second) {
     assert(writend->getProcessID() != starRoot());
     if (nd1->getProcessID() != writend->getProcessID()) {
-      if ((isRead(ev1)) || // Read ordered with all
-          (isNewlyEverGoodWrite && // Already is ordered with other everGood
-           !annotation.isEverGood(writend)) ||
-          (!isNewlyEverGoodWrite && // Order only with everGood
-           annotation.isEverGood(writend)))
+      // If nd1 is a read, take all write candidates,
+      // otherwise take only candidates such that
+      // at least one of them is everGood
+      if (readOrEverGoodWrite || annotation.isEverGood(writend))
         toOrder.insert(writend);
     }
   }
 
-  // If ev1 is write, also collect annotated reads to order
+  // If ev1 is write, also collect
+  // conflicting annotated nonroot reads to order
   if (isWrite(ev1)) {
     auto itnsr = readsNonroot.find(ev1->ml);
     if (itnsr != readsNonroot.end()) {
@@ -779,7 +786,8 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
     const Node *nd2 = *it;
     assert(nd1->getProcessID() != nd2->getProcessID() &&
            (isWrite(nd2->getEvent()) ||
-            (isRead(nd2->getEvent()) && annotation.defines(nd2))));
+            (isRead(nd2->getEvent()) && annotation.defines(nd2))) &&
+           (!isRead(nd1->getEvent()) || !isRead(nd2->getEvent())));
 
     // Prepare worklist
     worklist_ready.swap(worklist_done);
@@ -792,13 +800,14 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
              !worklist_ready.front().second.get());
       worklist_ready.pop_front();
 
-      if (areOrdered(nd1, nd2, current)) {
-        // Already ordered
-        worklist_done.push_back(std::move(current));
-        assert(!current.first.get() &&
-               !current.second.get());
-      } else {
-        // Unordered, create two cases
+      if (!areOrdered(nd1, nd2, current) &&
+          (isRead(nd1->getEvent()) ||
+           isRead(nd2->getEvent()) ||
+           (isObservable(nd1, current) && isObservable(nd2, current))
+          )) {
+        // Unordered and either one of them read,
+        // or both writes that are observable
+        // Order these two
         PartialOrder otherorder = PartialOrder
           (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
            std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
@@ -812,6 +821,11 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
         worklist_done.push_back(std::move(otherorder));
         assert(!otherorder.first.get() &&
                !otherorder.second.get());
+      } else {
+        // These two do not have to be ordered
+        worklist_done.push_back(std::move(current));
+        assert(!current.first.get() &&
+               !current.second.get());
       }
     }
   }

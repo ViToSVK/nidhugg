@@ -63,11 +63,11 @@ class VCExplorer {
   /* ALGORITHM                   */
   /* *************************** */
 
-  std::list<PartialOrder> extensionWritesOrderings();
+  std::list<PartialOrder> orderingsAfterExtension();
 
-  std::list<PartialOrder> readToBeMutatedOrderings(const PartialOrder& po, const Node * nd);
+  std::list<PartialOrder> orderingsReadToBeMutated(const PartialOrder& po, const Node * nd);
 
-  std::list<PartialOrder> newlyEverGoodWritesOrderings
+  std::list<PartialOrder> orderingsAfterMutationChoice
     (const PartialOrder& po, const std::unordered_set<const Node *> newEverGood);
 
   bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
