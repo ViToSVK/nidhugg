@@ -139,14 +139,14 @@ class VCAnnotation {
       mlit = everGood.emplace_hint(mlit, nd->getEvent()->ml,
                                    std::unordered_set<VCIID>());
     if (ann.goodLocal) {
-      auto newobs = mlit->second.emplace(ann.goodLocal->first,
-                                         ann.goodLocal->second);
-      if (newobs.second)
+      auto neweverg = mlit->second.emplace(ann.goodLocal->first,
+                                           ann.goodLocal->second);
+      if (neweverg.second)
         result.emplace(ann.goodLocal->first, ann.goodLocal->second);
     }
     for (auto& vciid : ann.goodRemote) {
-      auto newobs = mlit->second.emplace(vciid.first, vciid.second);
-      if (newobs.second)
+      auto neweverg = mlit->second.emplace(vciid.first, vciid.second);
+      if (neweverg.second)
         result.emplace(vciid.first, vciid.second);
     }
     return result;

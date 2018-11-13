@@ -231,13 +231,13 @@ std::list<PartialOrder> VCExplorer::readToBeMutatedOrderings(const PartialOrder&
 }
 
 std::list<PartialOrder> VCExplorer::newlyEverGoodWritesOrderings
-(const PartialOrder& po, const std::unordered_set<const Node *> newobs)
+(const PartialOrder& po, const std::unordered_set<const Node *> newEverGood)
 {
   assert(current.get());
   current->graph.initWorklist(po);
-  for (auto& newobsnd : newobs)
-    if (newobsnd->getProcessID() != current->graph.starRoot())
-      current->graph.orderEventMaz(newobsnd->getEvent(), current->annotation, true);
+  for (auto& newEGnd : newEverGood)
+    if (newEGnd->getProcessID() != current->graph.starRoot())
+      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -286,16 +286,16 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       }
 
       // Orderings of newly everGood writes
-      std::list<PartialOrder> newlyObsWpos =
+      std::list<PartialOrder> newlyEverGoodPOs =
         newlyEverGoodWritesOrderings(roPo, newlyEverGoodWrites);
 
-      while (!newlyObsWpos.empty()) {
-        auto mutatedPo = std::move(newlyObsWpos.front());
-        assert(!newlyObsWpos.front().first.get() &&
-               !newlyObsWpos.front().second.get());
-        newlyObsWpos.pop_front();
+      while (!newlyEverGoodPOs.empty()) {
+        auto mutatedPo = std::move(newlyEverGoodPOs.front());
+        assert(!newlyEverGoodPOs.front().first.get() &&
+               !newlyEverGoodPOs.front().second.get());
+        newlyEverGoodPOs.pop_front();
 
-        // Closure after read+newobs orderings and mutation
+        // Closure after read+newEverGood orderings and mutation
         init = std::clock();
         auto withMutation = VCValClosure(withoutMutation);
         //llvm::errs() << "closure...";
@@ -345,7 +345,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         worklist.push_front(std::move(mutatedVCTrace));
         assert(!mutatedVCTrace.get());
 
-      } // end of loop for newObsWritesOrdered partial order
+      } // end of loop for newEverGoodOrdered partial order
     } // end of loop for mutation annotation
   } // end of loop for readOrdered partial order
 
