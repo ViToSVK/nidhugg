@@ -210,7 +210,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
       // and with all nonroot writes such that:
       // 1) at least one is everGood
       // 2) both are observable
-      current->graph.orderEventMaz(&ev, current->annotation);
+      current->graph.orderEventMaz(&ev, current->annotation, false);
     }
   }
 
@@ -227,7 +227,7 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
   // If the read is nonroot,
   // order it with all nonroot writes
   if (nd->getProcessID() != current->graph.starRoot())
-    current->graph.orderEventMaz(nd->getEvent(), current->annotation);
+    current->graph.orderEventMaz(nd->getEvent(), current->annotation, false);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -244,7 +244,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
   // are notEverGood (if both are observable)
   for (auto& newEGnd : newEverGood)
     if (newEGnd->getProcessID() != current->graph.starRoot())
-      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation);
+      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true);
 
   return current->graph.dumpDoneWorklist();
 }

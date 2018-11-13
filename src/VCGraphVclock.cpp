@@ -178,7 +178,15 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
         wNonrootUnord.emplace_hint(itnonr, ev->ml, std::unordered_set<const Node*>());
         wNonrootUnord[ev->ml].reserve(8);
       }
-      if (nd->getProcessID() != starRoot()) {
+      if (nd->getProcessID() == starRoot()) {
+        // Root read
+        auto itml = readsRoot.find(ev->ml);
+        if (itml == readsRoot.end()) {
+          readsRoot.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
+          readsRoot[ev->ml].reserve(8);
+        }
+        readsRoot[ev->ml].insert(nd);
+      } else {
         // Nonroot read
         auto itml = readsNonroot.find(ev->ml);
         if (itml == readsNonroot.end()) {
@@ -598,8 +606,8 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
   }
 
   // Looking for candidate from a different thread
-  ThreadPairsVclocks& succ = *(po.first);
-  ThreadPairsVclocks& pred = *(po.second);
+  const ThreadPairsVclocks& succ = *(po.first);
+  const ThreadPairsVclocks& pred = *(po.second);
 
   // Search for a head write candidate happening before nd
   const Node *before_nd = nullptr;
@@ -738,10 +746,61 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
 bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
 {
   assert(isWrite(nd->getEvent()));
-  return true; // TODO: implement
+
+  auto itmlR = readsRoot.find(nd->getEvent()->ml);
+  if (itmlR != readsRoot.end())
+    for (const Node *rootRead : itmlR->second) {
+      bool observableBy = isObservableBy(nd, rootRead, po);
+      if (observableBy)
+        return true;
+    }
+
+  auto itmlN = readsNonroot.find(nd->getEvent()->ml);
+  if (itmlN != readsNonroot.end())
+    for (const Node *nonrootRead : itmlN->second) {
+      bool observableBy = isObservableBy(nd, nonrootRead, po);
+      if (observableBy)
+        return true;
+    }
+
+  return false;
 }
 
-void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation)
+bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
+                                   const PartialOrder& po) const
+{
+  assert(isWrite(writend->getEvent()) &&
+         isRead(readnd->getEvent()) &&
+         writend->getEvent()->ml == readnd->getEvent()->ml);
+
+  if (hasEdge(readnd, writend, po)) {
+    // Trivially unobservable
+    return false;
+  }
+
+  if (!hasEdge(writend, readnd, po)) {
+    // Trivially observable
+    assert(!areOrdered(writend, readnd, po));
+    return true;
+  }
+
+  assert(hasEdge(writend, readnd, po));
+  // If a write happens before a read, it can be
+  // observable by this read only if it is head
+  auto heads = getHeadWrites(readnd, po);
+  if (heads.first && heads.first == writend)
+    return true;
+
+  if (heads.second.size() > 0)
+    for (const Node *nonrootHead : heads.second)
+      if (nonrootHead == writend)
+        return true;
+
+  return false;
+}
+
+void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
+                                  bool newlyEverGoodWrite)
 {
   assert(isWrite(ev1) || isRead(ev1));
   auto it = event_to_node.find(ev1);
@@ -750,7 +809,8 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   assert(nd1->getEvent() == ev1);
   assert(nd1->getProcessID() != starRoot());
 
-  bool readOrEverGoodWrite = (isRead(ev1) || annotation.isEverGood(nd1));
+  bool readOrEverGoodWrite = (isRead(ev1) || newlyEverGoodWrite ||
+                              annotation.isEverGood(nd1));
 
   // Collect conflicting nonroot writes to order
   auto itnsw = wNonrootUnord.find(ev1->ml);

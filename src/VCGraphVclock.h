@@ -58,6 +58,9 @@ class VCGraphVclock : public VCBasis {
     readsNonroot;
 
   std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
+    readsRoot;
+
+  std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
     wNonrootUnord;
 
   std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
@@ -344,9 +347,17 @@ class VCGraphVclock : public VCBasis {
   // determines whether 'nd' is observable in that 'po'
   bool isObservable(const Node *nd, const PartialOrder& po) const;
 
+ private:
+  // Helper for isObservable, where the read node is specified
+  bool isObservableBy(const Node *writend, const Node *readnd,
+                      const PartialOrder& po) const;
+
+ public:
+
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation);
+  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
+                     bool newlyEverGoodWrite);
 
   // Returns last nodes of processes that are reads or locks
   std::unordered_set<const Node *> getNodesToMutate() const {
