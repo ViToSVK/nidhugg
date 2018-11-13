@@ -203,7 +203,7 @@ std::list<PartialOrder> VCExplorer::extensionWritesOrderings()
   current->graph.initWorklist();
 
   // Order extension writes of non-root processes
-  // with conflicting observable writes of non-root processes
+  // with conflicting everGood writes of non-root processes
   for (unsigned trace_idx = current->graph.getExtensionFrom();
        trace_idx < current->trace.size(); ++trace_idx) {
     const VCEvent& ev = current->trace[trace_idx];
@@ -230,7 +230,7 @@ std::list<PartialOrder> VCExplorer::readToBeMutatedOrderings(const PartialOrder&
   return current->graph.dumpDoneWorklist();
 }
 
-std::list<PartialOrder> VCExplorer::newlyObservableWritesOrderings
+std::list<PartialOrder> VCExplorer::newlyEverGoodWritesOrderings
 (const PartialOrder& po, const std::unordered_set<const Node *> newobs)
 {
   assert(current.get());
@@ -273,21 +273,21 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
     for (auto& valpos_ann : mutationCandidates) {
 
-      // Collect writes that become newly observable by performing this mutation
-      // We will have to order them with conflicting unobservable writes
+      // Collect writes that become newly everGood by performing this mutation
+      // We will have to order them with conflicting notEverGood writes
       VCAnnotation mutatedAnnotation(current->annotation);
-      auto newlyObservableVCIIDs = mutatedAnnotation.add(nd, valpos_ann.second);
-      auto newlyObservableWrites = std::unordered_set<const Node *>();
-      for (auto& vciid : newlyObservableVCIIDs) {
+      auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, valpos_ann.second);
+      auto newlyEverGoodWrites = std::unordered_set<const Node *>();
+      for (auto& vciid : newlyEverGoodVCIIDs) {
         if (vciid.first != INT_MAX) {
           assert(isWrite(current->graph.getNode(vciid.first, vciid.second)->getEvent()));
-          newlyObservableWrites.insert(current->graph.getNode(vciid.first, vciid.second));
+          newlyEverGoodWrites.insert(current->graph.getNode(vciid.first, vciid.second));
         }
       }
 
-      // Orderings of newly observable writes
+      // Orderings of newly everGood writes
       std::list<PartialOrder> newlyObsWpos =
-        newlyObservableWritesOrderings(roPo, newlyObservableWrites);
+        newlyEverGoodWritesOrderings(roPo, newlyEverGoodWrites);
 
       while (!newlyObsWpos.empty()) {
         auto mutatedPo = std::move(newlyObsWpos.front());

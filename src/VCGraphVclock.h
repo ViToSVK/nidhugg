@@ -343,7 +343,7 @@ class VCGraphVclock : public VCBasis {
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
   void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                     bool isNewlyObservableWrite);
+                     bool isNewlyEverGoodWrite);
 
   // Returns last nodes of processes that are reads or locks
   std::unordered_set<const Node *> getNodesToMutate() const {

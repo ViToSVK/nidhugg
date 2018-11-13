@@ -47,7 +47,7 @@ class VCAnnotation {
   };
 
   class Ann {
-  public:
+   public:
     ~Ann() { delete goodLocal; }
 
     Ann() : value(47), loc(Loc::ANY), goodRemote(), goodLocal(), ignore(true) {}
@@ -87,13 +87,13 @@ class VCAnnotation {
 
   using MappingT = std::unordered_map<VCIID, Ann>;
   using LastLockT = std::unordered_map<SymAddrSize, VCIID>;
-  using ObservableT = std::unordered_map<SymAddrSize, std::unordered_set<VCIID>>;
+  using EverGoodT = std::unordered_map<SymAddrSize, std::unordered_set<VCIID>>;
 
  private:
 
   MappingT mapping;
   LastLockT lastlock;
-  ObservableT observable;
+  EverGoodT everGood;
 
  public:
 
@@ -121,7 +121,7 @@ class VCAnnotation {
 
  public:
 
-  // Retuns VCIIDs of newly observable writes in ann
+  // Retuns VCIIDs of newly everGood writes in ann
   std::unordered_set<VCIID> add(const Node * nd, const Ann& ann) {
     assert(isRead(nd->getEvent()));
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
@@ -131,12 +131,12 @@ class VCAnnotation {
     assert(ann.loc != Loc::LOCAL || ann.goodRemote.empty());
     mapping.emplace_hint(it, key, ann);
 
-    // Maintain the set of observable writes
-    // Collect and return newly observable writes
+    // Maintain the set of everGood writes
+    // Collect and return newly everGood writes
     auto result = std::unordered_set<VCIID>();
-    auto mlit = observable.find(nd->getEvent()->ml);
-    if (mlit == observable.end())
-      mlit = observable.emplace_hint(mlit, nd->getEvent()->ml,
+    auto mlit = everGood.find(nd->getEvent()->ml);
+    if (mlit == everGood.end())
+      mlit = everGood.emplace_hint(mlit, nd->getEvent()->ml,
                                    std::unordered_set<VCIID>());
     if (ann.goodLocal) {
       auto newobs = mlit->second.emplace(ann.goodLocal->first,
@@ -163,10 +163,10 @@ class VCAnnotation {
     return (mapping.find(key) != mapping.end());
   }
 
-  bool isObservable(const Node * nd) const {
+  bool isEverGood(const Node * nd) const {
     assert(isWrite(nd->getEvent()));
-    auto mlit = observable.find(nd->getEvent()->ml);
-    if (mlit == observable.end()) {
+    auto mlit = everGood.find(nd->getEvent()->ml);
+    if (mlit == everGood.end()) {
       return false;
     }
     return mlit->second.count(VCIID(nd->getProcessID(),

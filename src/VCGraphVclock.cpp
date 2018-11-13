@@ -736,7 +736,7 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
 }
 
 void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                                  bool isNewlyObservableWrite)
+                                  bool isNewlyEverGoodWrite)
 {
   assert(isWrite(ev1) || isRead(ev1));
   auto it = event_to_node.find(ev1);
@@ -755,10 +755,10 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
     assert(writend->getProcessID() != starRoot());
     if (nd1->getProcessID() != writend->getProcessID()) {
       if ((isRead(ev1)) || // Read ordered with all
-          (isNewlyObservableWrite && // Already is ordered with other observable
-           !annotation.isObservable(writend)) ||
-          (!isNewlyObservableWrite && // Order only with observable
-           annotation.isObservable(writend)))
+          (isNewlyEverGoodWrite && // Already is ordered with other everGood
+           !annotation.isEverGood(writend)) ||
+          (!isNewlyEverGoodWrite && // Order only with everGood
+           annotation.isEverGood(writend)))
         toOrder.insert(writend);
     }
   }
