@@ -301,17 +301,10 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
     curn.ml = *ml;
   curn.instruction = current_inst;
 
-  if (sch_replay) {
-    if ((replay_trace[prefix_idx].kind != VCEvent::Kind::M_LOCK ||
-         prefix[prefix_idx].kind != VCEvent::Kind::M_LOCKATTEMPT)
-        && replay_trace[prefix_idx].kind != prefix[prefix_idx].kind) {
-      llvm::errs() << "\n\nREPLAYTRACEKIND: " << (int) replay_trace[prefix_idx].kind
-                   << "\nPREFIXKIND:        " << (int) prefix[prefix_idx].kind << "\n";
-    }
-    assert(replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
-           (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
-            prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
-  }
+  assert(!sch_replay ||
+         replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
+         (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
+          prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
 }
 
 void VCTraceBuilder::metadata(const llvm::MDNode *md)
