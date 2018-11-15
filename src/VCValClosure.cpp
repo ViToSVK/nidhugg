@@ -270,6 +270,12 @@ std::pair<bool, bool> VCValClosure::ruleOne
   }
 
   // Either no nonroot head(s) or bad nonroot head(s)
+  #ifndef NDEBUG
+  if (nonrootheads.size() > 0)
+    for (const Node *badNonrootHead : nonrootheads) {
+      assert(!isGood(badNonrootHead, ann));
+    }
+  #endif
   // Remote good writes are fully ordered, quicksort them
   auto remoteGoodWrites = std::vector<const Node *>();
   auto itunord = graph.wNonrootUnord.find(readnd->getEvent()->ml);

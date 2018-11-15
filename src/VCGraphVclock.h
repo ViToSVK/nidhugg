@@ -87,7 +87,7 @@ class VCGraphVclock : public VCBasis {
             event_to_node.empty() &&
             !initial_node && nodes.empty() &&
             !original.first.get() && !original.second.get() &&
-            readsNonroot.empty() &&
+            readsNonroot.empty() && readsRoot.empty() &&
             wNonrootUnord.empty() && wRoot.empty() &&
             tw_candidate.empty() &&
             worklist_ready.empty() && worklist_done.empty());
@@ -112,6 +112,7 @@ class VCGraphVclock : public VCBasis {
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
     readsNonroot(),
+    readsRoot(),
     wNonrootUnord(),
     wRoot(),
     tw_candidate(),
@@ -130,6 +131,7 @@ class VCGraphVclock : public VCBasis {
     initial_node(oth.initial_node),
     nodes(std::move(oth.nodes)),
     readsNonroot(std::move(oth.readsNonroot)),
+    readsRoot(std::move(oth.readsRoot)),
     wNonrootUnord(std::move(oth.wNonrootUnord)),
     wRoot(std::move(oth.wRoot)),
     tw_candidate(std::move(oth.tw_candidate)),
@@ -155,6 +157,7 @@ class VCGraphVclock : public VCBasis {
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
     readsNonroot(),
+    readsRoot(),
     wNonrootUnord(),
     wRoot(),
     tw_candidate(),
