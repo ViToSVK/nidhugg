@@ -30,14 +30,17 @@ void VCExplorer::print_stats()
   std::cout << "\n";
   std::cout << "Fully executed traces:            " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:  " << executed_traces << "\n";
-  std::cout << "Total time spent on copying:      " << time_graphcopy << "\n";
-  std::cout << "Total time spent on replaying:    " << time_replaying << "\n";
-  std::cout << "Total time spent on mazurkiewicz: " << time_maz << "\n";
-  std::cout << "Total time spent on closure:      " << time_closure << "\n";
+  std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
+  std::cout << "RoPOs with no mutation choices:   " << read_ordered_pos_no_mut_choices << "\n";
+  std::cout << "Mutations considered:             " << mutations_considered << "\n";
   std::cout << "Closure after ordering failed:    " << cl_ordering_failed << "\n";
   std::cout << "Closure after ordering succeeded: " << cl_ordering_succeeded << "\n";
   std::cout << "Closure after mutation failed:    " << cl_mutation_failed << "\n";
   std::cout << "Closure after mutation succeeded: " << cl_mutation_succeeded << "\n";
+  std::cout << "Total time spent on copying:      " << time_graphcopy << "\n";
+  std::cout << "Total time spent on replaying:    " << time_replaying << "\n";
+  std::cout << "Total time spent on mazurkiewicz: " << time_maz << "\n";
+  std::cout << "Total time spent on closure:      " << time_closure << "\n";
   std::cout << "\n";
 
   // Change to false to test if assertions are on
@@ -273,13 +276,17 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
     assert(!readOrderedPOs.front().first.get() &&
            !readOrderedPOs.front().second.get());
     readOrderedPOs.pop_front();
+    ++read_ordered_pos;
 
     // We could do closure here to already rule out some po-s, but don't have to
     auto mutationCandidates =
       current->graph.getMutationCandidates(roPo, negativeWriteMazBranch, nd);
+    if (mutationCandidates.empty())
+      ++read_ordered_pos_no_mut_choices;
 
     for (auto& valpos_ann : mutationCandidates) {
 
+      ++mutations_considered;
       // Collect writes that become newly everGood by performing this mutation
       // We will have to order them with conflicting notEverGood writes
       VCAnnotation mutatedAnnotation(current->annotation);

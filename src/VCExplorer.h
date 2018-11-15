@@ -43,9 +43,25 @@ class VCExplorer {
 
   // Number of executed traces (1 because of the initial
   // trace that was obtained as a constructor argument)
+  // This is the number of times we used the interpreter
   unsigned executed_traces = 1;
   // Number of fully executed traces
   unsigned executed_traces_full = 0;
+  // Number of read-ordered partial orders
+  unsigned read_ordered_pos = 0;
+  // Number ofread-ordered partial orders with no mutation
+  // choices (eg all blocked by negative annotation)
+  unsigned read_ordered_pos_no_mut_choices = 0;
+  // Number of mutations considered
+  unsigned mutations_considered = 0;
+  // Closure of extension-ordered po failed
+  unsigned cl_ordering_failed = 0;
+  // Closure of extension-ordered po succeeded
+  unsigned cl_ordering_succeeded = 0;
+  // Closure of mutation-chosen po failed
+  unsigned cl_mutation_failed = 0;
+  // Closure of mutation-chosen po succeeded
+  unsigned cl_mutation_succeeded = 0;
   // Total time spent on closure
   double time_closure = 0;
   // Total time spent on copying
@@ -54,10 +70,6 @@ class VCExplorer {
   double time_replaying = 0;
   // Total time spent on mazurkiewicz ordering
   double time_maz = 0;
-  unsigned cl_ordering_failed = 0;
-  unsigned cl_ordering_succeeded = 0;
-  unsigned cl_mutation_failed = 0;
-  unsigned cl_mutation_succeeded = 0;
 
   /* *************************** */
   /* ALGORITHM                   */
