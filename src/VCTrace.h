@@ -40,6 +40,7 @@ class VCTrace {
 
   std::unordered_map<int, int> in_critical_section;
 
+  unsigned processMutationPreference;
 
   /* *************************** */
   /* CONSTRUCTORS                */
@@ -54,7 +55,8 @@ class VCTrace {
     negative(),
     graph(this->trace, star_root_index),
     unannot(),
-    in_critical_section()
+    in_critical_section(),
+    processMutationPreference(0)
       {
         for (unsigned i = 0; i < trace.size(); ++i)
           if (isRead(trace[i])) {
@@ -70,13 +72,15 @@ class VCTrace {
           VCAnnotation&& annotation,
           const VCAnnotationNeg& negative,
           VCGraphVclock&& graph,
-          std::unordered_map<int, int>&& cs)
+          std::unordered_map<int, int>&& cs,
+          unsigned pref)
   : trace(std::move(trace)),
     annotation(std::move(annotation)),
     negative(negative),
     graph(std::move(graph)),
     unannot(),
-    in_critical_section(std::move(cs))
+    in_critical_section(std::move(cs)),
+    processMutationPreference(pref)
       {};
 
   VCTrace(VCTrace&& tr) = default;

@@ -103,14 +103,25 @@ bool VCExplorer::explore()
     }
 
     // Ordering of nodes to try mutations
-    // In this branch we DON'T HAVE the preference node
+    // in this branch we HAVE the preference node
     auto orderedNodesToMutate = std::list<const Node *>();
+    auto nonrootpid = std::vector<const Node *>(current->graph.size(), nullptr);
+    const Node * pref = nullptr;
     for (auto& ndtomut : nodesToMutate) {
-      if (ndtomut->getProcessID() == current->graph.starRoot())
-        orderedNodesToMutate.push_front(ndtomut); // root first
+      if (ndtomut->getProcessID() == current->processMutationPreference)
+        pref = ndtomut;
+      else if (ndtomut->getProcessID() == current->graph.starRoot())
+        orderedNodesToMutate.push_front(ndtomut); // root in the middle
       else
-        orderedNodesToMutate.push_back(ndtomut); // non-root after
+        nonrootpid.at(ndtomut->getProcessID()) = ndtomut; // non-roots last, to be ordered
     }
+    if (pref)
+      orderedNodesToMutate.push_front(pref); // preference very first
+
+    // ASCENDING
+    for (unsigned i=0; i<nonrootpid.size(); ++i)
+      if (nonrootpid[i])
+        orderedNodesToMutate.push_back(nonrootpid[i]);
 
     std::vector<unsigned> processLengths = current->graph.getProcessLengths();
 
@@ -354,7 +365,8 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
                        std::move(mutatedAnnotation),
                        negativeWriteMazBranch,
                        std::move(mutatedGraph),
-                       std::move(mutatedTrace.second)));
+                       std::move(mutatedTrace.second),
+                       nd->getProcessID()));
         assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
                && mutatedGraph.empty() && mutatedTrace.second.empty());
         time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -414,7 +426,8 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
                    std::move(mutatedAnnotation),
                    current->negative,
                    std::move(mutatedGraph),
-                   std::move(mutatedTrace.second)));
+                   std::move(mutatedTrace.second),
+                   nd->getProcessID()));
     assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
            && mutatedGraph.empty() && mutatedTrace.second.empty());
     time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -500,7 +513,8 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
                  std::move(mutatedAnnotation),
                  current->negative,
                  std::move(mutatedGraph),
-                 std::move(mutatedTrace.second)));
+                 std::move(mutatedTrace.second),
+                 nd->getProcessID()));
   assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
          && mutatedGraph.empty() && mutatedTrace.second.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
