@@ -309,6 +309,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
           newlyEverGoodWrites.insert(current->graph.getNode(vciid.first, vciid.second));
         }
       }
+      assert(mutatedAnnotation.size() == current->annotation.size() + 1);
 
       // Orderings of newly everGood writes
       clock_t init = std::clock();
@@ -360,15 +361,17 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
                                    std::move(mutatedPo), // base for 'original' po
                                    mutatedTrace.first); // to extend the graph
         assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+        assert(mutatedAnnotation.size() == current->annotation.size() + 1);
         std::unique_ptr<VCTrace> mutatedVCTrace
           (new VCTrace(std::move(mutatedTrace.first),
-                       std::move(mutatedAnnotation),
+                       mutatedAnnotation,
                        negativeWriteMazBranch,
                        std::move(mutatedGraph),
                        std::move(mutatedTrace.second),
                        nd->getProcessID()));
-        assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
-               && mutatedGraph.empty() && mutatedTrace.second.empty());
+        assert(mutatedTrace.first.empty() &&
+               mutatedGraph.empty() &&
+               mutatedTrace.second.empty());
         time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
         worklist.push_front(std::move(mutatedVCTrace));
@@ -423,13 +426,14 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
     assert(!mutatedPo.first.get() && !mutatedPo.second.get());
     std::unique_ptr<VCTrace> mutatedVCTrace
       (new VCTrace(std::move(mutatedTrace.first),
-                   std::move(mutatedAnnotation),
+                   mutatedAnnotation,
                    current->negative,
                    std::move(mutatedGraph),
                    std::move(mutatedTrace.second),
                    nd->getProcessID()));
-    assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
-           && mutatedGraph.empty() && mutatedTrace.second.empty());
+    assert(mutatedTrace.first.empty() &&
+           mutatedGraph.empty() &&
+           mutatedTrace.second.empty());
     time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     worklist.push_front(std::move(mutatedVCTrace));
@@ -510,13 +514,14 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   assert(!mutatedPo.first.get() && !mutatedPo.second.get());
   std::unique_ptr<VCTrace> mutatedVCTrace
     (new VCTrace(std::move(mutatedTrace.first),
-                 std::move(mutatedAnnotation),
+                 mutatedAnnotation,
                  current->negative,
                  std::move(mutatedGraph),
                  std::move(mutatedTrace.second),
                  nd->getProcessID()));
-  assert(mutatedTrace.first.empty() && mutatedAnnotation.empty()
-         && mutatedGraph.empty() && mutatedTrace.second.empty());
+  assert(mutatedTrace.first.empty() &&
+         mutatedGraph.empty() &&
+         mutatedTrace.second.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   worklist.push_front(std::move(mutatedVCTrace));

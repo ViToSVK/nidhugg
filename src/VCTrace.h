@@ -69,13 +69,13 @@ class VCTrace {
       };
 
   VCTrace(std::vector<VCEvent>&& trace,
-          VCAnnotation&& annotation,
+          const VCAnnotation& annotation,
           const VCAnnotationNeg& negative,
           VCGraphVclock&& graph,
           std::unordered_map<int, int>&& cs,
           unsigned pref)
   : trace(std::move(trace)),
-    annotation(std::move(annotation)),
+    annotation(annotation),
     negative(negative),
     graph(std::move(graph)),
     unannot(),
