@@ -309,9 +309,18 @@ std::pair<bool, bool> VCValClosure::ruleOne
       #ifndef NDEBUG
       if (nonrootheads.size() == 0)
         assert(heads.first && graph.hasEdge(rgw_current, heads.first, po));
-      else
+      else {
+        bool covered = false;
         for (const Node * nonroothead : nonrootheads)
-          assert(graph.hasEdge(rgw_current, nonroothead, po));
+          if (graph.hasEdge(rgw_current, nonroothead, po) &&
+              graph.hasEdge(nonroothead, readnd, po)) {
+            covered = true;
+            break;
+          }
+        if (heads.first && graph.hasEdge(rgw_current, heads.first, po))
+          covered = true;
+        assert(covered);
+      }
       #endif
       rgw_id++;
       continue;
