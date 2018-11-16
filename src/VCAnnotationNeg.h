@@ -34,15 +34,16 @@ class VCAnnotationNeg {
   VCAnnotationNeg(VCAnnotationNeg&& oth) = default;
 
   bool forbidsInitialEvent(const Node * readnd) const {
-    assert(isRead(readnd->getEvent()));
+    assert(isRead(readnd) || isLock(readnd));
     auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
     return forbids_init.count(key);
   }
 
   bool forbids(const Node * readnd, const Node * writend) const {
-    assert(isRead(readnd->getEvent()));
     assert(writend->getEvent() &&
            "should call the special function for init event");
+    assert((isRead(readnd) && isWrite(writend)) ||
+           (isLock(readnd) && isUnlock(writend)));
     auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
     auto it = mapping.find(key);
     if (it == mapping.end())
@@ -55,7 +56,7 @@ class VCAnnotationNeg {
   }
 
   void update(const Node * readnd, const std::vector<unsigned>& newneg) {
-    assert(isRead(readnd->getEvent()));
+    assert(isRead(readnd) || isLock(readnd));
     auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
     forbids_init.insert(key);
     auto it = mapping.find(key);

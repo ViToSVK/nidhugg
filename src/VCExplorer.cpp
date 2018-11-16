@@ -209,6 +209,7 @@ bool VCExplorer::explore()
             worklist.clear();
             return error;
           }
+          negativeWriteMazBranch.update(nd, processLengths);
         }
       }
 
@@ -415,6 +416,11 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   if (!lastLock.first) {
     // This lock hasn't been touched before
+    if (negativeWriteMazBranch.forbidsInitialEvent(nd)) {
+      // Negative annotation forbids initial unlock
+      return false;
+    }
+
     // Trivially realizable
 
     std::unordered_set<int> mutatedUnannot(current->unannot);
@@ -487,6 +493,11 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   // This lock is currently unlocked by lastunlocknd
   assert(lastunlocknd);
+
+  if (negativeWriteMazBranch.forbids(nd, lastunlocknd)) {
+    // Negative annotation forbids this unlock
+    return false;
+  }
 
   auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
                                 (new ThreadPairsVclocks(*(po.first))),

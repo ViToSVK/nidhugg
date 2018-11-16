@@ -34,7 +34,6 @@ inline bool isStore(const Node *nd) {
   return isStore(nd->getEvent());
 }
 
-
 //
 
 inline bool isSpawn(const VCEvent *ev) {
@@ -150,8 +149,7 @@ inline bool isWrite(const Node *nd) {
 }
 
 /* llvm instruction helpers */
-inline bool is_function_call(const llvm::Instruction *I, const char *name)
-{
+inline bool is_function_call(const llvm::Instruction *I, const char *name) {
   using namespace llvm;
 
   const CallInst *CI = dyn_cast<CallInst>(I);
