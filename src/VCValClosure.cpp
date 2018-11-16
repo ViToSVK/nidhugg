@@ -176,7 +176,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
-    if (wRemote.size() == 0)
+    if (low > high || wRemote.size() == 0)
       return {true, false}; // impossible
     assert(low <= high && low < (int) wRemote.size());
     if (!roothead && graph.hasEdge(wRemote[low], readnd, po)) {
