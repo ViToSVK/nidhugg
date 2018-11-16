@@ -94,6 +94,9 @@ class VCExplorer {
   bool traceRespectsAnnotation(const std::vector<VCEvent>& trace,
                                const VCAnnotation& annotation) const;
 
+  bool previous_mutation_process_first = true;
+  bool root_before_nonroots = true;
+
  public:
 
   bool explore();
@@ -104,10 +107,14 @@ class VCExplorer {
   /* CONSTRUCTOR                 */
   /* *************************** */
 
-  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb, int star_root_index)
-    : originalTB(tb) {
-    worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace), star_root_index)));
-  }
+  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb,
+             int star_root_index, bool p_m_p_f, bool r_b_n)
+    : originalTB(tb),
+    previous_mutation_process_first(p_m_p_f),
+    root_before_nonroots(r_b_n)
+    {
+      worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace), star_root_index)));
+    }
 
 };
 

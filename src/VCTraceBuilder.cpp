@@ -29,7 +29,10 @@ bool VCTraceBuilder::reset()
 {
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
-  VCExplorer explorer = VCExplorer(std::move(prefix), *this, 1);
+  VCExplorer explorer = VCExplorer(std::move(prefix), *this,
+                                   this->star_root_index,
+                                   this->previous_mutation_process_first,
+                                   this->root_before_nonroots);
   assert(prefix.empty());
 
   // Call the main method

@@ -53,7 +53,10 @@ cl_memory_model(llvm::cl::NotHidden, llvm::cl::init(Configuration::MM_UNDEF),
                                  clEnumValN(Configuration::POWER,"power","The POWER model"),
                                  clEnumValN(Configuration::PSO,"pso","Partial Store Order"),
                                  clEnumValN(Configuration::TSO,"tso","Total Store Order"),
-                                 clEnumValN(Configuration::VC,"vc","Value-centric DPOR with Sequential Consistency")
+                                 clEnumValN(Configuration::VC_MRL,"vc_mrl","Value-centric DPOR with Sequential Consistency - Mutation-Root-Leaves"),
+                                 clEnumValN(Configuration::VC_MLR,"vc_mlr","Value-centric DPOR with Sequential Consistency - Mutation-Leaves-Root"),
+                                 clEnumValN(Configuration::VC_RL,"vc_rl","Value-centric DPOR with Sequential Consistency - Root-Leaves"),
+                                 clEnumValN(Configuration::VC_LR,"vc_lr","Value-centric DPOR with Sequential Consistency - Leaves-Root")
 #ifdef LLVM_CL_VALUES_USES_SENTINEL
                                 ,clEnumValEnd
 #endif

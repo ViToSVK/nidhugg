@@ -118,6 +118,13 @@ class VCTraceBuilder : public TSOTraceBuilder {
     return prefix[prefix_idx];
   };
 
+  /* *************************** */
+  /* PARAMETER PASSING           */
+  /* *************************** */
+  unsigned star_root_index = 1;
+  bool previous_mutation_process_first = true;
+  bool root_before_nonroots = true;
+
  public:
 
   /* *************************** */
@@ -125,10 +132,14 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* *************************** */
 
   // Use at the very beginning to get an initial trace
-  VCTraceBuilder(const Configuration &conf, llvm::Module *m)
+  VCTraceBuilder(const Configuration &conf, llvm::Module *m,
+                 unsigned s_r_i, bool p_m_p_f, bool r_b_n)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(true), sch_replay(false), sch_extend(false),
-    in_critical_section()
+    in_critical_section(),
+    star_root_index(s_r_i),
+    previous_mutation_process_first(p_m_p_f),
+    root_before_nonroots(r_b_n)
     {}
 
   // Use when you want to do the following:

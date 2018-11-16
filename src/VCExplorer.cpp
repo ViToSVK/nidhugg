@@ -103,25 +103,43 @@ bool VCExplorer::explore()
     }
 
     // Ordering of nodes to try mutations
-    // in this branch we HAVE the preference node
+    // Four VCDPOR version: mrl, mlr, rl, lr
+    // 'm' means process of last mutation gets considered very first for new mutations
+    // 'rl' means root process is considered before leaf processes
+    // 'lr' considers leaf processes before root
+    // leaves themselves are always ordered ascendingly by processID
     auto orderedNodesToMutate = std::list<const Node *>();
     auto nonrootpid = std::vector<const Node *>(current->graph.size(), nullptr);
-    const Node * pref = nullptr;
+    const Node *pref = nullptr;
+    const Node *root = nullptr;
     for (auto& ndtomut : nodesToMutate) {
-      if (ndtomut->getProcessID() == current->processMutationPreference)
+      if (ndtomut->getProcessID() == current->processMutationPreference &&
+          previous_mutation_process_first)
         pref = ndtomut;
       else if (ndtomut->getProcessID() == current->graph.starRoot())
-        orderedNodesToMutate.push_front(ndtomut); // root in the middle
+        root = ndtomut;
       else
-        nonrootpid.at(ndtomut->getProcessID()) = ndtomut; // non-roots last, to be ordered
+        nonrootpid.at(ndtomut->getProcessID()) = ndtomut;
     }
-    if (pref)
-      orderedNodesToMutate.push_front(pref); // preference very first
 
-    // ASCENDING
+    // Nonroots are taken in the process-id-ascending fashion
     for (unsigned i=0; i<nonrootpid.size(); ++i)
       if (nonrootpid[i])
         orderedNodesToMutate.push_back(nonrootpid[i]);
+
+    if (root) {
+      if (root_before_nonroots)
+        orderedNodesToMutate.push_front(root); // Root before nonroots
+      else
+        orderedNodesToMutate.push_back(root); // Root after nonroots
+    }
+
+    if (pref) {
+      // Preference very first
+      assert(previous_mutation_process_first);
+      if (!root || pref != root)
+        orderedNodesToMutate.push_front(pref);
+    }
 
     std::vector<unsigned> processLengths = current->graph.getProcessLengths();
 
