@@ -68,6 +68,11 @@ bool VCExplorer::explore()
 
     // Get nodes available to be mutated
     auto nodesToMutate = current->graph.getNodesToMutate();
+
+    assert(current->unannot.empty());
+    for (auto& nd : nodesToMutate)
+      current->unannot.insert(nd->getEvent()->iid.get_pid());
+
     for (auto it = nodesToMutate.begin(); it != nodesToMutate.end();) {
       const Node * nd = *it;
       assert(isRead(nd->getEvent()) || isLock(nd->getEvent()));
@@ -142,10 +147,6 @@ bool VCExplorer::explore()
     }
 
     std::vector<unsigned> processLengths = current->graph.getProcessLengths();
-
-    assert(current->unannot.empty());
-    for (auto& nd : nodesToMutate)
-      current->unannot.insert(nd->getEvent()->iid.get_pid());
 
     // Get partial-order refinements that order extension events
     // Each refinement will be a candidate for possible mutations
