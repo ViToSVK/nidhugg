@@ -75,9 +75,9 @@ bool VCExplorer::explore()
 
     for (auto it = nodesToMutate.begin(); it != nodesToMutate.end();) {
       const Node * nd = *it;
-      assert(isRead(nd->getEvent()) || isLock(nd->getEvent()));
-      if ((isRead(nd->getEvent()) && current->annotation.defines(nd)) ||
-          (isLock(nd->getEvent()) && current->annotation.isLastLock(nd)))
+      assert(isRead(nd) || isLock(nd));
+      if ((isRead(nd) && current->annotation.defines(nd)) ||
+          (isLock(nd) && current->annotation.isLastLock(nd)))
         it = nodesToMutate.erase(it);
       else
         ++it;
@@ -190,7 +190,7 @@ bool VCExplorer::explore()
       for (auto ndit = orderedNodesToMutate.begin();
            ndit != orderedNodesToMutate.end(); ++ndit) {
         const Node * nd = *ndit;
-        if (isRead(nd->getEvent())) {
+        if (isRead(nd)) {
           bool error = mutateRead(po, withoutMutation, negativeWriteMazBranch, nd);
           if (error) {
             assert(originalTB.error_trace);
@@ -201,7 +201,7 @@ bool VCExplorer::explore()
           negativeWriteMazBranch.update(nd, processLengths);
         }
         else {
-          assert(isLock(nd->getEvent()));
+          assert(isLock(nd));
           bool error = mutateLock(po, withoutMutation, negativeWriteMazBranch, nd);
           if (error) {
             assert(originalTB.error_trace);
@@ -253,7 +253,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
 
 std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder& po, const Node * nd)
 {
-  assert(isRead(nd->getEvent()));
+  assert(isRead(nd));
   assert(current.get());
   assert(!current->annotation.defines(nd));
   current->graph.initWorklist(po);
@@ -290,7 +290,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
                             const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
-  assert(isRead(nd->getEvent()));
+  assert(isRead(nd));
 
   std::unordered_set<int> mutatedUnannot(current->unannot);
   assert(mutatedUnannot.count(nd->getEvent()->iid.get_pid()));
@@ -325,7 +325,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       auto newlyEverGoodWrites = std::unordered_set<const Node *>();
       for (auto& vciid : newlyEverGoodVCIIDs) {
         if (vciid.first != INT_MAX) {
-          assert(isWrite(current->graph.getNode(vciid.first, vciid.second)->getEvent()));
+          assert(isWrite(current->graph.getNode(vciid.first, vciid.second)));
           newlyEverGoodWrites.insert(current->graph.getNode(vciid.first, vciid.second));
         }
       }
@@ -411,7 +411,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
                             const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
-  assert(isLock(nd->getEvent()));
+  assert(isLock(nd));
   auto lastLock = current->annotation.getLastLock(nd);
 
   if (!lastLock.first) {
@@ -612,7 +612,7 @@ bool VCExplorer::traceRespectsAnnotation(const std::vector<VCEvent>& trace,
         } else {
 
           const VCEvent& wrev = trace[j];
-          if (isWrite(wrev) && wrev.ml == ev.ml) {
+          if (isWrite(wrev) && sameMl(wrev, ev)) {
             assert(wrev.value == ev.value);
             if (ann.value != wrev.value)
               return false;

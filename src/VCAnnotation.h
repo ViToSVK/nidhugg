@@ -123,7 +123,7 @@ class VCAnnotation {
 
   // Retuns VCIIDs of newly everGood writes in ann
   std::unordered_set<VCIID> add(const Node * nd, const Ann& ann) {
-    assert(isRead(nd->getEvent()));
+    assert(isRead(nd));
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
     auto it = mapping.find(key);
     assert(it == mapping.end());
@@ -153,7 +153,7 @@ class VCAnnotation {
   }
 
   bool defines(const Node * nd) const {
-    assert(isRead(nd->getEvent()));
+    assert(isRead(nd));
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
     return (mapping.find(key) != mapping.end());
   }
@@ -164,7 +164,7 @@ class VCAnnotation {
   }
 
   bool isEverGood(const Node * nd) const {
-    assert(isWrite(nd->getEvent()));
+    assert(isWrite(nd));
     auto mlit = everGood.find(nd->getEvent()->ml);
     if (mlit == everGood.end()) {
       return false;
@@ -174,7 +174,7 @@ class VCAnnotation {
   }
 
   const Ann& getAnn(const Node * nd) const {
-    assert(isRead(nd->getEvent()));
+    assert(isRead(nd));
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
     auto it = mapping.find(key);
     assert(it != mapping.end());
@@ -193,7 +193,7 @@ class VCAnnotation {
   /* *************************** */
 
   void setLastLock(const Node * nd) {
-    assert(isLock(nd->getEvent()));
+    assert(isLock(nd));
     auto it = lastlock.find(nd->getEvent()->ml);
     if (it == lastlock.end())
       lastlock.emplace_hint(it, nd->getEvent()->ml,
@@ -203,7 +203,7 @@ class VCAnnotation {
   }
 
   std::pair<bool, VCIID> getLastLock(const Node * nd) const {
-    assert(isLock(nd->getEvent()));
+    assert(isLock(nd));
     auto it = lastlock.find(nd->getEvent()->ml);
     if (it == lastlock.end())
       return {false, VCIID(1337,47)};
@@ -212,7 +212,7 @@ class VCAnnotation {
   }
 
   bool isLastLock(const Node * nd) const {
-    assert(isLock(nd->getEvent()));
+    assert(isLock(nd));
     auto it = lastlock.find(nd->getEvent()->ml);
     if (it == lastlock.end())
       return false;

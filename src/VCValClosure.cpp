@@ -47,7 +47,7 @@ void VCValClosure::prepare
 void VCValClosure::prepareBounds
 (const PartialOrder& po, const Node * readnd)
 {
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
   assert(readnd->getProcessID() != graph.starRoot());
 
   wBounds.emplace(readnd, std::pair<int, int>
@@ -58,7 +58,7 @@ void VCValClosure::prepareBounds
 void VCValClosure::updateBounds
 (const PartialOrder& po, const Node * readnd)
 {
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
   assert(readnd->getProcessID() != graph.starRoot());
   assert(wBounds.count(readnd));
 
@@ -121,7 +121,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 (const PartialOrder& po, const Node * readnd,
  const VCAnnotation::Ann& ann)
 {
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
   assert(readnd->getProcessID() == graph.starRoot() ||
          wBounds.count(readnd));
   // Rule1: there exists a write such that
@@ -353,7 +353,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 (const PartialOrder& po, const Node * readnd,
  const VCAnnotation::Ann& ann)
 {
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
   assert(readnd->getProcessID() == graph.starRoot() ||
          wBounds.count(readnd));
   // Rule2: there exists a write such that
@@ -502,7 +502,7 @@ std::pair<bool, bool> VCValClosure::ruleThree
 (const PartialOrder& po, const Node * readnd,
  const VCAnnotation::Ann& ann)
 {
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
   assert(readnd->getProcessID() == graph.starRoot() ||
          wBounds.count(readnd));
   // Rule3: for every write such that
@@ -675,7 +675,7 @@ std::pair<bool, bool> VCValClosure::rules
 (const PartialOrder& po, const Node * readnd,
  const VCAnnotation::Ann& ann)
 {
-  assert(readnd && isRead(readnd->getEvent()));
+  assert(readnd && isRead(readnd));
   //graph.to_dot(po,"");
   //readnd->dump();
   //ann.dump();
@@ -739,9 +739,8 @@ void VCValClosure::valCloseLock(const PartialOrder& po,
                                 const Node * locknode,
                                 const Node * lastunlocknode)
 {
-  assert(isLock(locknode->getEvent()) &&
-         isUnlock(lastunlocknode->getEvent()) &&
-         locknode->getEvent()->ml == lastunlocknode->getEvent()->ml);
+  assert(isLock(locknode) && isUnlock(lastunlocknode) &&
+         sameMl(locknode, lastunlocknode));
 
   if (graph.hasEdge(locknode, lastunlocknode, po)) {
     closed = false;

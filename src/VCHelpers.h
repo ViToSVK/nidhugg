@@ -8,6 +8,20 @@
 #include "VCBasis.h"
 
 /* helper functions */
+inline bool sameMl(const VCEvent *ev1, const VCEvent *ev2) {
+  assert(ev1 && ev2);
+  return ev1->ml == ev2->ml;
+}
+inline bool sameMl(const VCEvent& ev1, const VCEvent& ev2) {
+  return ev1.ml == ev2.ml;
+}
+inline bool sameMl(const Node *nd1, const Node *nd2) {
+  assert(nd1 && nd2);
+  return sameMl(nd1->getEvent(), nd2->getEvent());
+}
+
+//
+
 inline bool isLoad(const VCEvent *ev) {
   assert(ev);
   return ev->kind == VCEvent::Kind::LOAD;

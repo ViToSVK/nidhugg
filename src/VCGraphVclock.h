@@ -367,7 +367,7 @@ class VCGraphVclock : public VCBasis {
     auto result = std::unordered_set<const Node *>();
     for (unsigned tid = 0; tid < processes.size(); ++tid) {
       const Node *nd = processes[tid][ processes[tid].size() - 1 ];
-      if (isRead(nd->getEvent()) || isLock(nd->getEvent()))
+      if (isRead(nd) || isLock(nd))
         result.insert(nd);
     }
     return result;

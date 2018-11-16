@@ -495,7 +495,7 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
                                               const PartialOrder& po) const
 {
-  assert(isRead(nd->getEvent()));
+  assert(isRead(nd));
   const ThreadPairsVclocks& succ = *(po.first);
 
   // Get index where to start the search from
@@ -527,15 +527,14 @@ const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
       ? initial_node : nullptr; // Initial node treated as from same thread
   assert(tw_evidx >= 0 && tw_evidx <= ev_id);
   const Node *result = processes[thr_id][tw_evidx];
-  assert(isWrite(result->getEvent()) &&
-         result->getEvent()->ml == nd->getEvent()->ml);
+  assert(isWrite(result) && sameMl(result, nd));
   return result;
 }
 
 std::pair<const Node *, std::unordered_set<const Node *>>
 VCGraphVclock::getTailWrites(const Node *nd, const PartialOrder& po) const
 {
-  assert(isRead(nd->getEvent()));
+  assert(isRead(nd));
 
   // Get candidate for each thread
   auto result = std::unordered_set<const Node *>();
@@ -600,8 +599,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
       return {initial_node, {0, -1}}; // Initial node treated as from same thread
     assert(tw_evidx >= 0 && tw_evidx <= ev_id);
     const Node *before_nd = processes[thr_id][tw_evidx];
-    assert(isWrite(before_nd->getEvent()) &&
-           before_nd->getEvent()->ml == nd->getEvent()->ml);
+    assert(isWrite(before_nd) && sameMl(before_nd, nd));
     return {before_nd, {0, -1}};
   }
 
@@ -625,8 +623,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
       // Got a head write candidate that happens before nd
       assert(tw_evidx >= 0 && tw_evidx <= ev_id);
       before_nd = processes[thr_id][tw_evidx];
-      assert(isWrite(before_nd->getEvent()) &&
-             before_nd->getEvent()->ml == nd->getEvent()->ml &&
+      assert(isWrite(before_nd) && sameMl(before_nd, nd) &&
              hasEdge(before_nd, nd, po));
     }
   }
@@ -640,7 +637,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
 std::pair<const Node *, std::unordered_set<const Node *>>
 VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
 {
-  assert(isRead(nd->getEvent()));
+  assert(isRead(nd));
 
   // Get before candidates and search indices for each thread
   auto befores = std::vector<const Node *>();
@@ -677,8 +674,7 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
       for (int unord_ev_id = search[thr_id].first;
            unord_ev_id < search[thr_id].second; ++unord_ev_id) {
         const Node *unord_nd = processes[thr_id][unord_ev_id];
-        if (isWrite(unord_nd->getEvent()) &&
-            unord_nd->getEvent()->ml == nd->getEvent()->ml) {
+        if (isWrite(unord_nd) && sameMl(unord_nd, nd)) {
           // Got a conflicting write unordered with nd, this is
           // the only possible unord head candidate for this thread
           assert(!areOrdered(nd, unord_nd, po));
@@ -745,7 +741,7 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
 
 bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
 {
-  assert(isWrite(nd->getEvent()));
+  assert(isWrite(nd));
 
   auto itmlR = readsRoot.find(nd->getEvent()->ml);
   if (itmlR != readsRoot.end())
@@ -769,9 +765,8 @@ bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
 bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
                                    const PartialOrder& po) const
 {
-  assert(isWrite(writend->getEvent()) &&
-         isRead(readnd->getEvent()) &&
-         writend->getEvent()->ml == readnd->getEvent()->ml);
+  assert(isWrite(writend) && isRead(readnd) &&
+         sameMl(writend, readnd));
 
   if (hasEdge(readnd, writend, po)) {
     // Trivially unobservable
@@ -845,9 +840,9 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   for (auto it = toOrder.begin(); it != toOrder.end(); ++it) {
     const Node *nd2 = *it;
     assert(nd1->getProcessID() != nd2->getProcessID() &&
-           (isWrite(nd2->getEvent()) ||
-            (isRead(nd2->getEvent()) && annotation.defines(nd2))) &&
-           (!isRead(nd1->getEvent()) || !isRead(nd2->getEvent())));
+           (isWrite(nd2) ||
+            (isRead(nd2) && annotation.defines(nd2))) &&
+           (!isRead(nd1) || !isRead(nd2)));
 
     // Prepare worklist
     worklist_ready.swap(worklist_done);
@@ -861,8 +856,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
       worklist_ready.pop_front();
 
       if (!areOrdered(nd1, nd2, current) &&
-          (isRead(nd1->getEvent()) ||
-           isRead(nd2->getEvent()) ||
+          (isRead(nd1) || isRead(nd2) ||
            (isObservable(nd1, current) && isObservable(nd2, current))
           )) {
         // Unordered and either one of them read,
@@ -896,7 +890,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
                                      const VCAnnotationNeg& negative, const Node *readnd) const
 {
   assert(nodes.count(readnd));
-  assert(isRead(readnd->getEvent()));
+  assert(isRead(readnd));
 
   int nd_tid = readnd->getProcessID();
   int nd_evid = readnd->getEventID();
@@ -913,7 +907,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
   // Handle thread nd_tid
   for (int evid = nd_evid - 1; evid >= 0; --evid) {
     const Node *wrnd = processes[nd_tid][evid];
-    if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml) {
+    if (isWrite(wrnd) && sameMl(wrnd, readnd)) {
       // Add to mayBeCovered
       mayBeCovered.insert(wrnd);
       // Update cover in other threads
@@ -939,7 +933,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
       // (su-1, su-2, ..., pr+2, pr+1) unordered with nd
       for (int evid = su-1; evid > pr; --evid) {
         const Node *wrnd = processes[tid][evid];
-        if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml)
+        if (isWrite(wrnd) && sameMl(wrnd, readnd))
           mutateWrites.insert(wrnd);
         // wrnd covers nothing since it is unordered with nd
       }
@@ -947,7 +941,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
       // Handle nodes that happen before nd
       for (int evid = pr; evid >= 0; --evid) {
         const Node *wrnd = processes[tid][evid];
-        if (isWrite(wrnd->getEvent()) && wrnd->getEvent()->ml == readnd->getEvent()->ml) {
+        if (isWrite(wrnd) && sameMl(wrnd, readnd)) {
           // Add to mayBeCovered
           mayBeCovered.insert(wrnd);
           // Update cover in other threads
@@ -977,7 +971,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
 
     for (auto it = mutateWrites.begin(); it != mutateWrites.end(); ) {
       const Node * writend = *it;
-      assert(isWrite(writend->getEvent()));
+      assert(isWrite(writend));
       if (negative.forbids(readnd, writend))
         it = mutateWrites.erase(it);
       else
