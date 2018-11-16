@@ -202,7 +202,7 @@ bool VCExplorer::explore()
         }
         else {
           assert(isLock(nd->getEvent()));
-          bool error = mutateLock(po, withoutMutation, nd);
+          bool error = mutateLock(po, withoutMutation, negativeWriteMazBranch, nd);
           if (error) {
             assert(originalTB.error_trace);
             current.reset();
@@ -407,7 +407,8 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 /* MUTATE LOCK                 */
 /* *************************** */
 
-bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd)
+bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
+                            const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isLock(nd->getEvent()));
   auto lastLock = current->annotation.getLastLock(nd);
@@ -446,7 +447,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
     std::unique_ptr<VCTrace> mutatedVCTrace
       (new VCTrace(std::move(mutatedTrace.first),
                    mutatedAnnotation,
-                   current->negative,
+                   negativeWriteMazBranch,
                    std::move(mutatedGraph),
                    std::move(mutatedTrace.second),
                    nd->getProcessID()));
@@ -534,7 +535,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   std::unique_ptr<VCTrace> mutatedVCTrace
     (new VCTrace(std::move(mutatedTrace.first),
                  mutatedAnnotation,
-                 current->negative,
+                 negativeWriteMazBranch,
                  std::move(mutatedGraph),
                  std::move(mutatedTrace.second),
                  nd->getProcessID()));

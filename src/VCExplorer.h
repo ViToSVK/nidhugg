@@ -85,7 +85,8 @@ class VCExplorer {
   bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
                   const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
-  bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation, const Node *nd);
+  bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
+                  const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
   std::pair<std::vector<VCEvent>,
     std::unordered_map<int, int>> extendTrace(std::vector<VCEvent>&& tr,
