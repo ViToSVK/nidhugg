@@ -375,7 +375,6 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         if (mutatedTrace.first.empty())
           return true; // found an error
         assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
-
         init = std::clock();
         VCGraphVclock mutatedGraph(current->graph,       // base for graph
                                    std::move(mutatedPo), // base for 'original' po

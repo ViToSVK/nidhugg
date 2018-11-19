@@ -356,7 +356,8 @@ void VCTraceBuilder::atomic_store(const SymData &sd, int val)
   // Stores to local memory on stack may not conflict
   assert(llvm::isa<llvm::StoreInst>(current_inst));
   //if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(1)->stripInBoundsOffsets() )) {
-  if (sd.get_ref().addr.block.is_global()) {
+  if (sd.get_ref().addr.block.is_global() ||
+      sd.get_ref().addr.block.is_heap()) {
     assert(curnode().kind == VCEvent::Kind::DUMMY);
     curnode().kind = VCEvent::Kind::STORE;
     const SymAddrSize &ml = sd.get_ref();
@@ -371,7 +372,8 @@ void VCTraceBuilder::load(const SymAddrSize &ml, int val)
   // Loads from stack may not conflict
   assert(llvm::isa<llvm::LoadInst>(current_inst));
   //if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
-  if (ml.addr.block.is_global()) {
+  if (ml.addr.block.is_global() ||
+      ml.addr.block.is_heap()) {
     assert(curnode().kind == VCEvent::Kind::DUMMY);
     curnode().kind = VCEvent::Kind::LOAD;
     mayConflict(&ml);
