@@ -27,6 +27,11 @@
 
 bool VCTraceBuilder::reset()
 {
+  if (this->has_error()) {
+    this->error_trace = this->get_trace();
+    return true;
+  }
+
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
   VCExplorer explorer = VCExplorer(std::move(prefix), *this,
