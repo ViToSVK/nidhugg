@@ -83,16 +83,6 @@ bool VCExplorer::explore()
         ++it;
     }
 
-    if (nodesToMutate.empty()) {
-      // Fully executed trace
-      ++executed_traces_full;
-      //llvm::errs() << "********* FULL TRACE *********\n";
-      //current->annotation.dump();
-      //current->graph.to_dot("");
-      current.reset();
-      continue;
-    }
-
     if (!current->in_critical_section.empty()) {
       // Process in critical section, we mutate only on that process
       assert(current->in_critical_section.size() == 1);
@@ -104,7 +94,19 @@ bool VCExplorer::explore()
         else
           it = nodesToMutate.erase(it);
       }
-      assert(nodesToMutate.size() == 1);
+      // We can have either one node to mutate - in the critical-section process
+      // Or zero - the critical-section process got assume-blocked and we're done
+      assert(nodesToMutate.size() <= 1);
+    }
+
+    if (nodesToMutate.empty()) {
+      // Fully executed trace
+      ++executed_traces_full;
+      //llvm::errs() << "********* FULL TRACE *********\n";
+      //current->annotation.dump();
+      //current->graph.to_dot("");
+      current.reset();
+      continue;
     }
 
     // Ordering of nodes to try mutations

@@ -182,12 +182,13 @@ bool VCTraceBuilder::schedule_arbitrarily(int *proc)
   assert(!sch_replay && (sch_initial || sch_extend));
 
   if (!in_critical_section.empty()) {
+    // A process is currently in a critical section
     assert(in_critical_section.size() == 1);
     unsigned cs_ipid = (unsigned) in_critical_section.begin()->first;
     if (!threads_with_unannotated_read.count(cs_ipid)) {
-      bool ret = schedule_thread(proc, cs_ipid);
-      assert(ret);
-      return true;
+      // Below could return false if the execution in
+      // the critical section is assume-blocked
+      return schedule_thread(proc, cs_ipid);
     } else
       return false;
   }
