@@ -369,35 +369,12 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         // llvm::errs() << "SUCCEEDED\n";
         // current->graph.to_dot(mutatedPo, "");
 
-        init = std::clock();
-        auto mutatedTrace =
-          extendTrace(current->graph.linearize(mutatedPo, nullptr),
-                      mutatedUnannot);
-        time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-        if (mutatedTrace.first.empty())
-          return true; // found an error
-        assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
-
-        init = std::clock();
-        VCGraphVclock mutatedGraph(current->graph,       // base for graph
-                                   std::move(mutatedPo), // base for 'original' po
-                                   mutatedTrace.first); // to extend the graph
-        assert(!mutatedPo.first.get() && !mutatedPo.second.get());
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
-        std::unique_ptr<VCTrace> mutatedVCTrace
-          (new VCTrace(std::move(mutatedTrace.first),
-                       mutatedAnnotation,
-                       negativeWriteMazBranch,
-                       std::move(mutatedGraph),
-                       std::move(mutatedTrace.second),
-                       nd->getProcessID()));
-        assert(mutatedTrace.first.empty() &&
-               mutatedGraph.empty() &&
-               mutatedTrace.second.empty());
-        time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-        worklist.push_front(std::move(mutatedVCTrace));
-        assert(!mutatedVCTrace.get());
+        bool errorInExtension = extendAndAdd(std::move(mutatedPo), nullptr,
+                                             mutatedUnannot, mutatedAnnotation,
+                                             negativeWriteMazBranch, nd->getProcessID());
+        if (errorInExtension)
+          return true;
 
       } // end of loop for newEverGoodOrdered partial order
     } // end of loop for mutation annotation
@@ -438,35 +415,10 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
     mutatedAnnotation.setLastLock(nd);
 
     auto mutatedLock = VCIID(nd->getProcessID(), nd->getEventID());
-    clock_t init = std::clock();
-    auto mutatedTrace =
-      extendTrace(current->graph.linearize(mutatedPo, &mutatedLock),
-                  mutatedUnannot);
-    time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-    if (mutatedTrace.first.empty())
-      return true; // found an error
-    assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
-
-    init = std::clock();
-    VCGraphVclock mutatedGraph(current->graph,       // base for graph
-                               std::move(mutatedPo), // base for 'original' po
-                               mutatedTrace.first); // to extend the graph
-    assert(!mutatedPo.first.get() && !mutatedPo.second.get());
-    std::unique_ptr<VCTrace> mutatedVCTrace
-      (new VCTrace(std::move(mutatedTrace.first),
-                   mutatedAnnotation,
-                   negativeWriteMazBranch,
-                   std::move(mutatedGraph),
-                   std::move(mutatedTrace.second),
-                   nd->getProcessID()));
-    assert(mutatedTrace.first.empty() &&
-           mutatedGraph.empty() &&
-           mutatedTrace.second.empty());
-    time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-    worklist.push_front(std::move(mutatedVCTrace));
-    assert(!mutatedVCTrace.get());
-    return false;
+    bool errorInExtension = extendAndAdd(std::move(mutatedPo), &mutatedLock,
+                                         mutatedUnannot, mutatedAnnotation,
+                                         negativeWriteMazBranch, nd->getProcessID());
+    return errorInExtension;
   }
 
   // The lock has been touched before
@@ -531,30 +483,54 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   mutatedAnnotation.setLastLock(nd);
 
   auto mutatedLock = VCIID(nd->getProcessID(), nd->getEventID());
-  init = std::clock();
+  bool errorInExtension = extendAndAdd(std::move(mutatedPo), &mutatedLock,
+                                       mutatedUnannot, mutatedAnnotation,
+                                       negativeWriteMazBranch, nd->getProcessID());
+  return errorInExtension;
+}
+
+/* *************************** */
+/* EXTEND AND ADD              */
+/* *************************** */
+
+bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
+                              const VCIID *mutatedLock,
+                              const std::unordered_set<int>& mutatedUnannot,
+                              const VCAnnotation& mutatedAnnotation,
+                              const VCAnnotationNeg& negativeWriteMazBranch,
+                              unsigned processMutationPreference)
+{
+  clock_t init = std::clock();
   auto mutatedTrace =
-    extendTrace(current->graph.linearize(mutatedPo, &mutatedLock),
+    extendTrace(current->graph.linearize(mutatedPo, mutatedLock),
                 mutatedUnannot);
   time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-  if (mutatedTrace.first.empty())
-    return true; // found an error
-  assert(traceRespectsAnnotation(mutatedTrace.first, mutatedAnnotation));
+
+  if (mutatedTrace.hasError)
+    return true; // Found an error
+  /*
+  if (mutatedTrace.hasAssumeBlockedThread) {
+    // This recursion subtree of the algorithm will only
+    // have traces that violate the same assume-condition
+    return false;
+  }
+  */
+  assert(traceRespectsAnnotation(mutatedTrace.trace, mutatedAnnotation));
 
   init = std::clock();
+  assert(mutatedPo.first.get() && mutatedPo.second.get());
   VCGraphVclock mutatedGraph(current->graph,       // base for graph
                              std::move(mutatedPo), // base for 'original' po
-                             mutatedTrace.first); // to extend the graph
+                             mutatedTrace.trace);  // to extend the graph
   assert(!mutatedPo.first.get() && !mutatedPo.second.get());
   std::unique_ptr<VCTrace> mutatedVCTrace
-    (new VCTrace(std::move(mutatedTrace.first),
+    (new VCTrace(std::move(mutatedTrace.trace),
                  mutatedAnnotation,
                  negativeWriteMazBranch,
                  std::move(mutatedGraph),
-                 std::move(mutatedTrace.second),
-                 nd->getProcessID()));
-  assert(mutatedTrace.first.empty() &&
-         mutatedGraph.empty() &&
-         mutatedTrace.second.empty());
+                 std::move(mutatedTrace.criticalSection),
+                 processMutationPreference));
+  assert(mutatedTrace.empty() && mutatedGraph.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   worklist.push_front(std::move(mutatedVCTrace));
@@ -567,22 +543,24 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 /* EXTEND TRACE                */
 /* *************************** */
 
-std::pair<std::vector<VCEvent>,
-          std::unordered_map<int, int>>
+VCExplorer::TraceExtension
 VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
                         const std::unordered_set<int>& unannot)
 {
   VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr), unannot);
-  auto trace_cs = TB.extendGivenTrace();
+  auto traceExtension = TraceExtension(TB.extendGivenTrace());
 
   if (TB.has_error()) {
     // ERROR FOUND
     originalTB.error_trace = TB.get_trace();
-    return {std::vector<VCEvent>(), std::unordered_map<int, int>()};
+    traceExtension.hasError = true;
   }
 
+  if (TB.someThreadAssumeBlocked)
+    traceExtension.hasAssumeBlockedThread = true;
+
   ++executed_traces;
-  return trace_cs;
+  return traceExtension;
 }
 
 /* *************************** */

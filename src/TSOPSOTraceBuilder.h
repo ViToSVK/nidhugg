@@ -215,8 +215,9 @@ public:
   /* Notify the trace builder that this instruction is being executed
    */
   virtual void executing_instruction(const llvm::Instruction *Instr) {}
-  
+
   bool doNotLock = false;
+  bool someThreadAssumeBlocked = false;
 };
 
 #endif

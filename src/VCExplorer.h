@@ -37,6 +37,29 @@ class VCExplorer {
 
   std::unique_ptr<VCTrace> current;
 
+  class TraceExtension {
+   public:
+    TraceExtension(std::pair<std::vector<VCEvent>,
+                             std::unordered_map<int, int>>&& extension_cs)
+      : trace(std::move(extension_cs.first)),
+      criticalSection(std::move(extension_cs.second)),
+      hasError(false), hasAssumeBlockedThread(false)
+      {
+        assert(extension_cs.first.empty());
+        assert(extension_cs.second.empty());
+      }
+
+
+    bool empty() const {
+      return (trace.empty() && criticalSection.empty());
+    }
+
+    std::vector<VCEvent> trace;
+    std::unordered_map<int, int> criticalSection;
+    bool hasError;
+    bool hasAssumeBlockedThread;
+  };
+
   /* *************************** */
   /* STATISTICS                  */
   /* *************************** */
@@ -88,9 +111,15 @@ class VCExplorer {
   bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
                   const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
-  std::pair<std::vector<VCEvent>,
-    std::unordered_map<int, int>> extendTrace(std::vector<VCEvent>&& tr,
-                                              const std::unordered_set<int>& unannot);
+  bool extendAndAdd(PartialOrder&& mutatedPo,
+                    const VCIID *mutatedLock,
+                    const std::unordered_set<int>& mutatedUnannot,
+                    const VCAnnotation& mutatedAnnotation,
+                    const VCAnnotationNeg& negativeWriteMazBranch,
+                    unsigned processMutationPreference);
+
+  TraceExtension extendTrace(std::vector<VCEvent>&& tr,
+                             const std::unordered_set<int>& unannot);
 
   bool traceRespectsAnnotation(const std::vector<VCEvent>& trace,
                                const VCAnnotation& annotation) const;

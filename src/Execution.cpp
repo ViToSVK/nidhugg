@@ -3071,6 +3071,7 @@ void Interpreter::callAssume(Function *F, const std::vector<GenericValue> &ArgVa
     ECStack()->clear();
     AtExitHandlers.clear();
     Threads[CurrentThread].AssumeBlocked = true;
+    TB.someThreadAssumeBlocked = true;
     /* Do not call terminate. We don't want to explicitly terminate
      * since that would allow other processes to join with this
      * process.
