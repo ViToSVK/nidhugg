@@ -66,10 +66,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
   bool schedule_replay_trace(int *proc);
   void update_prefix(unsigned p);
 
-  // Size of the map is always 0 or 1, when 1:
-  // key: id of process in CS; value: how deep in CS
-  std::unordered_map<int, int> in_critical_section;
-
   // This is the currently executed instruction
   const llvm::Instruction *current_inst = nullptr;
   void mayConflict(const SymAddrSize *ml = nullptr);
@@ -136,7 +132,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
                  unsigned s_r_i, bool p_m_p_f, bool r_b_n)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(true), sch_replay(false), sch_extend(false),
-    in_critical_section(),
     star_root_index(s_r_i),
     previous_mutation_process_first(p_m_p_f),
     root_before_nonroots(r_b_n)
@@ -151,7 +146,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
                  const std::unordered_set<int>& unannot)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(false), sch_replay(true), sch_extend(false),
-    in_critical_section(),
     replay_trace(std::move(tr)),
     threads_with_unannotated_read(unannot)
     {
@@ -206,7 +200,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Called from VCExplorer on a TB created exclusively for this
   // Schedule entire replay_trace, then extend it, and return it
   std::pair<std::vector<VCEvent>,
-    std::unordered_map<int, int>> extendGivenTrace();
+    std::unordered_set<int>> extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;

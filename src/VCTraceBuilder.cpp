@@ -34,7 +34,9 @@ bool VCTraceBuilder::reset()
 
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
-  VCExplorer explorer = VCExplorer(std::move(prefix), *this,
+  VCExplorer explorer = VCExplorer(std::move(prefix),
+                                   std::move(threads_with_unannotated_read),
+                                   *this,
                                    this->star_root_index,
                                    this->previous_mutation_process_first,
                                    this->root_before_nonroots);
@@ -180,18 +182,6 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
 bool VCTraceBuilder::schedule_arbitrarily(int *proc)
 {
   assert(!sch_replay && (sch_initial || sch_extend));
-
-  if (!in_critical_section.empty()) {
-    // A process is currently in a critical section
-    assert(in_critical_section.size() == 1);
-    unsigned cs_ipid = (unsigned) in_critical_section.begin()->first;
-    if (!threads_with_unannotated_read.count(cs_ipid)) {
-      // Below could return false if the execution in
-      // the critical section is assume-blocked
-      return schedule_thread(proc, cs_ipid);
-    } else
-      return false;
-  }
 
   for(unsigned p = 0; p < threads.size(); p += 2) {
     if (!threads_with_unannotated_read.count(p)) {
@@ -451,14 +441,6 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   mutex.last_access = prefix_idx;
   mutex.locked = false;
   mutex.value = curnode().value; // WRITE
-
-  int p = curnode().iid.get_pid();
-  assert(in_critical_section.count(p));
-  if (in_critical_section[p] > 1)
-      in_critical_section[p] =
-        in_critical_section[p] - 1;
-  else
-    in_critical_section.erase(p);
 }
 
 void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
@@ -496,11 +478,6 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
     assert(sch_replay);
     assert(replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK);
     curnode().kind = VCEvent::Kind::M_LOCK;
-    int p = curnode().iid.get_pid();
-    if (in_critical_section.count(p))
-      in_critical_section[p] = in_critical_section[p] + 1;
-    else
-      in_critical_section.emplace(p, 1);
     doNotLock = false;
     //llvm::errs() << "YES ";
   }
@@ -522,7 +499,7 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
 }
 
 std::pair<std::vector<VCEvent>,
-          std::unordered_map<int, int>>
+          std::unordered_set<int>>
 VCTraceBuilder::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
@@ -534,7 +511,7 @@ VCTraceBuilder::extendGivenTrace() {
   // Run static destructors.
   EE->runStaticConstructorsDestructors(true);
 
-  return {prefix, in_critical_section};
+  return {prefix, threads_with_unannotated_read};
 }
 
 Trace *VCTraceBuilder::get_trace() const

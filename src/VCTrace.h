@@ -38,8 +38,6 @@ class VCTrace {
 
   std::unordered_set<int> unannot;
 
-  std::unordered_map<int, int> in_critical_section;
-
   unsigned processMutationPreference;
 
   /* *************************** */
@@ -48,14 +46,14 @@ class VCTrace {
 
   VCTrace() = delete;
 
-  VCTrace(std::vector<VCEvent>&& trace,
+  VCTrace(std::vector<VCEvent>&& initial_trace,
+          std::unordered_set<int>&& initial_unannot,
           int star_root_index)
-  : trace(std::move(trace)),
+  : trace(std::move(initial_trace)),
     annotation(),
     negative(),
     graph(this->trace, star_root_index),
-    unannot(),
-    in_critical_section(),
+    unannot(std::move(initial_unannot)),
     processMutationPreference(0)
       {
         for (unsigned i = 0; i < trace.size(); ++i)
@@ -72,14 +70,13 @@ class VCTrace {
           const VCAnnotation& annotation,
           const VCAnnotationNeg& negative,
           VCGraphVclock&& graph,
-          std::unordered_map<int, int>&& cs,
+          std::unordered_set<int>&& unannot,
           unsigned pref)
   : trace(std::move(trace)),
     annotation(annotation),
     negative(negative),
     graph(std::move(graph)),
-    unannot(),
-    in_critical_section(std::move(cs)),
+    unannot(std::move(unannot)),
     processMutationPreference(pref)
       {};
 

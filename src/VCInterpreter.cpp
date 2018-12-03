@@ -147,7 +147,10 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
   if(isPthreadMutexLock(I,&ptr)){
     if(PthreadMutexes.count(ptr) &&
        PthreadMutexes[ptr].isLocked()){
-      assert(false && "why am I here?");
+      // Trying to access a locked mutex.
+      // Already marked down in TB as a lock attempt.
+      // Set this thread as unavailable.
+      // Do NOT refuse schedule.
       TB.mark_unavailable(CurrentThread);
       // TB.refuse_schedule();
       PthreadMutexes[ptr].waiting.insert(CurrentThread);

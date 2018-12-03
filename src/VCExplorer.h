@@ -40,22 +40,21 @@ class VCExplorer {
   class TraceExtension {
    public:
     TraceExtension(std::pair<std::vector<VCEvent>,
-                             std::unordered_map<int, int>>&& extension_cs)
-      : trace(std::move(extension_cs.first)),
-      criticalSection(std::move(extension_cs.second)),
+                             std::unordered_set<int>>&& extension_unannot)
+      : trace(std::move(extension_unannot.first)),
+      unannot(std::move(extension_unannot.second)),
       hasError(false), hasAssumeBlockedThread(false)
       {
-        assert(extension_cs.first.empty());
-        assert(extension_cs.second.empty());
+        assert(extension_unannot.first.empty());
+        assert(extension_unannot.second.empty());
       }
 
-
     bool empty() const {
-      return (trace.empty() && criticalSection.empty());
+      return (trace.empty() && unannot.empty());
     }
 
     std::vector<VCEvent> trace;
-    std::unordered_map<int, int> criticalSection;
+    std::unordered_set<int> unannot;
     bool hasError;
     bool hasAssumeBlockedThread;
   };
@@ -137,13 +136,17 @@ class VCExplorer {
   /* CONSTRUCTOR                 */
   /* *************************** */
 
-  VCExplorer(std::vector<VCEvent>&& trace, VCTraceBuilder& tb,
+  VCExplorer(std::vector<VCEvent>&& initial_trace,
+             std::unordered_set<int>&& initial_unannot,
+             VCTraceBuilder& tb,
              int star_root_index, bool p_m_p_f, bool r_b_n)
     : originalTB(tb),
     previous_mutation_process_first(p_m_p_f),
     root_before_nonroots(r_b_n)
     {
-      worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(trace), star_root_index)));
+      worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
+                                                              std::move(initial_unannot),
+                                                              star_root_index)));
     }
 
 };

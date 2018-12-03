@@ -69,10 +69,6 @@ bool VCExplorer::explore()
     // Get nodes available to be mutated
     auto nodesToMutate = current->graph.getNodesToMutate();
 
-    assert(current->unannot.empty());
-    for (auto& nd : nodesToMutate)
-      current->unannot.insert(nd->getEvent()->iid.get_pid());
-
     for (auto it = nodesToMutate.begin(); it != nodesToMutate.end();) {
       const Node * nd = *it;
       assert(isRead(nd) || isLock(nd));
@@ -83,21 +79,11 @@ bool VCExplorer::explore()
         ++it;
     }
 
-    if (!current->in_critical_section.empty()) {
-      // Process in critical section, we mutate only on that process
-      assert(current->in_critical_section.size() == 1);
-      int cs_pid = current->in_critical_section.begin()->first;
-      for (auto it = nodesToMutate.begin(); it != nodesToMutate.end(); ) {
-        const Node * nd = *it;
-        if (nd->getEvent()->iid.get_pid() == cs_pid)
-          ++it;
-        else
-          it = nodesToMutate.erase(it);
-      }
-      // We can have either one node to mutate - in the critical-section process
-      // Or zero - the critical-section process got assume-blocked and we're done
-      assert(nodesToMutate.size() <= 1);
-    }
+    #ifndef NDEBUG
+    assert(nodesToMutate.size() == current->unannot.size());
+    for (auto& nd : nodesToMutate)
+      assert(current->unannot.count(nd->getEvent()->iid.get_pid()));
+    #endif
 
     if (nodesToMutate.empty()) {
       // Fully executed trace
@@ -426,6 +412,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   auto lastunlockit = current->graph.nodes_iterator(lastLock.second);
   #ifndef NDEBUG
   const Node * lastlocknd = *lastunlockit;
+  assert(isLock(lastlocknd));
   #endif
   const Node * lastunlocknd = nullptr;
 
@@ -528,7 +515,7 @@ bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                  mutatedAnnotation,
                  negativeWriteMazBranch,
                  std::move(mutatedGraph),
-                 std::move(mutatedTrace.criticalSection),
+                 std::move(mutatedTrace.unannot),
                  processMutationPreference));
   assert(mutatedTrace.empty() && mutatedGraph.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
