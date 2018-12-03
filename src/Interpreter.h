@@ -115,13 +115,15 @@ protected:
   /* A Thread object keeps track of each running thread. */
   class Thread{
   public:
-    Thread() : RandEng(42), pending_mutex_lock(0), pending_condvar_awake(0) {};
+    Thread() : AssumeBlocked(false), RandEng(42), pending_mutex_lock(0), pending_condvar_awake(0) {};
     /* The complex thread identifier of this thread. */
     CPid cpid;
     /* The runtime stack of executing code. The top of the stack is the
      * current function record.
      */
     std::vector<ExecutionContext> ECStack;
+    /* Whether this thread is assume-blocked. */
+    bool AssumeBlocked;
     /* Contains the IDs (index into Threads) of all other threads
      * which are awaiting the termination of this thread to perform a
      * join.
