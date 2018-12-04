@@ -30,6 +30,8 @@ void VCExplorer::print_stats()
   std::cout << "\n";
   std::cout << "Fully executed traces:            " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:  " << executed_traces << "\n";
+  std::cout << "F+P with assume-blocked thread:   " << executed_traces_assume_blocked_thread << "\n";
+  std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
   std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
   std::cout << "RoPOs with no mutation choices:   " << read_ordered_pos_no_mut_choices << "\n";
   std::cout << "Mutations considered:             " << mutations_considered << "\n";
@@ -150,13 +152,12 @@ bool VCExplorer::explore()
       extendedPOs.pop_front();
 
       init = std::clock();
-
       auto withoutMutation = VCValClosure(current->graph, current->annotation);
       //llvm::errs() << "no-mutation-closure...";
       withoutMutation.valClose(po, nullptr, nullptr);
       //llvm::errs() << "done\n";
-
       time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+
       if (!withoutMutation.closed) ++cl_ordering_failed;
       else ++cl_ordering_succeeded;
 
@@ -173,12 +174,14 @@ bool VCExplorer::explore()
       //current->graph.to_dot(po, "");
 
       auto negativeWriteMazBranch = VCAnnotationNeg(current->negative);
+      deadlockedExtension = true;
 
       // Try all possible nodes available to mutate
       for (auto ndit = orderedNodesToMutate.begin();
            ndit != orderedNodesToMutate.end(); ++ndit) {
         const Node * nd = *ndit;
         if (isRead(nd)) {
+          deadlockedExtension = false;
           bool error = mutateRead(po, withoutMutation, negativeWriteMazBranch, nd);
           if (error) {
             assert(originalTB.error_trace);
@@ -202,6 +205,11 @@ bool VCExplorer::explore()
       }
 
       // Done with this po
+      if (deadlockedExtension) {
+        // 'Full' trace ending in a deadlock
+        ++executed_traces_full;
+        ++executed_traces_full_deadlock;
+      }
       po.first.reset();
       po.second.reset();
     }
@@ -381,6 +389,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   if (!lastLock.first) {
     // This lock hasn't been touched before
+    deadlockedExtension = false;
     if (negativeWriteMazBranch.forbidsInitialEvent(nd)) {
       // Negative annotation forbids initial unlock
       return false;
@@ -434,6 +443,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   // This lock is currently unlocked by lastunlocknd
   assert(lastunlocknd);
+  deadlockedExtension = false;
 
   if (negativeWriteMazBranch.forbids(nd, lastunlocknd)) {
     // Negative annotation forbids this unlock
@@ -495,13 +505,12 @@ bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 
   if (mutatedTrace.hasError)
     return true; // Found an error
-  /*
   if (mutatedTrace.hasAssumeBlockedThread) {
     // This recursion subtree of the algorithm will only
     // have traces that violate the same assume-condition
-    return false;
+    executed_traces_assume_blocked_thread++;
+    //return false;
   }
-  */
   assert(traceRespectsAnnotation(mutatedTrace.trace, mutatedAnnotation));
 
   init = std::clock();

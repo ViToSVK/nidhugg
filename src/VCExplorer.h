@@ -69,6 +69,10 @@ class VCExplorer {
   unsigned executed_traces = 1;
   // Number of fully executed traces
   unsigned executed_traces_full = 0;
+  // Number of 'full' traces ending in a deadlock
+  unsigned executed_traces_full_deadlock = 0;
+  // Number of executed traces with some thread assume-blocked
+  unsigned executed_traces_assume_blocked_thread = 0;
   // Number of read-ordered partial orders
   unsigned read_ordered_pos = 0;
   // Number ofread-ordered partial orders with no mutation
@@ -92,6 +96,8 @@ class VCExplorer {
   double time_replaying = 0;
   // Total time spent on mazurkiewicz ordering
   double time_maz = 0;
+  // Whether current extension-po ends in a deadlock
+  bool deadlockedExtension;
 
   /* *************************** */
   /* ALGORITHM                   */
@@ -147,6 +153,8 @@ class VCExplorer {
       worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
                                                               std::move(initial_unannot),
                                                               star_root_index)));
+      if (tb.someThreadAssumeBlocked)
+        executed_traces_assume_blocked_thread = 1;
     }
 
 };
