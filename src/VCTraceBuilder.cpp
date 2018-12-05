@@ -300,10 +300,13 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
     curn.ml = *ml;
   curn.instruction = current_inst;
 
-  assert(!sch_replay ||
-         replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
-         (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
-          prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
+  #ifndef NDEBUG
+  bool consistent = (!sch_replay ||
+                     replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
+                     (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
+                      prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
+  assert(consistent);
+  #endif
 }
 
 void VCTraceBuilder::metadata(const llvm::MDNode *md)
@@ -484,7 +487,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
 }
 
 void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
-  //llvm::errs() << " M_LOCKFAIL" << &ml;
+  //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
@@ -496,6 +499,12 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
   assert(0 <= mutex.last_lock);
   assert(mutex.locked && mutex.value < 0);
   #endif
+
+  assert(curnode().kind == VCEvent::Kind::DUMMY);
+  curnode().kind = VCEvent::Kind::M_LOCKATTEMPT;
+
+  mayConflict(&ml);
+  threads_with_unannotated_read.insert(curnode().iid.get_pid());
 }
 
 std::pair<std::vector<VCEvent>,

@@ -151,6 +151,7 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
       // Already marked down in TB as a lock attempt.
       // Set this thread as unavailable.
       // Do NOT refuse schedule.
+      TB.mutex_lock_fail({GetSymAddr(ptr),1});
       TB.mark_unavailable(CurrentThread);
       // TB.refuse_schedule();
       PthreadMutexes[ptr].waiting.insert(CurrentThread);
