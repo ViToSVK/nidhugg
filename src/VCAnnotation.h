@@ -50,7 +50,7 @@ class VCAnnotation {
    public:
     ~Ann() { delete goodLocal; }
 
-    Ann() : value(47), loc(Loc::ANY), goodRemote(), goodLocal(), ignore(true) {}
+    Ann(int v) : value(v), loc(Loc::ANY), goodRemote(), goodLocal(), ignore(true) {}
 
     Ann(int v, Loc l, std::unordered_set<VCIID>&& gr, bool haslocal, VCIID gl)
       : value(v), loc(l), goodRemote(std::move(gr)),

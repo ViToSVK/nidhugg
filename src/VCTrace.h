@@ -61,7 +61,7 @@ class VCTrace {
             const Node *nd = graph.getNode(trace[i]);
             if (!graph.nodes_iterator(nd).atProcessEnd()) {
               assert(nd->getProcessID() == 0);
-              annotation.add(nd, VCAnnotation::Ann());
+              annotation.add(nd, VCAnnotation::Ann(trace[i].value));
             }
           }
       };

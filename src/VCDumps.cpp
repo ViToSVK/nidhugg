@@ -24,7 +24,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
      out << ev.id << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::LOAD :
-     out << ev.id << "_read " << ev.ml.addr.to_string();
+     out << ev.id << "_read " << ev.ml.addr.to_string() << " <- " << ev.value;
      break;
    case VCEvent::Kind::STORE :
      out << ev.id << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
@@ -64,7 +64,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const Node& nd)
 {
   out << "[" << nd.getProcessID() << "][" << nd.getEventID() << "]";
   if (nd.getEvent())
-    out << *(nd.getEvent());
+    out << "__" << *(nd.getEvent());
   return out;
 }
 

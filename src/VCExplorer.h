@@ -126,8 +126,7 @@ class VCExplorer {
   TraceExtension extendTrace(std::vector<VCEvent>&& tr,
                              const std::unordered_set<int>& unannot);
 
-  bool traceRespectsAnnotation(const std::vector<VCEvent>& trace,
-                               const VCAnnotation& annotation) const;
+  bool traceRespectsAnnotation() const;
 
   bool previous_mutation_process_first = true;
   bool root_before_nonroots = true;

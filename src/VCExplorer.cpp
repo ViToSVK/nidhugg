@@ -67,6 +67,7 @@ bool VCExplorer::explore()
     //llvm::errs() << "********* TRACE *********\n";
     //current->annotation.dump();
     //current->graph.to_dot("");
+    assert(traceRespectsAnnotation());
 
     // Get nodes available to be mutated
     auto nodesToMutate = current->graph.getNodesToMutate();
@@ -511,7 +512,6 @@ bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
     executed_traces_assume_blocked_thread++;
     //return false;
   }
-  assert(traceRespectsAnnotation(mutatedTrace.trace, mutatedAnnotation));
 
   init = std::clock();
   assert(mutatedPo.first.get() && mutatedPo.second.get());
@@ -563,51 +563,19 @@ VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
 /* TRACE RESPECTS ANNOTATION   */
 /* *************************** */
 
-bool VCExplorer::traceRespectsAnnotation(const std::vector<VCEvent>& trace,
-                                         const VCAnnotation& annotation) const {
-  // TODO: check also if observes one of the good writes
-  for (unsigned i=0; i < trace.size(); ++i) {
-    const VCEvent& ev = trace[i];
-    if (isRead(ev) && annotation.defines(ev.pid, ev.event_order)) {
-      const auto& ann = annotation.getAnn(ev.pid, ev.event_order);
-      if (ann.value != ev.value)
+bool VCExplorer::traceRespectsAnnotation() const {
+  for (unsigned i=0; i < current->trace.size(); ++i) {
+    const VCEvent& ev = current->trace[i];
+    if (isRead(ev) && current->annotation.defines(ev.pid, ev.event_order)) {
+      const auto& ann = current->annotation.getAnn(ev.pid, ev.event_order);
+      if (ann.value != ev.value) {
+        //current->graph.to_dot("");
+        //current->annotation.dump();
+        //current->graph.getNode(ev)->dump();
+        //llvm::errs() << "ANNVALUE: " << ann.value << "  EVENTVALUE: " << ev.value << "\n";
         return false;
-      for (int j=i-1; j >= -1; --j) {
-        if (j == -1) {
-
-          if (ann.value != 0 || ev.value != 0)
-            return false;
-          if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
-              ann.loc != VCAnnotation::Loc::LOCAL)
-            return false;
-          if ((int) current->graph.starRoot() != ev.iid.get_pid() / 2 &&
-              ann.loc != VCAnnotation::Loc::ANY)
-            return false;
-          break;
-
-        } else {
-
-          const VCEvent& wrev = trace[j];
-          if (isWrite(wrev) && sameMl(wrev, ev)) {
-            assert(wrev.value == ev.value);
-            if (ann.value != wrev.value)
-              return false;
-            if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
-                ev.iid.get_pid() == wrev.iid.get_pid() &&
-                ann.loc != VCAnnotation::Loc::LOCAL)
-              return false;
-            if ((int) current->graph.starRoot() == ev.iid.get_pid() / 2 &&
-                ev.iid.get_pid() != wrev.iid.get_pid() &&
-                ann.loc != VCAnnotation::Loc::REMOTE)
-              return false;
-            if ((int) current->graph.starRoot() != ev.iid.get_pid() / 2 &&
-                ann.loc != VCAnnotation::Loc::ANY)
-              return false;
-            break;
-          }
-
-        }
       }
+      // TODO: check also if observes one of the good writes
     }
   }
 
