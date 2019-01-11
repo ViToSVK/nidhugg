@@ -23,7 +23,6 @@
 
 #include "VCHelpers.h"
 #include "VCGraphVclock.h"
-#include "SCC.h"
 
 /* *************************** */
 /* GRAPH EXTENSION             */
@@ -207,17 +206,14 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
     if (isLock(ev) || isUnlock(ev)) {
       // For each ml, for each thread, remember first access
       if (!mutex_first.count(ev->ml)) {
-        mutex_first.emplace(ev->ml,
-                            std::unordered_map<unsigned, const Node *>());
+        mutex_first.emplace(ev->ml, std::unordered_map<unsigned, const Node *>());
         mutex_first[ev->ml].reserve(8);
       }
       if (!mutex_first[ev->ml].count(nd->getProcessID()))
-        mutex_first[ev->ml].emplace(nd->getProcessID(),
-                                    nd);
+        mutex_first[ev->ml].emplace(nd->getProcessID(), nd);
       // For each ml, for each thread, remember last access
       if (!mutex_last.count(ev->ml)) {
-        mutex_last.emplace(ev->ml,
-                            std::unordered_map<unsigned, const Node *>());
+        mutex_last.emplace(ev->ml, std::unordered_map<unsigned, const Node *>());
         mutex_last[ev->ml].reserve(8);
       }
       mutex_last[ev->ml][nd->getProcessID()] = nd;
@@ -277,7 +273,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
     pred_original[i].reserve(processes.size());
     for (unsigned j=0; j<processes.size(); j++) {
       if (j < succ_original.size() && i != j) {
-        // Vclocks from original to original
+        // Vclocks from original processes to original processes
         succ_original[i][j].reserve(processes[i].size());
         pred_original[i][j].reserve(processes[i].size());
         // new succ slots should be filled with INT_MAX,
@@ -292,7 +288,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
                pred_original[i][j].size() == processes[i].size());
       }
       if (j >= succ_original.size()) {
-        // Vclocks from original to new
+        // Vclocks from original processes to new processes
         succ_original[i].push_back(std::vector<int>(processes[i].size(), INT_MAX));
         pred_original[i].push_back(std::vector<int>(processes[i].size(), -1));
       }
@@ -978,8 +974,6 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
         ++it;
     }
   }
-
-  typedef std::pair<unsigned, unsigned> VCIID;
 
   auto result = std::unordered_map<std::pair<int, VCAnnotation::Loc>,
                                    VCAnnotation::Ann>();

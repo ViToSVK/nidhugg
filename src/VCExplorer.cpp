@@ -159,18 +159,17 @@ bool VCExplorer::explore()
       //llvm::errs() << "done\n";
       time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-      if (!withoutMutation.closed) ++cl_ordering_failed;
-      else ++cl_ordering_succeeded;
-
       if (!withoutMutation.closed) {
         // This ordering of extension events
         // makes the original annotation unrealizable
         // therefore no need to try any mutations
+        ++cl_ordering_failed;
         po.first.reset();
         po.second.reset();
         continue;
       }
 
+      ++cl_ordering_succeeded;
       //llvm::errs() << "********* EXTENSION *********\n";
       //current->graph.to_dot(po, "");
 
@@ -498,11 +497,9 @@ bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                               const VCAnnotationNeg& negativeWriteMazBranch,
                               unsigned processMutationPreference)
 {
-  clock_t init = std::clock();
   auto mutatedTrace =
     extendTrace(current->graph.linearize(mutatedPo, mutatedLock),
                 mutatedUnannot);
-  time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (mutatedTrace.hasError)
     return true; // Found an error
@@ -513,7 +510,7 @@ bool VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
     //return false;
   }
 
-  init = std::clock();
+  clock_t init = std::clock();
   assert(mutatedPo.first.get() && mutatedPo.second.get());
   VCGraphVclock mutatedGraph(current->graph,       // base for graph
                              std::move(mutatedPo), // base for 'original' po
@@ -543,8 +540,10 @@ VCExplorer::TraceExtension
 VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
                         const std::unordered_set<int>& unannot)
 {
+  clock_t init = std::clock();
   VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr), unannot);
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
+  time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (TB.has_error()) {
     // ERROR FOUND

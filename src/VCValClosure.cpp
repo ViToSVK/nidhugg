@@ -370,7 +370,9 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
     assert(ann.loc == VCAnnotation::Loc::ANY);
     assert(wBounds.count(readnd));
+    #ifndef NDEBUG
     int& low = wBounds[readnd].first;
+    #endif
     int& high = wBounds[readnd].second;
     const std::vector<const Node *>&
       wRemote = graph.wRoot.at(readnd->getEvent()->ml);
@@ -564,11 +566,13 @@ std::pair<bool, bool> VCValClosure::ruleThree
       return {false, true}; // always done, change
     }
 
+    #ifndef NDEBUG
     assert(nonrootSituation);
     for (const Node * badNonrootHead : nonrootheads) {
       assert(!isGood(badNonrootHead, ann));
       assert(graph.hasEdge(badNonrootHead, readnd, po));
     }
+    #endif
 
     // Get root tail, it is good
     const Node *roottail = wRemote[high];

@@ -44,7 +44,7 @@
 /* Information about a (short) sequence of consecutive events by the
  * same thread. At most one event in the sequence may have conflicts
  * with other events, and if the sequence has a conflicting event,
- * it must be the first event in the sequence.
+ * it must be the LAST event in the sequence.
  */
 class VCEvent {
 
@@ -118,7 +118,7 @@ class VCEvent {
   const llvm::MDNode *md;
   /* LAST instruction (the only visible one if any) in this event */
   const llvm::Instruction *instruction;
-  /* Is it possible for the last instruction in this sequence to have a
+  /* Is it possible for the LAST instruction in this sequence to have a
    * conflict with an instruction in another event? */
   bool may_conflict;
   /* Memory location (if any) modified/read by this event */

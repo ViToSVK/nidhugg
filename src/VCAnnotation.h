@@ -73,7 +73,7 @@ class VCAnnotation {
       goodRemote(std::move(oth.goodRemote)),
       goodLocal(oth.goodLocal),
       ignore(oth.ignore)
-        {oth.goodLocal = nullptr; }
+        { oth.goodLocal = nullptr; }
 
     const int value;
     const Loc loc;
