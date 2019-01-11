@@ -19,6 +19,7 @@
  */
 
 #include <unordered_map>
+#include <map>
 #include <stack>
 
 #include "VCHelpers.h"
@@ -806,7 +807,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   // Collect conflicting nonroot writes to order
   auto itnsw = wNonrootUnord.find(ev1->ml);
   assert(itnsw != wNonrootUnord.end());
-  auto toOrder = std::unordered_set<const Node *>();
+  auto toOrder = std::vector<const Node *>();
   toOrder.reserve(itnsw->second.size());
 
   for (auto& writend : itnsw->second) {
@@ -816,7 +817,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
       // otherwise take only candidates such that
       // at least one of them is everGood
       if (readOrEverGoodWrite || annotation.isEverGood(writend))
-        toOrder.insert(writend);
+        toOrder.push_back(writend);
     }
   }
 
@@ -828,8 +829,21 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
       for (auto& readnd : itnsr->second)
         if (nd1->getProcessID() != readnd->getProcessID()
             && annotation.defines(readnd))
-          toOrder.insert(readnd);
+          toOrder.push_back(readnd);
     }
+  }
+
+  // Sort the vector so that the execution is deterministic
+  if (toOrder.size() > 1) {
+    auto comp = NodePtrComp();
+    #ifndef NDEBUG
+    for (auto it1 = toOrder.begin();
+         it1 != toOrder.end(); ++it1)
+      for (auto it2 = toOrder.begin();
+           it2 != it1; ++it2)
+        assert(comp(*it1, *it2) || comp(*it2, *it1));
+    #endif
+    std::sort(toOrder.begin(), toOrder.end(), comp);
   }
 
   // The nodes are collected, order them
@@ -881,7 +895,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   }
 }
 
-std::unordered_map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
+std::map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
 VCGraphVclock::getMutationCandidates(const PartialOrder& po,
                                      const VCAnnotationNeg& negative, const Node *readnd) const
 {
@@ -975,8 +989,8 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
     }
   }
 
-  auto result = std::unordered_map<std::pair<int, VCAnnotation::Loc>,
-                                   VCAnnotation::Ann>();
+  auto result = std::map<std::pair<int, VCAnnotation::Loc>,
+                         VCAnnotation::Ann>();
 
   // Have mutateWrites, create possible annotations
   while (!mutateWrites.empty()) {

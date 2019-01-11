@@ -49,6 +49,12 @@ class Node {
             event == oth.event);
   }
 
+  bool operator<(const Node& oth) const {
+    return (process_id < oth.process_id ||
+            (process_id == oth.process_id &&
+             event_id < oth.event_id));
+  }
+
   unsigned getProcessID() const { return process_id; }
   unsigned getEventID() const { return event_id; }
   const VCEvent *getEvent() const { return event; }
@@ -58,6 +64,13 @@ class Node {
   }
 
   void dump() const;
+};
+
+class NodePtrComp {
+ public:
+  bool operator() (const Node *n1, const Node *n2) {
+    return (n1->operator<(*n2));
+  }
 };
 
 class VCBasis {

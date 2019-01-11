@@ -385,7 +385,7 @@ class VCGraphVclock : public VCBasis {
   }
 
   // Returns mutation candidates for a read node
-  std::unordered_map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
+  std::map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
     getMutationCandidates(const PartialOrder& po,
                           const VCAnnotationNeg& negative, const Node *readnd) const;
 

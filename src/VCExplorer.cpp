@@ -263,7 +263,7 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
 }
 
 std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
-(const PartialOrder& po, const std::unordered_set<const Node *> newEverGood)
+(const PartialOrder& po, const std::vector<const Node *> newEverGood)
 {
   assert(current.get());
   current->graph.initWorklist(po);
@@ -318,12 +318,24 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       // We will have to order them with conflicting notEverGood writes
       VCAnnotation mutatedAnnotation(current->annotation);
       auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, valpos_ann.second);
-      auto newlyEverGoodWrites = std::unordered_set<const Node *>();
+      auto newlyEverGoodWrites = std::vector<const Node *>();
       for (auto& vciid : newlyEverGoodVCIIDs) {
         if (vciid.first != INT_MAX) {
           assert(isWrite(current->graph.getNode(vciid.first, vciid.second)));
-          newlyEverGoodWrites.insert(current->graph.getNode(vciid.first, vciid.second));
+          newlyEverGoodWrites.push_back(current->graph.getNode(vciid.first, vciid.second));
         }
+      }
+      // Sort the vector so that the execution is deterministic
+      if (newlyEverGoodWrites.size() > 1) {
+        auto comp = NodePtrComp();
+        #ifndef NDEBUG
+        for (auto it1 = newlyEverGoodWrites.begin();
+             it1 != newlyEverGoodWrites.end(); ++it1)
+          for (auto it2 = newlyEverGoodWrites.begin();
+               it2 != it1; ++it2)
+            assert(comp(*it1, *it2) || comp(*it2, *it1));
+        #endif
+        std::sort(newlyEverGoodWrites.begin(), newlyEverGoodWrites.end(), comp);
       }
       assert(mutatedAnnotation.size() == current->annotation.size() + 1);
 

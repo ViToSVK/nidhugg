@@ -108,7 +108,7 @@ class VCExplorer {
   std::list<PartialOrder> orderingsReadToBeMutated(const PartialOrder& po, const Node * nd);
 
   std::list<PartialOrder> orderingsAfterMutationChoice
-    (const PartialOrder& po, const std::unordered_set<const Node *> newEverGood);
+    (const PartialOrder& po, const std::vector<const Node *> newEverGood);
 
   bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
                   const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
