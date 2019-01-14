@@ -40,6 +40,9 @@ class VCTrace {
 
   unsigned processMutationPreference;
 
+  std::unordered_map<int, std::unordered_set<int>>
+    mutationProducesMaxTrace;
+
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
@@ -54,7 +57,8 @@ class VCTrace {
     negative(),
     graph(this->trace, star_root_index),
     unannot(std::move(initial_unannot)),
-    processMutationPreference(0)
+    processMutationPreference(0),
+    mutationProducesMaxTrace()
       {
         for (unsigned i = 0; i < trace.size(); ++i)
           if (isRead(trace[i])) {
@@ -77,7 +81,8 @@ class VCTrace {
     negative(negative),
     graph(std::move(graph)),
     unannot(std::move(unannot)),
-    processMutationPreference(pref)
+    processMutationPreference(pref),
+    mutationProducesMaxTrace()
       {};
 
   VCTrace(VCTrace&& tr) = default;
