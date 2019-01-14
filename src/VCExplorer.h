@@ -150,7 +150,9 @@ class VCExplorer {
     previous_mutation_process_first(p_m_p_f),
     root_before_nonroots(r_b_n)
     {
-      if (!initial_unannot.empty())
+      if (initial_unannot.empty())
+        executed_traces_full = 1;
+      else
         worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
                                                                 std::move(initial_unannot),
                                                                 star_root_index)));

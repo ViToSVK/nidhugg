@@ -40,7 +40,6 @@ bool VCTraceBuilder::reset()
                                    this->star_root_index,
                                    this->previous_mutation_process_first,
                                    this->root_before_nonroots);
-  assert(prefix.empty());
 
   // Call the main method
   bool error = explorer.explore();

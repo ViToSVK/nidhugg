@@ -494,11 +494,11 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
 std::pair<bool, bool>
 VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
-                        const VCIID *mutatedLock,
-                        const std::unordered_set<int>& mutatedUnannot,
-                        const VCAnnotation& mutatedAnnotation,
-                        const VCAnnotationNeg& negativeWriteMazBranch,
-                        unsigned processMutationPreference)
+                         const VCIID *mutatedLock,
+                         const std::unordered_set<int>& mutatedUnannot,
+                         const VCAnnotation& mutatedAnnotation,
+                         const VCAnnotationNeg& negativeWriteMazBranch,
+                         unsigned processMutationPreference)
 {
   auto mutatedTrace =
     extendTrace(current->graph.linearize(mutatedPo, mutatedLock),
