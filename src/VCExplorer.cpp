@@ -303,6 +303,13 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
     for (auto& valpos_ann : mutationCandidates) {
 
+      if (current->mutationProducesMaxTrace
+          [nd->getProcessID()].count(valpos_ann.first.first)) {
+        // This mutation was already done in a sibling Mazurkiewicz branch
+        // And it produces a maximal trace with the same value function
+        continue;
+      }
+
       ++mutations_considered;
       // Collect writes that become newly everGood by performing this mutation
       // We will have to order them with conflicting notEverGood writes
@@ -371,6 +378,20 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
                                             negativeWriteMazBranch, nd->getProcessID());
         if (error_addedToWL.first)
           return true;
+        if (!error_addedToWL.second) {
+          // Annotating this read with this value on this trace produces a maximal trace
+          // No need to repeat this mutation in a sibling Mazurkiewicz branch
+          auto it = current->mutationProducesMaxTrace.find(nd->getProcessID());
+          if (it == current->mutationProducesMaxTrace.end())
+            current->mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
+                                                           std::unordered_set<int>());
+          assert(!current->mutationProducesMaxTrace
+                 [nd->getProcessID()].count(valpos_ann.first.first));
+          current->mutationProducesMaxTrace
+            [nd->getProcessID()].insert(valpos_ann.first.first);
+          // Clear the rest of POs with this mutation
+          afterMutationChoicePOs.clear();
+        }
 
       } // end of loop for newEverGoodOrdered partial order
     } // end of loop for mutation annotation
