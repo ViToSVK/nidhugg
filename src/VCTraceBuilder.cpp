@@ -308,10 +308,7 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
 
 void VCTraceBuilder::metadata(const llvm::MDNode *md)
 {
-  auto& cur = curnode();
-  if (cur.md == nullptr)
-    cur.md = md;
-  last_md = md;
+  if (md) curnode().md = md;
 }
 
 IID<CPid> VCTraceBuilder::get_iid() const
@@ -529,10 +526,11 @@ Trace *VCTraceBuilder::get_trace() const
   if (errors.size() == 0)
     return nullptr;
 
-  for(unsigned i = 0; i < prefix.size(); ++i){
-    cmp.push_back(IID<CPid>(threads[prefix[i].iid.get_pid()].cpid,prefix[i].iid.get_index()));
+  for(unsigned i = 0; i < prefix.size(); ++i) {
+    cmp.push_back(IID<CPid>(threads[prefix[i].iid.get_pid()].cpid,
+                            prefix[i].iid.get_index()));
     cmp_md.push_back(prefix[i].md);
-  };
+  }
   for(unsigned i = 0; i < errors.size(); ++i){
     errs.push_back(errors[i]->clone());
   }
