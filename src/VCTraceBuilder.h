@@ -66,8 +66,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
   bool schedule_replay_trace(int *proc);
   void update_prefix(unsigned p);
 
-  // This is the currently executed instruction
-  const llvm::Instruction *current_inst = nullptr;
   void mayConflict(const SymAddrSize *ml = nullptr);
 
   /* *************************** */
@@ -98,9 +96,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // This is defined in TSOPSOTraceBuilder.h where we inherit from
   // I'm commenting it here so I'm aware of it
   // int prefix_idx = -1;
-
-  // Number of executed instructions since init of this TB
-  unsigned executed_instr = 0;
 
   VCEvent& curnode() {
     assert(0 <= prefix_idx);
@@ -159,15 +154,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Called from DPORDriver::run() at the beginning,
   // from here we create the explorer and explore
   virtual bool reset();
-
-  // Called by Interpreter (Execution.cpp) while executing the scheduled instruction
-  virtual void executing_instruction(const llvm::Instruction *Instr) {
-    current_inst = Instr;
-    executed_instr++;
-    // Since the clock part is refactored, I'm commenting the following out for now
-    // unsigned p = curnode().iid.get_pid();
-    // curnode().order = threads[p].clock[p];
-  }
 
   // Called by Interpreter (Execution.cpp) in order to schedule one instruction
   // (not an entire event, just one (visible or invisible) instruction)

@@ -295,9 +295,7 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
 {
   auto& curn = curnode();
   curn.may_conflict = true;
-  if (ml)
-    curn.ml = *ml;
-  curn.instruction = current_inst;
+  if (ml) curn.ml = *ml;
 
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
@@ -352,8 +350,6 @@ void VCTraceBuilder::join(int tgt_proc)
 void VCTraceBuilder::atomic_store(const SymData &sd, int val)
 {
   // Stores to local memory on stack may not conflict
-  assert(llvm::isa<llvm::StoreInst>(current_inst));
-  //if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(1)->stripInBoundsOffsets() )) {
   if (sd.get_ref().addr.block.is_global() ||
       sd.get_ref().addr.block.is_heap()) {
     assert(curnode().kind == VCEvent::Kind::DUMMY);
@@ -368,8 +364,6 @@ void VCTraceBuilder::atomic_store(const SymData &sd, int val)
 void VCTraceBuilder::load(const SymAddrSize &ml, int val)
 {
   // Loads from stack may not conflict
-  assert(llvm::isa<llvm::LoadInst>(current_inst));
-  //if (!llvm::isa<llvm::AllocaInst>(current_inst->getOperand(0)->stripInBoundsOffsets())) {
   if (ml.addr.block.is_global() ||
       ml.addr.block.is_heap()) {
     assert(curnode().kind == VCEvent::Kind::DUMMY);

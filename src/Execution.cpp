@@ -3492,11 +3492,6 @@ void Interpreter::run() {
     }
 
     /* Execute */
-    if (conf.memory_model == Configuration::VC_MRL ||
-        conf.memory_model == Configuration::VC_MLR ||
-        conf.memory_model == Configuration::VC_RL ||
-        conf.memory_model == Configuration::VC_LR)
-      TB.executing_instruction(&I);
     visit(I);
 
     /* Atomic function? */
@@ -3507,11 +3502,6 @@ void Interpreter::run() {
       while(AtomicFunctionCall < int(ECStack()->size())){
         ExecutionContext &SF = ECStack()->back();  // Current stack frame
         Instruction &I = *SF.CurInst++;         // Increment before execute
-        if (conf.memory_model == Configuration::VC_MRL ||
-            conf.memory_model == Configuration::VC_MLR ||
-            conf.memory_model == Configuration::VC_RL ||
-            conf.memory_model == Configuration::VC_LR)
-          TB.executing_instruction(&I);
         visit(I);
       }
       AtomicFunctionCall = -1;

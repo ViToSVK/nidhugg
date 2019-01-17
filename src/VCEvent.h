@@ -27,9 +27,6 @@
 #include <llvm/Metadata.h>
 #endif
 
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/Instructions.h>
-
 #include "CPid.h"
 #include "TSOPSOTraceBuilder.h"
 #include "SymEv.h"
@@ -54,7 +51,7 @@ class VCEvent {
           unsigned id, const VCEvent* unannotatedLock)
     : kind(Kind::DUMMY),
       iid(iid), cpid(cpid), childs_cpid(),
-      size(1), md(0), instruction(0),
+      size(1), md(0),
       may_conflict(false),
       ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
       value(0),
@@ -67,7 +64,6 @@ class VCEvent {
         if (unannotatedLock) {
           assert(unannotatedLock->kind == Kind::M_LOCKATTEMPT);
           kind = unannotatedLock->kind;
-          instruction = unannotatedLock->instruction;
           may_conflict = true;
           ml = unannotatedLock->ml;
           value = unannotatedLock->value;
@@ -80,7 +76,7 @@ class VCEvent {
   VCEvent(const VCEvent& oth, bool mutatedLock)
     : kind(oth.kind),
       iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
-      size(oth.size) /**/, md(0), instruction(oth.instruction),
+      size(oth.size) /**/, md(0),
       may_conflict(false),
       ml(oth.ml),
       value(oth.value),
@@ -116,8 +112,6 @@ class VCEvent {
   mutable int size;
   /* Metadata corresponding to the LAST instruction in this event. */
   const llvm::MDNode *md;
-  /* LAST instruction (the only visible one if any) in this event */
-  const llvm::Instruction *instruction;
   /* Is it possible for the LAST instruction in this sequence to have a
    * conflict with an instruction in another event? */
   bool may_conflict;
