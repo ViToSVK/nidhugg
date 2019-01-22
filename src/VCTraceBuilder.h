@@ -89,10 +89,6 @@ class VCTraceBuilder : public TSOTraceBuilder {
 
   // Is there something in the extension to annotate?
   std::unordered_set<unsigned> somethingToAnnotate;
-  // Does a thread contain a join dependant on something to annotate
-  std::unordered_set<unsigned> annotationDependantJoin;
-  // Is this thread dependant on a spawn happening after something to annotate
-  std::unordered_set<unsigned> annotationDependantThread;
   // Does a thread end with a failed mutex lock attempt?
   // This can happen in case of a deadlock
   std::unordered_map<unsigned, SymAddrSize> endsWithLockFail;

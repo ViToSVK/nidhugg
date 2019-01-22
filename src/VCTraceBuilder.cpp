@@ -237,12 +237,6 @@ void VCTraceBuilder::update_prefix(unsigned p)
     assert(prefix.back().id == prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
-
-  if (annotationDependantThread.count(p)) {
-    // This node can not become part of our partial order
-    // as the thread is created after a so-far unannotated node
-    curnode().include_in_po = false;
-  }
 }
 
 /* ******************************************************* */
@@ -321,16 +315,8 @@ void VCTraceBuilder::spawn()
   curnode().childs_cpid = child_cpid;
 
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
-  unsigned child_ipid = threads.size() - 1;
   threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.back().available = false; // Empty store buffer
-
-  if (somethingToAnnotate.count(curnode().iid.get_pid()) ||
-      annotationDependantThread.count(curnode().iid.get_pid())) {
-    // The whole spawned thread can not become part of our partial order
-    // as its creation depends on a so-far unannotated node
-    annotationDependantThread.insert(child_ipid);
-  }
 }
 
 void VCTraceBuilder::join(int tgt_proc)
@@ -364,14 +350,6 @@ void VCTraceBuilder::join(int tgt_proc)
   curnode().kind = VCEvent::Kind::JOIN;
   mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
-
-  if (somethingToAnnotate.count(2*tgt_proc) ||
-      annotationDependantJoin.count(2*tgt_proc)) {
-    // This join can not become part of our partial order
-    // as its success depends on a so-far unannotated node
-    curnode().include_in_po = false;
-    annotationDependantJoin.insert(curnode().iid.get_pid());
-  }
 }
 
 void VCTraceBuilder::atomic_store(const SymData &sd, int val)

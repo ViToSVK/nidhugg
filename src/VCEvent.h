@@ -57,7 +57,7 @@ class VCEvent {
       instruction_order(instruction_order),
       event_order(event_order),
       pid(1337),
-      id(id), include_in_po(true)
+      id(id)
       {
         assert(iid.get_pid() >= 0);
       }
@@ -75,7 +75,7 @@ class VCEvent {
       instruction_order(oth.instruction_order) /**/,
       event_order(oth.event_order) /**/,
       pid(1337),
-      id(id), include_in_po(true)
+      id(id)
       {
         assert(iid.get_pid() >= 0);
       }
@@ -117,10 +117,6 @@ class VCEvent {
   mutable unsigned pid;
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
-  /* Whether this event is allowed to be included in a partial order
-   * e.g. joins depending on an unannotated node from a different thread
-   * can not be included and neither any of their successors */
-  bool include_in_po;
 
   VCEvent blank_copy(int id) const {
     return VCEvent(*this, id);

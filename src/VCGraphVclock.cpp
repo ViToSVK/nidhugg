@@ -49,23 +49,39 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
 
   std::vector<unsigned> cur_evidx(processes.size(), 0);
   cur_evidx.reserve(trace.size() / 2);
+
   std::unordered_set<unsigned> has_unannotated_read_or_lock;
   has_unannotated_read_or_lock.reserve(trace.size() / 2);
+
   std::unordered_set<SymAddrSize> found_last_lock_for_location;
   has_unannotated_read_or_lock.reserve(8);
-  std::unordered_set<unsigned> forbidden_processes_ipid;
 
-  std::vector<Node *> spawns;
+  std::unordered_set<unsigned> forbidden_processes_ipid;
+  forbidden_processes_ipid.reserve(8);
+
+  std::unordered_set<CPid> processes_created_within_po_cpid;
+  processes_created_within_po_cpid.reserve(8);
+  processes_created_within_po_cpid.insert(trace[0].cpid);
+
+  std::unordered_set<unsigned> processes_with_event_we_dont_add;
+  processes_with_event_we_dont_add.reserve(8);
+
+  std::vector<const Node *> spawns;
   spawns.reserve(8);
-  std::vector<Node *> joins;
+
+  std::vector<const Node *> joins;
   joins.reserve(8);
+
   std::unordered_map<SymAddrSize, const Node *> mutex_inits;
   mutex_inits.reserve(8);
+
   std::unordered_map<SymAddrSize, const Node *> mutex_destroys;
   mutex_destroys.reserve(8);
+
   std::unordered_map<SymAddrSize,
                      std::unordered_map<unsigned, const Node *>> mutex_first;
   mutex_first.reserve(8);
+
   std::unordered_map<SymAddrSize,
                      std::unordered_map<unsigned, const Node *>> mutex_last;
   mutex_first.reserve(8);
@@ -96,9 +112,9 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
 
     if (proc_idx == INT_MAX) {
       // A new process appeared
-      if (!ev->include_in_po) {
+      if (!processes_created_within_po_cpid.count(ev->cpid)) {
         // This is a forbidden process because it
-        // happens after a so-far unannotated node
+        // is created after a so-far unannotated node
         forbidden_processes_ipid.insert(ev->iid.get_pid());
         continue;
       }
@@ -114,23 +130,29 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
 
     unsigned ev_idx = cur_evidx[proc_idx];
 
+    // Check if we already haven't added a process-predecessor
+    if (processes_with_event_we_dont_add.count(proc_idx)) {
+      assert(ev_idx == processes[proc_idx].size());
+      continue;
+    }
     // Check if proc_idx already has an unannotated read
     if (has_unannotated_read_or_lock.count(proc_idx)) {
       // This event happens after something we need to
       // annotate first, so we don't add it into the graph
       assert(ev_idx == processes[proc_idx].size());
+      processes_with_event_we_dont_add.insert(proc_idx);
       continue;
     }
-    // Check whether this event is allowed to be included
-    // e.g. joins depending on an unannotated node from a different thread
+    // Joins of processes with an event we didn't include also
     // can not be included and neither any of their successors
-    if (!ev->include_in_po) {
-      assert(ev_idx == processes[proc_idx].size());
-      // Also add proc_idx to list of annotated read/locks
-      // While not really true, this will make sure we don't add the rest
-      // of events from proc_idx that happen after this forbidden one
-      has_unannotated_read_or_lock.insert(proc_idx);
-      continue;
+    if (isJoin(ev)) {
+      auto childs_proc_it = cpid_to_processid.find(ev->childs_cpid);
+      if (childs_proc_it == cpid_to_processid.end() ||
+          processes_with_event_we_dont_add.count(childs_proc_it->second)) {
+        assert(ev_idx == processes[proc_idx].size());
+        processes_with_event_we_dont_add.insert(proc_idx);
+        continue;
+      }
     }
 
     Node *nd = nullptr;
@@ -173,6 +195,10 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
 
     ++cur_evidx[proc_idx];
 
+    // Handle Spawn
+    if (isSpawn(ev)) {
+      processes_created_within_po_cpid.insert(ev->childs_cpid);
+    }
     // Handle Write
     if (isWrite(ev)) {
       if (nd->getProcessID() == starRoot()) {
