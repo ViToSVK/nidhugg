@@ -64,16 +64,16 @@ class VCExplorer {
   /* STATISTICS                  */
   /* *************************** */
 
-  // Number of executed traces (1 because of the initial
-  // trace that was obtained as a constructor argument)
-  // This is the number of times we used the interpreter
-  unsigned executed_traces = 1;
   // Number of fully executed traces
   unsigned executed_traces_full = 0;
-  // Number of 'full' traces ending in a deadlock
-  unsigned executed_traces_full_deadlock = 0;
+  // Number of executed traces
+  unsigned executed_traces = 1;
+  // Number of times we used the interpreter to get a trace
+  unsigned interpreter_used = 1;
   // Number of executed traces with some thread assume-blocked
   unsigned executed_traces_assume_blocked_thread = 0;
+  // Number of 'full' traces ending in a deadlock
+  unsigned executed_traces_full_deadlock = 0;
   // Number of read-ordered partial orders
   unsigned read_ordered_pos = 0;
   // Number ofread-ordered partial orders with no mutation
@@ -89,14 +89,14 @@ class VCExplorer {
   unsigned cl_mutation_failed = 0;
   // Closure of mutation-chosen po succeeded
   unsigned cl_mutation_succeeded = 0;
-  // Total time spent on closure
-  double time_closure = 0;
   // Total time spent on copying
   double time_graphcopy = 0;
   // Total time spent on linearization and replaying
   double time_replaying = 0;
   // Total time spent on mazurkiewicz ordering
   double time_maz = 0;
+  // Total time spent on closure
+  double time_closure = 0;
   // Whether current extension-po ends in a deadlock
   bool deadlockedExtension;
 

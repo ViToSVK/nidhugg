@@ -31,6 +31,7 @@ void VCExplorer::print_stats()
   std::cout << "\n";
   std::cout << "Fully executed traces:            " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:  " << executed_traces << "\n";
+  std::cout << "Interpreter used to get a trace:  " << interpreter_used << "\n";
   std::cout << "F+P with assume-blocked thread:   " << executed_traces_assume_blocked_thread << "\n";
   std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
   std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
@@ -501,6 +502,7 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   auto mutatedTrace =
     extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
 
+  executed_traces++;
   if (mutatedTrace.hasError)
     return {true, false}; // Found an error
   if (mutatedTrace.hasAssumeBlockedThread) {
@@ -551,7 +553,7 @@ VCExplorer::extendTrace(std::vector<VCEvent>&& tr)
   VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr));
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
   time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-  executed_traces++;
+  interpreter_used++;
 
   if (TB.has_error()) {
     // ERROR FOUND
