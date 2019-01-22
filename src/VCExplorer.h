@@ -37,6 +37,9 @@ class VCExplorer {
 
   std::unique_ptr<VCTrace> current;
 
+  std::unordered_map<int, std::unordered_set<int>>
+    mutationProducesMaxTrace;
+
   class TraceExtension {
    public:
     TraceExtension(std::pair<std::vector<VCEvent>&&, bool>&& extension_someToAnn)

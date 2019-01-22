@@ -38,9 +38,6 @@ class VCTrace {
 
   unsigned processMutationPreference;
 
-  std::unordered_map<int, std::unordered_set<int>>
-    mutationProducesMaxTrace;
-
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
@@ -53,8 +50,7 @@ class VCTrace {
     annotation(),
     negative(),
     graph(this->trace, star_root_index),
-    processMutationPreference(0),
-    mutationProducesMaxTrace()
+    processMutationPreference(0)
       {};
 
   VCTrace(std::vector<VCEvent>&& trace,
@@ -66,8 +62,7 @@ class VCTrace {
     annotation(annotation),
     negative(negative),
     graph(std::move(graph)),
-    processMutationPreference(pref),
-    mutationProducesMaxTrace()
+    processMutationPreference(pref)
       {};
 
   VCTrace(VCTrace&& tr) = default;

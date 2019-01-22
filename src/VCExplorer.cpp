@@ -64,6 +64,7 @@ bool VCExplorer::explore()
     current = std::move(worklist.front());
     assert(!worklist.front().get());
     worklist.pop_front();
+    mutationProducesMaxTrace.clear();
 
     //llvm::errs() << "********* TRACE *********\n";
     //current->annotation.dump();
@@ -295,7 +296,8 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
     for (auto& valpos_ann : mutationCandidates) {
       // llvm::errs() << valpos_ann.first.first << "_" << valpos_ann.first.second << "...";
-      if (current->mutationProducesMaxTrace
+      if (mutationProducesMaxTrace.count(nd->getProcessID()) &&
+          mutationProducesMaxTrace
           [nd->getProcessID()].count(valpos_ann.first.first)) {
         // This mutation was already done in a sibling Mazurkiewicz branch
         // And it produces a maximal trace with the same value function
@@ -372,13 +374,13 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         if (!error_addedToWL.second) {
           // Annotating this read with this value on this trace produces a maximal trace
           // No need to repeat this mutation in a sibling Mazurkiewicz branch
-          auto it = current->mutationProducesMaxTrace.find(nd->getProcessID());
-          if (it == current->mutationProducesMaxTrace.end())
-            current->mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
-                                                           std::unordered_set<int>());
-          assert(!current->mutationProducesMaxTrace
+          auto it = mutationProducesMaxTrace.find(nd->getProcessID());
+          if (it == mutationProducesMaxTrace.end())
+            mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
+                                                  std::unordered_set<int>());
+          assert(!mutationProducesMaxTrace
                  [nd->getProcessID()].count(valpos_ann.first.first));
-          current->mutationProducesMaxTrace
+          mutationProducesMaxTrace
             [nd->getProcessID()].insert(valpos_ann.first.first);
           // Clear the rest of POs with this mutation
           afterMutationChoicePOs.clear();
