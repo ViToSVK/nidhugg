@@ -1232,7 +1232,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po,
       }
       // Perform the head, replace in reqNodes with its
       // thread successor (if that one is also required)
-      result.push_back(headnd->getEvent()->blank_copy(result.size()));
+      result.push_back(headnd->getEvent()->copy(result.size(), true));
       unsigned tid = headnd->getProcessID();
       ++current[tid];
       assert(reqNodes.count(headnd));
@@ -1244,7 +1244,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po,
     if (current[starRoot()] < until[starRoot()]) {
       // Perform one step of the star-root process
       const Node * rootnd = processes[starRoot()][ current[starRoot()] ];
-      result.push_back(rootnd->getEvent()->blank_copy(result.size()));
+      result.push_back(rootnd->getEvent()->copy(result.size(), true));
       ++current[starRoot()];
     } else
       done = true;

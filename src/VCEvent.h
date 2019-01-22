@@ -63,13 +63,14 @@ class VCEvent {
       }
 
  private:
-  // Returns a 'blank copy' of the event
-  // The event will be a part of replay_trace
-  VCEvent(const VCEvent& oth, int id)
+  // Returns a 'copy' of the event
+  // If blank: the event will be a part of replay_trace
+  // If not blank: the event is used as if it came from an interpreter
+  VCEvent(const VCEvent& oth, int id, bool blank)
     : kind(oth.kind),
       iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
       size(oth.size) /**/, md(0),
-      may_conflict(false),
+      may_conflict(oth.may_conflict),
       ml(oth.ml),
       value(oth.value),
       instruction_order(oth.instruction_order) /**/,
@@ -78,6 +79,9 @@ class VCEvent {
       id(id)
       {
         assert(iid.get_pid() >= 0);
+        if (!blank) {
+          childs_cpid = oth.childs_cpid;
+        }
       }
 
  public:
@@ -118,8 +122,8 @@ class VCEvent {
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
 
-  VCEvent blank_copy(int id) const {
-    return VCEvent(*this, id);
+  VCEvent copy(int id, bool blank) const {
+    return VCEvent(*this, id, blank);
   }
 
   void setPID(unsigned procid) const {

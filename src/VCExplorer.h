@@ -42,13 +42,17 @@ class VCExplorer {
 
   class TraceExtension {
    public:
-    TraceExtension(std::pair<std::vector<VCEvent>&&, bool>&& extension_someToAnn)
-      : trace(std::move(extension_someToAnn.first)),
-      somethingToAnnotate(extension_someToAnn.second),
+    TraceExtension(std::vector<VCEvent>&& extension, bool someToAnn)
+      : trace(std::move(extension)),
+      somethingToAnnotate(someToAnn),
       hasError(false), hasAssumeBlockedThread(false)
       {
-        assert(extension_someToAnn.first.empty());
+        assert(extension.empty());
       }
+
+    TraceExtension(std::pair<std::vector<VCEvent>&&, bool>&& extension_someToAnn)
+      : TraceExtension(std::move(extension_someToAnn.first),
+                       extension_someToAnn.second) {}
 
     bool empty() const {
       return (trace.empty());
@@ -70,8 +74,8 @@ class VCExplorer {
   unsigned executed_traces = 1;
   // Number of times we used the interpreter to get a trace
   unsigned interpreter_used = 1;
-  // Number of executed traces with some thread assume-blocked
-  unsigned executed_traces_assume_blocked_thread = 0;
+  // Number of interpreter-executed traces with some thread assume-blocked
+  unsigned interpreter_assume_blocked_thread = 0;
   // Number of 'full' traces ending in a deadlock
   unsigned executed_traces_full_deadlock = 0;
   // Number of read-ordered partial orders
@@ -123,6 +127,8 @@ class VCExplorer {
                  const VCAnnotationNeg& negativeWriteMazBranch,
                  unsigned processMutationPreference);
 
+  TraceExtension reuseTrace(const VCAnnotation& mutatedAnnotation);
+
   TraceExtension extendTrace(std::vector<VCEvent>&& tr);
 
   bool traceRespectsAnnotation() const;
@@ -154,7 +160,7 @@ class VCExplorer {
         worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
                                                                 star_root_index)));
       if (tb.someThreadAssumeBlocked)
-        executed_traces_assume_blocked_thread = 1;
+        interpreter_assume_blocked_thread = 1;
     }
 
 };

@@ -32,7 +32,7 @@ void VCExplorer::print_stats()
   std::cout << "Fully executed traces:            " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:  " << executed_traces << "\n";
   std::cout << "Interpreter used to get a trace:  " << interpreter_used << "\n";
-  std::cout << "F+P with assume-blocked thread:   " << executed_traces_assume_blocked_thread << "\n";
+  std::cout << "IntTr with assume-blocked thread: " << interpreter_assume_blocked_thread << "\n";
   std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
   std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
   std::cout << "RoPOs with no mutation choices:   " << read_ordered_pos_no_mut_choices << "\n";
@@ -508,7 +508,7 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   if (mutatedTrace.hasAssumeBlockedThread) {
     // This recursion subtree of the algorithm will only
     // have traces that violate the same assume-condition
-    executed_traces_assume_blocked_thread++;
+    interpreter_assume_blocked_thread++;
     //return false;
   }
   if (!mutatedTrace.somethingToAnnotate) {
@@ -540,6 +540,38 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   assert(!mutatedVCTrace.get());
 
   return {false, true};
+}
+
+/* *************************** */
+/* REUSE TRACE                 */
+/* *************************** */
+
+VCExplorer::TraceExtension
+VCExplorer::reuseTrace(const VCAnnotation& mutatedAnnotation)
+{
+  auto tr = std::vector<VCEvent>();
+  tr.reserve(current->trace.size());
+  bool somethingToAnnotate = false;
+
+
+  for (const VCEvent& ev : current->trace) {
+    if (!somethingToAnnotate) {
+      const Node *nd = (current->graph.hasNodeWithEvent(ev))
+        ?current->graph.getNode(ev):nullptr;
+      if (isRead(ev) && (!nd || !mutatedAnnotation.defines(nd)))
+        somethingToAnnotate = true;
+      else if (isLock(ev)) {
+        if (!nd ||
+            (nd->getEventID() == current->graph[ nd->getProcessID() ].size() - 1 &&
+             !mutatedAnnotation.isLastLock(nd)))
+          somethingToAnnotate = true;
+      }
+    }
+
+    tr.push_back(ev.copy(tr.size(), false));
+  }
+
+  return TraceExtension(std::move(tr), somethingToAnnotate);
 }
 
 /* *************************** */
