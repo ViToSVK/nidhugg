@@ -32,10 +32,13 @@ bool VCTraceBuilder::reset()
     return true;
   }
 
+  // Add lock event for every thread ending with a failed mutex lock attempt
+  add_failed_lock_attempts();
+
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
   VCExplorer explorer = VCExplorer(std::move(prefix),
-                                   std::move(threads_with_unannotated_read),
+                                   !somethingToAnnotate.empty(),
                                    *this,
                                    this->star_root_index,
                                    this->previous_mutation_process_first,
@@ -82,7 +85,6 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
   // prefix_idx is also the index into replay_trace pointing
   // to the event we are currently replaying
 
-  AFTER_FAKING_LOCK:
   if (prefix_idx == -1 || replay_trace[prefix_idx].size == prefix[prefix_idx].size) {
     ++prefix_idx;
     if (prefix_idx == (int) replay_trace.size()) {
@@ -113,37 +115,11 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
     assert(replay_trace[prefix_idx].event_order ==
            threads[p].executed_events && "Inconsistent scheduling");
 
-    if (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT) {
-      // Next follows a lock that is not annotated yet
-      // We do not replay it, instead we push a lockattempt
-      // event and stop this thread
-      #ifndef NDEBUG
-      // this is the last event of p
-      for (unsigned i = prefix_idx+1; i < replay_trace.size(); ++i)
-        assert(replay_trace[i].iid.get_pid() != (int) p);
-      #endif
-      prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
-                          threads[p].cpid,
-                          threads[p].executed_instructions + 1, // +1 so that first will be 1
-                          threads[p].executed_events, // so that first will be 0
-                          prefix.size(),
-                          &replay_trace[prefix_idx]);
-      prefix.back().setSize(replay_trace[prefix_idx].size);
-      ++threads[p].executed_events;
-      threads[p].executed_instructions += 1 + replay_trace[prefix_idx].size;
-      assert(sch_replay);
-      // stop this thread
-      threads_with_unannotated_read.insert(curnode().iid.get_pid());
-      assert(replay_trace[prefix_idx].size == prefix[prefix_idx].size);
-      goto AFTER_FAKING_LOCK;
-    }
-
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
                         threads[p].cpid,
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
-                        prefix.size(),
-                        nullptr);
+                        prefix.size());
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     ++threads[p].executed_instructions;
@@ -182,15 +158,27 @@ bool VCTraceBuilder::schedule_arbitrarily(int *proc)
 {
   assert(!sch_replay && (sch_initial || sch_extend));
 
-  for(unsigned p = 0; p < threads.size(); p += 2) {
-    if (!threads_with_unannotated_read.count(p)) {
-      // We only schedule threads that have not yet seen a new visible read
-      if (schedule_thread(proc, p))
-        return true;
+  assert(threads.size() % 2 == 0);
+  if (somethingToAnnotate.size() < (threads.size() / 2)) {
+    // We prefer scheduling threads that have not yet
+    // seen a new unannotated event; this improves
+    // chances that new unannotated reads observe in
+    // this trace a write that we will subsequently
+    // include in our partial order
+    for(unsigned p = 0; p < threads.size(); p += 2) {
+      if (!somethingToAnnotate.count(p))
+        if (schedule_thread(proc, p))
+          return true;
     }
   }
 
+  for(unsigned p = 0; p < threads.size(); p += 2) {
+    if (schedule_thread(proc, p))
+      return true;
+  }
+
   // We did not schedule anything
+  prefix.shrink_to_fit();
   return false;
 }
 
@@ -244,11 +232,16 @@ void VCTraceBuilder::update_prefix(unsigned p)
                         threads[p].cpid,
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
-                        prefix.size(),
-                        nullptr);
+                        prefix.size());
     ++threads[p].executed_events;
     assert(prefix.back().id == prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
+  }
+
+  if (annotationDependantThread.count(p)) {
+    // This node can not become part of our partial order
+    // as the thread is created after a so-far unannotated node
+    curnode().include_in_po = false;
   }
 }
 
@@ -299,9 +292,7 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
 
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
-                     replay_trace[prefix_idx].kind == prefix[prefix_idx].kind ||
-                     (replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK &&
-                      prefix[prefix_idx].kind == VCEvent::Kind::M_LOCKATTEMPT));
+                     replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
   assert(consistent);
   #endif
 }
@@ -326,52 +317,91 @@ void VCTraceBuilder::spawn()
   mayConflict();
   // store the CPid of the new thread
   IPid parent_ipid = curnode().iid.get_pid();
-  // curnode().childs_cpid = CPS.dry_spawn(threads[parent_ipid].cpid);
   CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
   curnode().childs_cpid = child_cpid;
 
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
+  unsigned child_ipid = threads.size() - 1;
   threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.back().available = false; // Empty store buffer
+
+  if (somethingToAnnotate.count(curnode().iid.get_pid()) ||
+      annotationDependantThread.count(curnode().iid.get_pid())) {
+    // The whole spawned thread can not become part of our partial order
+    // as its creation depends on a so-far unannotated node
+    annotationDependantThread.insert(child_ipid);
+  }
 }
 
 void VCTraceBuilder::join(int tgt_proc)
 {
   //llvm::errs() << " JOIN";
   assert(curnode().kind == VCEvent::Kind::DUMMY);
+  // We make sure that every join is an event with exactly
+  // one instruction - only the join instruction itself
+  assert(prefix_idx == (int) (prefix.size() - 1));
+  if (prefix[prefix_idx].size > 1) {
+    // Some invisible instructions happened before the
+    // join instruction, we split this into two events
+    unsigned p = curnode().iid.get_pid();
+    --prefix[prefix_idx].size; // Substract the join instruction
+    // Create a new event with only the join instruction
+    ++prefix_idx;
+    // Mark that thread p owns the new event
+    threads[p].event_indices.push_back(prefix_idx);
+    // Create the new event
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+                        threads[p].cpid,
+                        threads[p].executed_instructions, // first will be 1
+                        threads[p].executed_events, // first will be 0
+                        prefix.size());
+    ++threads[p].executed_events;
+    assert(prefix.back().id == prefix.size() - 1);
+    assert((unsigned) prefix_idx == prefix.size() - 1);
+  }
+
+  assert(curnode().kind == VCEvent::Kind::DUMMY);
   curnode().kind = VCEvent::Kind::JOIN;
   mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
+
+  if (somethingToAnnotate.count(2*tgt_proc) ||
+      annotationDependantJoin.count(2*tgt_proc)) {
+    // This join can not become part of our partial order
+    // as its success depends on a so-far unannotated node
+    curnode().include_in_po = false;
+    annotationDependantJoin.insert(curnode().iid.get_pid());
+  }
 }
 
 void VCTraceBuilder::atomic_store(const SymData &sd, int val)
 {
   // Stores to local memory on stack may not conflict
-  if (sd.get_ref().addr.block.is_global() ||
-      sd.get_ref().addr.block.is_heap()) {
+  // Global stores happening with just one thread existing may not conflict
+  // but we have to record them as such anyway to keep track of them
+  const SymAddrSize &ml = sd.get_ref();
+  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
+    //llvm::errs() << " STORE_" << ml.to_string() << " ";
     assert(curnode().kind == VCEvent::Kind::DUMMY);
     curnode().kind = VCEvent::Kind::STORE;
-    const SymAddrSize &ml = sd.get_ref();
     mayConflict(&ml);
     curnode().value = val;
-    //llvm::errs() << " STORE_" << ml.to_string() << " ";
   }
 }
 
 void VCTraceBuilder::load(const SymAddrSize &ml, int val)
 {
-  // Loads from stack may not conflict
-  if (ml.addr.block.is_global() ||
-      ml.addr.block.is_heap()) {
+  // Loads from local memory on stack may not conflict
+  // Also global loads happening with just one thread existing may not conflict
+  if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
+      threads.size() > 2) { // 2 because two entries for each thread
+    //llvm::errs() << " LOAD_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
     assert(curnode().kind == VCEvent::Kind::DUMMY);
     curnode().kind = VCEvent::Kind::LOAD;
     mayConflict(&ml);
     curnode().value = val;
-    //llvm::errs() << " LOAD_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
-    if (sch_initial || sch_extend)
-      if (threads.size() > 2)
-        threads_with_unannotated_read.insert(curnode().iid.get_pid());
-    // Otherwise the observation is determined and no need to annotate this node
+    if (!sch_replay)
+      somethingToAnnotate.insert(curnode().iid.get_pid());
   }
 }
 
@@ -384,7 +414,7 @@ void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   fence();
-  assert(mutexes.count(ml.addr) == 0);
+  assert(!mutexes.count(ml.addr));
   assert(curnode().kind == VCEvent::Kind::DUMMY);
   curnode().kind = VCEvent::Kind::M_INIT;
   mayConflict(&ml);
@@ -404,7 +434,6 @@ void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
   assert(curnode().kind == VCEvent::Kind::DUMMY);
   curnode().kind = VCEvent::Kind::M_DESTROY;
   mayConflict(&ml);
-
   mutexes.erase(ml.addr);
 }
 
@@ -412,7 +441,7 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
   fence();
-  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
+  if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
     mutexes[ml.addr] = Mutex();
   }
@@ -438,9 +467,9 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
 
 void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
 {
-  //llvm::errs() << " M_LOCKATT_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
+  //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   fence();
-  if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
+  if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
     mutexes[ml.addr] = Mutex();
   }
@@ -448,35 +477,48 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   Mutex &mutex = mutexes[ml.addr];
 
   assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_LOCKATTEMPT;
+  // We make sure that every lock is an event with exactly
+  // one instruction - only the lock instruction itself
+  assert(prefix_idx == (int) (prefix.size() - 1));
+  if (prefix[prefix_idx].size > 1) {
+    // Some invisible instructions happened before the
+    // lock instruction, we split this into two events
+    unsigned p = curnode().iid.get_pid();
+    --prefix[prefix_idx].size; // Substract the lock instruction
+    // Create a new event with only the lock instruction
+    ++prefix_idx;
+    // Mark that thread p owns the new event
+    threads[p].event_indices.push_back(prefix_idx);
+    // Create the new event
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+                        threads[p].cpid,
+                        threads[p].executed_instructions, // first will be 1
+                        threads[p].executed_events, // first will be 0
+                        prefix.size());
+    ++threads[p].executed_events;
+    assert(prefix.back().id == prefix.size() - 1);
+    assert((unsigned) prefix_idx == prefix.size() - 1);
+  }
+
+  assert(curnode().size == 1);
+  assert(curnode().kind == VCEvent::Kind::DUMMY);
+  curnode().kind = VCEvent::Kind::M_LOCK;
 
   mayConflict(&ml);
   curnode().value = mutex.value; // READ
+  if (!sch_replay)
+    somethingToAnnotate.insert(curnode().iid.get_pid());
+  endsWithLockFail.erase(curnode().iid.get_pid());
 
-  if (sch_initial || sch_extend) {
-    // We see this for the first time,
-    // note it down and stop here
-    threads_with_unannotated_read.insert(curnode().iid.get_pid());
-    doNotLock = true;
-    //llvm::errs() << "NO ";
-  }
-  else {
-    // This is a known and already annotated
-    // lock, we proceed normally
-    assert(!mutex.locked && mutex.value >= 0);
-    mutex.last_lock = mutex.last_access = prefix_idx;
-    mutex.locked = true;
-    mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
-                  // mutex locked by this process (<0)
-    assert(sch_replay);
-    assert(replay_trace[prefix_idx].kind == VCEvent::Kind::M_LOCK);
-    curnode().kind = VCEvent::Kind::M_LOCK;
-    doNotLock = false;
-    //llvm::errs() << "YES ";
-  }
+  assert(!mutex.locked && mutex.value >= 0);
+  mutex.last_lock = mutex.last_access = prefix_idx;
+  mutex.locked = true;
+  mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
+                // mutex locked by this process (<0)
+
 }
 
-void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
+void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml) {
   //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
@@ -490,16 +532,12 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml){
   assert(mutex.locked && mutex.value < 0);
   #endif
 
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_LOCKATTEMPT;
-
-  mayConflict(&ml);
-  threads_with_unannotated_read.insert(curnode().iid.get_pid());
+  if (!sch_replay)
+    somethingToAnnotate.insert(curnode().iid.get_pid());
+  endsWithLockFail.emplace(curnode().iid.get_pid(), ml);
 }
 
-std::pair<std::vector<VCEvent>,
-          std::unordered_set<int>>
-VCTraceBuilder::extendGivenTrace() {
+std::pair<std::vector<VCEvent>, bool> VCTraceBuilder::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, config));
@@ -510,7 +548,35 @@ VCTraceBuilder::extendGivenTrace() {
   // Run static destructors.
   EE->runStaticConstructorsDestructors(true);
 
-  return {prefix, threads_with_unannotated_read};
+  // Add lock event for every thread ending with a failed mutex lock attempt
+  add_failed_lock_attempts();
+
+  return {prefix, !somethingToAnnotate.empty()};
+}
+
+void VCTraceBuilder::add_failed_lock_attempts() {
+  // Add lock event for every thread ending with a failed mutex lock attempt
+  for (auto p_ml : endsWithLockFail) {
+    unsigned p = p_ml.first;
+    ++threads[p].executed_instructions;
+    ++prefix_idx;
+    // Mark that thread p owns the new event
+    threads[p].event_indices.push_back(prefix_idx);
+    // Create the new event
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+                        threads[p].cpid,
+                        threads[p].executed_instructions, // first will be 1
+                        threads[p].executed_events, // first will be 0
+                        prefix.size());
+    ++threads[p].executed_events;
+    assert(prefix.back().id == prefix.size() - 1);
+    assert((unsigned) prefix_idx == prefix.size() - 1);
+    assert(curnode().size == 1);
+    assert(curnode().kind == VCEvent::Kind::DUMMY);
+    curnode().kind = VCEvent::Kind::M_LOCK;
+
+    mayConflict(&(p_ml.second));
+  }
 }
 
 Trace *VCTraceBuilder::get_trace() const

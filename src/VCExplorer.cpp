@@ -23,6 +23,7 @@
 
 #include "VCExplorer.h"
 #include "VCHelpers.h"
+#include "VCDumps.cpp"
 
 void VCExplorer::print_stats()
 {
@@ -80,13 +81,7 @@ bool VCExplorer::explore()
       else
         ++it;
     }
-
-    #ifndef NDEBUG
     assert(!nodesToMutate.empty());
-    assert(nodesToMutate.size() == current->unannot.size());
-    for (auto& nd : nodesToMutate)
-      assert(current->unannot.count(nd->getEvent()->iid.get_pid()));
-    #endif
 
     // Ordering of nodes to try mutations
     // Four VCDPOR version: mrl, mlr, rl, lr
@@ -224,13 +219,15 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
   for (unsigned trace_idx = 0;
        trace_idx < current->trace.size(); ++trace_idx) {
     const VCEvent& ev = current->trace[trace_idx];
-    const Node *nd = current->graph.getNode(ev);
-    if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
-      // Order with all nonroot annotated reads,
-      // and with all nonroot writes such that:
-      // 1) at least one is everGood
-      // 2) both are observable
-      current->graph.orderEventMaz(&ev, current->annotation, false);
+    if (current->graph.hasNodeWithEvent(ev)) {
+      const Node *nd = current->graph.getNode(ev);
+      if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
+        // Order with all nonroot annotated reads,
+        // and with all nonroot writes such that:
+        // 1) at least one is everGood
+        // 2) both are observable
+        current->graph.orderEventMaz(&ev, current->annotation, false);
+      }
     }
   }
 
@@ -277,11 +274,6 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
                             const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isRead(nd));
-
-  std::unordered_set<int> mutatedUnannot(current->unannot);
-  assert(mutatedUnannot.count(nd->getEvent()->iid.get_pid()));
-  mutatedUnannot.erase(nd->getEvent()->iid.get_pid());
-
   // Orderings of the read just before mutating it
   clock_t init = std::clock();
   std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
@@ -302,7 +294,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       ++read_ordered_pos_no_mut_choices;
 
     for (auto& valpos_ann : mutationCandidates) {
-
+      // llvm::errs() << valpos_ann.first.first << "_" << valpos_ann.first.second << "...";
       if (current->mutationProducesMaxTrace
           [nd->getProcessID()].count(valpos_ann.first.first)) {
         // This mutation was already done in a sibling Mazurkiewicz branch
@@ -373,8 +365,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         // current->graph.to_dot(mutatedPo, "");
 
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
-        auto error_addedToWL = extendAndAdd(std::move(mutatedPo), nullptr,
-                                            mutatedUnannot, mutatedAnnotation,
+        auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                             negativeWriteMazBranch, nd->getProcessID());
         if (error_addedToWL.first)
           return true;
@@ -420,10 +411,6 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
     // Trivially realizable
 
-    std::unordered_set<int> mutatedUnannot(current->unannot);
-    assert(mutatedUnannot.count(nd->getEvent()->iid.get_pid()));
-    mutatedUnannot.erase(nd->getEvent()->iid.get_pid());
-
     auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
                                   (new ThreadPairsVclocks(*(po.first))),
                                   std::unique_ptr<ThreadPairsVclocks>
@@ -431,10 +418,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
     VCAnnotation mutatedAnnotation(current->annotation);
     mutatedAnnotation.setLastLock(nd);
-
-    auto mutatedLock = VCIID(nd->getProcessID(), nd->getEventID());
-    auto error_addedToWL = extendAndAdd(std::move(mutatedPo), &mutatedLock,
-                                        mutatedUnannot, mutatedAnnotation,
+    auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                         negativeWriteMazBranch, nd->getProcessID());
     return error_addedToWL.first;
   }
@@ -495,16 +479,9 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   // The lock-mutation on 'mutatedPo' succeeded
   ++cl_mutation_succeeded;
 
-  std::unordered_set<int> mutatedUnannot(current->unannot);
-  assert(mutatedUnannot.count(nd->getEvent()->iid.get_pid()));
-  mutatedUnannot.erase(nd->getEvent()->iid.get_pid());
-
   VCAnnotation mutatedAnnotation(current->annotation);
   mutatedAnnotation.setLastLock(nd);
-
-  auto mutatedLock = VCIID(nd->getProcessID(), nd->getEventID());
-  auto error_addedToWL = extendAndAdd(std::move(mutatedPo), &mutatedLock,
-                                      mutatedUnannot, mutatedAnnotation,
+  auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                       negativeWriteMazBranch, nd->getProcessID());
   return error_addedToWL.first;
 }
@@ -515,15 +492,12 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
 std::pair<bool, bool>
 VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
-                         const VCIID *mutatedLock,
-                         const std::unordered_set<int>& mutatedUnannot,
                          const VCAnnotation& mutatedAnnotation,
                          const VCAnnotationNeg& negativeWriteMazBranch,
                          unsigned processMutationPreference)
 {
   auto mutatedTrace =
-    extendTrace(current->graph.linearize(mutatedPo, mutatedLock),
-                mutatedUnannot);
+    extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
 
   if (mutatedTrace.hasError)
     return {true, false}; // Found an error
@@ -533,7 +507,7 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
     executed_traces_assume_blocked_thread++;
     //return false;
   }
-  if (mutatedTrace.unannot.empty()) {
+  if (!mutatedTrace.somethingToAnnotate) {
     // Maximal trace, do not add to worklist
     //llvm::errs() << "********* FULL TRACE *********\n";
     //mutatedAnnotation.dump();
@@ -546,14 +520,14 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   assert(mutatedPo.first.get() && mutatedPo.second.get());
   VCGraphVclock mutatedGraph(current->graph,       // base for graph
                              std::move(mutatedPo), // base for 'original' po
-                             mutatedTrace.trace);  // to extend the graph
+                             mutatedTrace.trace,   // to extend the graph
+                             mutatedAnnotation);   // to extend the graph
   assert(!mutatedPo.first.get() && !mutatedPo.second.get());
   std::unique_ptr<VCTrace> mutatedVCTrace
     (new VCTrace(std::move(mutatedTrace.trace),
                  mutatedAnnotation,
                  negativeWriteMazBranch,
                  std::move(mutatedGraph),
-                 std::move(mutatedTrace.unannot),
                  processMutationPreference));
   assert(mutatedTrace.empty() && mutatedGraph.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -569,11 +543,10 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 /* *************************** */
 
 VCExplorer::TraceExtension
-VCExplorer::extendTrace(std::vector<VCEvent>&& tr,
-                        const std::unordered_set<int>& unannot)
+VCExplorer::extendTrace(std::vector<VCEvent>&& tr)
 {
   clock_t init = std::clock();
-  VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr), unannot);
+  VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr));
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
   time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
   executed_traces++;

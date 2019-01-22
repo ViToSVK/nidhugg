@@ -47,8 +47,7 @@ class VCEvent {
 
  public:
   VCEvent(const IID<int> &iid, const CPid& cpid,
-          unsigned instruction_order, unsigned event_order,
-          unsigned id, const VCEvent* unannotatedLock)
+          unsigned instruction_order, unsigned event_order, unsigned id)
     : kind(Kind::DUMMY),
       iid(iid), cpid(cpid), childs_cpid(),
       size(1), md(0),
@@ -58,22 +57,15 @@ class VCEvent {
       instruction_order(instruction_order),
       event_order(event_order),
       pid(1337),
-      id(id)
+      id(id), include_in_po(true)
       {
         assert(iid.get_pid() >= 0);
-        if (unannotatedLock) {
-          assert(unannotatedLock->kind == Kind::M_LOCKATTEMPT);
-          kind = unannotatedLock->kind;
-          may_conflict = true;
-          ml = unannotatedLock->ml;
-          value = unannotatedLock->value;
-        }
       }
 
  private:
   // Returns a 'blank copy' of the event
   // The event will be a part of replay_trace
-  VCEvent(const VCEvent& oth, bool mutatedLock)
+  VCEvent(const VCEvent& oth, int id)
     : kind(oth.kind),
       iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
       size(oth.size) /**/, md(0),
@@ -83,13 +75,9 @@ class VCEvent {
       instruction_order(oth.instruction_order) /**/,
       event_order(oth.event_order) /**/,
       pid(1337),
-      id(-1)
+      id(id), include_in_po(true)
       {
         assert(iid.get_pid() >= 0);
-        if (mutatedLock) {
-          assert(kind == Kind::M_LOCKATTEMPT);
-          this->kind = Kind::M_LOCK;
-        }
       }
 
  public:
@@ -97,7 +85,7 @@ class VCEvent {
     DUMMY,
     LOAD, STORE,
     SPAWN, JOIN,
-    M_INIT, M_LOCKATTEMPT, M_LOCK, M_UNLOCK, M_DESTROY
+    M_INIT, M_LOCK, M_UNLOCK, M_DESTROY
   } kind;
 
   /* A simple identifier of the thread that executed this event */
@@ -109,7 +97,7 @@ class VCEvent {
    * 2) this event joined (then this event is pthread_join) */
   CPid childs_cpid;
   /* The number of instructions in this event. */
-  mutable int size;
+  int size;
   /* Metadata corresponding to the LAST instruction in this event. */
   const llvm::MDNode *md;
   /* Is it possible for the LAST instruction in this sequence to have a
@@ -129,17 +117,17 @@ class VCEvent {
   mutable unsigned pid;
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
+  /* Whether this event is allowed to be included in a partial order
+   * e.g. joins depending on an unannotated node from a different thread
+   * can not be included and neither any of their successors */
+  bool include_in_po;
 
-  VCEvent blank_copy(bool mutatedLock) const {
-    return VCEvent(*this, mutatedLock);
+  VCEvent blank_copy(int id) const {
+    return VCEvent(*this, id);
   }
 
   void setPID(unsigned procid) const {
     pid = procid;
-  }
-
-  void setSize(int sizeno) const {
-    size = sizeno;
   }
 
   void dump() const;

@@ -148,12 +148,9 @@ bool VCInterpreter::checkRefuse(llvm::Instruction &I)
     if(PthreadMutexes.count(ptr) &&
        PthreadMutexes[ptr].isLocked()){
       // Trying to access a locked mutex.
-      // Mark this down in TB as a failed lock attempt.
-      // Set this thread as unavailable.
-      // Do NOT refuse schedule.
       TB.mutex_lock_fail({GetSymAddr(ptr),1});
-      TB.mark_unavailable(CurrentThread);
-      // TB.refuse_schedule();
+      TB.refuse_schedule();
+      //TB.mark_unavailable(CurrentThread);
       PthreadMutexes[ptr].waiting.insert(CurrentThread);
       return true;
     }else{

@@ -31,7 +31,8 @@
 
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
-void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
+void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
+                                const VCAnnotation *annotationPtr)
 {
   assert(worklist_ready.empty());
   assert(worklist_done.empty());
@@ -43,11 +44,16 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
   event_to_node.reserve(trace.size());
 
   // Faster than cpid_to_processid
-  std::unordered_map<int, unsigned> ipid_mapping;
-  ipid_mapping.reserve(trace.size() / 2);
+  std::unordered_map<int, unsigned> ipid_to_processid;
+  ipid_to_processid.reserve(trace.size() / 2);
 
   std::vector<unsigned> cur_evidx(processes.size(), 0);
   cur_evidx.reserve(trace.size() / 2);
+  std::unordered_set<unsigned> has_unannotated_read_or_lock;
+  has_unannotated_read_or_lock.reserve(trace.size() / 2);
+  std::unordered_set<SymAddrSize> found_last_lock_for_location;
+  has_unannotated_read_or_lock.reserve(8);
+  std::unordered_set<unsigned> forbidden_processes_ipid;
 
   std::vector<Node *> spawns;
   spawns.reserve(8);
@@ -64,46 +70,72 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
                      std::unordered_map<unsigned, const Node *>> mutex_last;
   mutex_first.reserve(8);
 
-  extension_from = INT_MAX;
-  int trace_idx = -1;
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    trace_idx++;
     const VCEvent *ev = &(*traceit);
+
+    if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
+        // This is a forbidden process because it
+        // happens after a so-far unannotated node
+        continue;
+    }
 
     unsigned proc_idx = INT_MAX;
 
-    auto ipidit = ipid_mapping.find(ev->iid.get_pid());
-    if (ipidit != ipid_mapping.end()) {
+    // Check if this process is already known
+    auto ipidit = ipid_to_processid.find(ev->iid.get_pid());
+    if (ipidit != ipid_to_processid.end()) {
       proc_idx = ipidit->second;
     } else {
       auto cpidit = cpid_to_processid.find(ev->cpid);
       if (cpidit != cpid_to_processid.end()) {
         proc_idx = cpidit->second;
         // add to ipid cache for faster lookup next time
-        ipid_mapping.emplace(ev->iid.get_pid(), proc_idx);
+        ipid_to_processid.emplace(ev->iid.get_pid(), proc_idx);
       }
     }
 
     if (proc_idx == INT_MAX) {
       // A new process appeared
+      if (!ev->include_in_po) {
+        // This is a forbidden process because it
+        // happens after a so-far unannotated node
+        forbidden_processes_ipid.insert(ev->iid.get_pid());
+        continue;
+      }
       proc_idx = processes.size();
       assert(cur_evidx.size() == proc_idx);
       cur_evidx.push_back(0);
 
       processes.emplace_back(std::vector<Node *>());
-      processes[proc_idx].reserve(std::min((int) trace.size() / 2,
-                                           (int) trace.size() - trace_idx));
-      ipid_mapping.emplace(ev->iid.get_pid(), proc_idx);
+      processes[proc_idx].reserve((int) trace.size() / 2);
+      ipid_to_processid.emplace(ev->iid.get_pid(), proc_idx);
       cpid_to_processid.emplace(ev->cpid, proc_idx);
     }
 
     unsigned ev_idx = cur_evidx[proc_idx];
-    Node *nd = nullptr;
 
+    // Check if proc_idx already has an unannotated read
+    if (has_unannotated_read_or_lock.count(proc_idx)) {
+      // This event happens after something we need to
+      // annotate first, so we don't add it into the graph
+      assert(ev_idx == processes[proc_idx].size());
+      continue;
+    }
+    // Check whether this event is allowed to be included
+    // e.g. joins depending on an unannotated node from a different thread
+    // can not be included and neither any of their successors
+    if (!ev->include_in_po) {
+      assert(ev_idx == processes[proc_idx].size());
+      // Also add proc_idx to list of annotated read/locks
+      // While not really true, this will make sure we don't add the rest
+      // of events from proc_idx that happen after this forbidden one
+      has_unannotated_read_or_lock.insert(proc_idx);
+      continue;
+    }
+
+    Node *nd = nullptr;
     if (ev_idx == processes[proc_idx].size()) {
       // New event
-      if (extension_from == INT_MAX)
-        extension_from = (unsigned) trace_idx;
       nd = new Node(proc_idx, ev_idx, ev);
 
       nodes.insert(nd);
@@ -119,17 +151,11 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
 
     } else {
       // Already known event
-      assert(extension_from == INT_MAX);
       assert(ev_idx < processes[proc_idx].size());
       nd = processes[proc_idx][ev_idx];
-      assert(nd);
-      assert(nodes.count(nd));
-      assert((nd->getEvent()->kind == ev->kind ||
-              (nd->getEvent()->kind == VCEvent::Kind::DUMMY &&
-               ev_idx == processes[proc_idx].size() - 1) ||
-              (nd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT &&
-               ev->kind == VCEvent::Kind::M_LOCK))
-             && "Original part of the basis is changed in 'trace'");
+      assert(nd && nodes.count(nd));
+      bool evType = (nd->getEvent()->kind == ev->kind);
+      assert(evType && "Original part of the basis is changed in 'trace'");
 
       auto etnit = event_to_node.find(nd->getEvent());
       assert(etnit != event_to_node.end());
@@ -139,11 +165,15 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
       nd->setEvent(ev);
     }
 
+    assert(nd->getProcessID() == proc_idx &&
+           nd->getEventID() == ev_idx &&
+           nd->getEvent() == ev);
     assert(nd->getEvent()->event_order == nd->getEventID());
     nd->getEvent()->setPID(nd->getProcessID());
 
     ++cur_evidx[proc_idx];
 
+    // Handle Write
     if (isWrite(ev)) {
       if (nd->getProcessID() == starRoot()) {
         // Root write
@@ -163,8 +193,14 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
         wNonrootUnord[ev->ml].insert(nd);
       }
     }
+
+    // Handle Read
     if (isRead(ev)) {
-      // Read
+      // Check if nd is not annotated yet
+      if (!annotationPtr || !(annotationPtr->defines(nd))) {
+        // This will be the last node for the corresponding thread
+        has_unannotated_read_or_lock.insert(nd->getProcessID());
+      }
       auto ittw = tw_candidate.find(ev->ml);
       if (ittw == tw_candidate.end())
         tw_candidate.emplace_hint(ittw, ev->ml, std::vector<std::vector<int>>());
@@ -196,6 +232,8 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
         readsNonroot[ev->ml].insert(nd);
       }
     }
+
+    // Handle Mutex events
     if (isMutexInit(ev)) {
       assert(!mutex_inits.count(ev->ml));
       mutex_inits.emplace(ev->ml, nd);
@@ -203,6 +241,25 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
     if (isMutexDestroy(ev)) {
       assert(!mutex_destroys.count(ev->ml));
       mutex_destroys.emplace(ev->ml, nd);
+    }
+    if (isLock(ev)) {
+      // Check if nd is not annotated yet
+      if (!annotationPtr || !(annotationPtr->locationHasSomeLock(nd))) {
+        // No annotated lock has held this location yet
+        // This will be the last node for the corresponding thread
+        has_unannotated_read_or_lock.insert(nd->getProcessID());
+      } else {
+        // Some lock has already happened on this location
+        if (annotationPtr->isLastLock(nd)) {
+          // This is the last annotated lock for this location
+          assert(!found_last_lock_for_location.count(nd->getEvent()->ml));
+          found_last_lock_for_location.insert(nd->getEvent()->ml);
+        } else if (found_last_lock_for_location.count(nd->getEvent()->ml)) {
+          // This is a lock after the last annotated lock for this location
+          // This will be the last node for the corresponding thread
+          has_unannotated_read_or_lock.insert(nd->getProcessID());
+        }
+      }
     }
     if (isLock(ev) || isUnlock(ev)) {
       // For each ml, for each thread, remember first access
@@ -219,7 +276,11 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
       }
       mutex_last[ev->ml][nd->getProcessID()] = nd;
     }
-  }
+  } // end of loop for traversing trace and creating nodes
+
+  processes.shrink_to_fit();
+  for (unsigned i=0; i<processes.size(); ++i)
+    processes[i].shrink_to_fit();
 
   #ifndef NDEBUG
   assert(processes.size() == cur_evidx.size());
@@ -281,7 +342,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
         // new pred slots should be filled with what the last original slot says
         int last_pred = pred_original[i][j]
                                      [pred_original[i][j].size() - 1];
-        while (succ_original[i][j].size() != processes[i].size()) {
+        while (succ_original[i][j].size() < processes[i].size()) {
           succ_original[i][j].push_back(INT_MAX);
           pred_original[i][j].push_back(last_pred);
         }
@@ -315,6 +376,13 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace)
         pred_original[i].push_back(std::vector<int>());
       }
     }
+  }
+
+  succ_original.shrink_to_fit();
+  pred_original.shrink_to_fit();
+  for (unsigned i=0; i<processes.size(); ++i) {
+    succ_original[i].shrink_to_fit();
+    pred_original[i].shrink_to_fit();
   }
 
   // EDGES - spawns
@@ -1073,12 +1141,26 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
   return result;
 }
 
-std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCIID *mutatedLock) const
+std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po,
+                                              const VCAnnotation& annotation) const
 {
   auto result = std::vector<VCEvent>();
   result.reserve(nodes_size());
 
   auto current = std::vector<unsigned>(processes.size(), 0);
+  auto until = std::vector<unsigned>(processes.size(), 0);
+  for (unsigned i=0; i<processes.size(); ++i) {
+    const Node * last_nd_i = processes[i][ processes[i].size() - 1];
+    if ((isRead(last_nd_i) && !annotation.defines(last_nd_i)) ||
+        (isLock(last_nd_i) && !annotation.isLastLock(last_nd_i))) {
+      // These nodes should be 'rediscovered' by the
+      // TraceBuilder as something to annotate
+      // Also locks can't be force-replayed if the
+      // location is already held
+      until[i] = processes[i].size() - 1;
+    } else
+      until[i] = processes[i].size();
+  }
   ThreadPairsVclocks& pred = *(po.second);
 
   bool done = false;
@@ -1088,11 +1170,11 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCII
     // of other processes that have
     // to HB because of 'po' are made
     auto requirements = std::map<unsigned, unsigned>();
-    if (current[starRoot()] == processes[starRoot()].size()) {
+    if (current[starRoot()] == until[starRoot()]) {
       // Star-root process finished, let all other processes finish
       for (unsigned i=0; i<processes.size(); ++i)
-        if (i != starRoot() && current[i] < processes[i].size())
-          requirements.emplace(i, processes[i].size());
+        if (i != starRoot() && current[i] < until[i])
+          requirements.emplace(i, until[i]);
     } else {
       // Star-root process has not finished yet
       // Collect info of what needs to HB the next star-root step
@@ -1108,6 +1190,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCII
     auto reqNodes = std::unordered_set<const Node *>();
     for (auto& rq : requirements) {
       assert(current[rq.first] < rq.second);
+      assert(rq.second <= until[rq.first]);
       reqNodes.insert(processes[rq.first][ current[rq.first] ]);
     }
     while (!reqNodes.empty()) {
@@ -1123,10 +1206,7 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCII
       }
       // Perform the head, replace in reqNodes with its
       // thread successor (if that one is also required)
-      bool mlock = headnd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT
-        && mutatedLock && mutatedLock->first == headnd->getProcessID()
-        && mutatedLock->second == headnd->getEventID();
-      result.push_back(headnd->getEvent()->blank_copy(mlock));
+      result.push_back(headnd->getEvent()->blank_copy(result.size()));
       unsigned tid = headnd->getProcessID();
       ++current[tid];
       assert(reqNodes.count(headnd));
@@ -1135,13 +1215,10 @@ std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po, const VCII
         reqNodes.insert(processes[tid][ current[tid] ]);
     }
 
-    if (current[starRoot()] < processes[starRoot()].size()) {
+    if (current[starRoot()] < until[starRoot()]) {
       // Perform one step of the star-root process
       const Node * rootnd = processes[starRoot()][ current[starRoot()] ];
-      bool mlock = rootnd->getEvent()->kind == VCEvent::Kind::M_LOCKATTEMPT
-        && mutatedLock && mutatedLock->first == rootnd->getProcessID()
-        && mutatedLock->second == rootnd->getEventID();
-      result.push_back(rootnd->getEvent()->blank_copy(mlock));
+      result.push_back(rootnd->getEvent()->blank_copy(result.size()));
       ++current[starRoot()];
     } else
       done = true;

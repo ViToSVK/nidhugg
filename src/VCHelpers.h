@@ -108,12 +108,10 @@ inline bool isMutexDestroy(const Node *nd) {
 
 inline bool isLock(const VCEvent *ev) {
   assert(ev);
-  return (ev->kind == VCEvent::Kind::M_LOCK ||
-          ev->kind == VCEvent::Kind::M_LOCKATTEMPT);
+  return ev->kind == VCEvent::Kind::M_LOCK;
 }
 inline bool isLock(const VCEvent& ev) {
-  return (ev.kind == VCEvent::Kind::M_LOCK ||
-          ev.kind == VCEvent::Kind::M_LOCKATTEMPT);
+  return ev.kind == VCEvent::Kind::M_LOCK;
 }
 inline bool isLock(const Node *nd) {
   assert(nd);

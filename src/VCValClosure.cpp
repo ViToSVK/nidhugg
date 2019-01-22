@@ -28,10 +28,8 @@ void VCValClosure::prepare
     // caches for all old nonroot annotations are set
     #ifndef NDEBUG
     for (auto& key_ann : annotation)
-      if (!key_ann.second.ignore) {
-        assert(graph.getNode(key_ann.first)->getProcessID() == graph.starRoot() ||
-               wBounds.count(graph.getNode(key_ann.first)));
-      }
+      assert(graph.getNode(key_ann.first)->getProcessID() == graph.starRoot() ||
+             wBounds.count(graph.getNode(key_ann.first)));
     #endif
     if (newread->getProcessID() != graph.starRoot())
       prepareBounds(po, newread);
@@ -718,12 +716,11 @@ void VCValClosure::valClose
   bool change = true;
   while (change) {
     change = false;
-    for (const auto& key_ann : annotation)
-      if (!key_ann.second.ignore) {
-        auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
-        if (res.first) { closed = false; return; }
-        if (res.second) change = true;
-      }
+    for (const auto& key_ann : annotation) {
+      auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
+      if (res.first) { closed = false; return; }
+      if (res.second) change = true;
+    }
     if (newread) {
       auto res = rules(po, newread, *newann);
       if (res.first) { closed = false; return; }

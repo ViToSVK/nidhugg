@@ -294,6 +294,10 @@ class VCBasis {
     return nodes_iterator(nd->getProcessID(), nd->getEventID());
   }
 
+  bool hasNodeWithEvent(const VCEvent& ev) const {
+    return event_to_node.find(&ev) != event_to_node.end();
+  }
+
   // Node corresponding to the given VCEvent
   const Node *getNode(const VCEvent& ev) const {
     auto it = event_to_node.find(&ev);

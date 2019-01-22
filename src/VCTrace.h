@@ -36,8 +36,6 @@ class VCTrace {
 
   VCGraphVclock graph;
 
-  std::unordered_set<int> unannot;
-
   unsigned processMutationPreference;
 
   std::unordered_map<int, std::unordered_set<int>>
@@ -50,37 +48,24 @@ class VCTrace {
   VCTrace() = delete;
 
   VCTrace(std::vector<VCEvent>&& initial_trace,
-          std::unordered_set<int>&& initial_unannot,
           int star_root_index)
   : trace(std::move(initial_trace)),
     annotation(),
     negative(),
     graph(this->trace, star_root_index),
-    unannot(std::move(initial_unannot)),
     processMutationPreference(0),
     mutationProducesMaxTrace()
-      {
-        for (unsigned i = 0; i < trace.size(); ++i)
-          if (isRead(trace[i])) {
-            const Node *nd = graph.getNode(trace[i]);
-            if (!graph.nodes_iterator(nd).atProcessEnd()) {
-              assert(nd->getProcessID() == 0);
-              annotation.add(nd, VCAnnotation::Ann(trace[i].value));
-            }
-          }
-      };
+      {};
 
   VCTrace(std::vector<VCEvent>&& trace,
           const VCAnnotation& annotation,
           const VCAnnotationNeg& negative,
           VCGraphVclock&& graph,
-          std::unordered_set<int>&& unannot,
           unsigned pref)
   : trace(std::move(trace)),
     annotation(annotation),
     negative(negative),
     graph(std::move(graph)),
-    unannot(std::move(unannot)),
     processMutationPreference(pref),
     mutationProducesMaxTrace()
       {};

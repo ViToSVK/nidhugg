@@ -76,11 +76,7 @@ class VCGraphVclock : public VCBasis {
   // Partial orders that are refinements of original
   std::list<PartialOrder> worklist_ready, worklist_done;
 
-  unsigned extension_from;
-
  public:
-
-  unsigned getExtensionFrom() const { return extension_from; }
 
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
@@ -121,7 +117,7 @@ class VCGraphVclock : public VCBasis {
     worklist_ready(),
     worklist_done()
       {
-        extendGraph(trace);
+        extendGraph(trace, nullptr);
         assert(starRoot() < processes.size() &&
                "Star root index too big (not enough processes in the initial trace)");
       }
@@ -139,7 +135,6 @@ class VCGraphVclock : public VCBasis {
     worklist_ready(std::move(oth.worklist_ready)),
     worklist_done(std::move(oth.worklist_done))
       {
-        extension_from = oth.extension_from;
         oth.initial_node = nullptr;
         assert(oth.empty());
       }
@@ -149,10 +144,11 @@ class VCGraphVclock : public VCBasis {
   VCGraphVclock(const VCGraphVclock& oth) = delete;
 
   // Partial order that will be moved as original
-  // Trace that will extend this copy of the graph
+  // Trace and annotation that will extend this copy of the graph
   VCGraphVclock(const VCGraphVclock& oth,
                 PartialOrder&& po,
-                const std::vector<VCEvent>& trace)
+                const std::vector<VCEvent>& trace,
+                const VCAnnotation& annotation)
   : VCBasis(oth),
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
@@ -179,7 +175,7 @@ class VCGraphVclock : public VCBasis {
         // event_to_node -- fixed below
         // lock_vciid_to_node -- fixed below
         // read_vciid_to_node -- fixed below
-        extendGraph(trace);
+        extendGraph(trace, &annotation);
       }
 
   VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
@@ -202,7 +198,8 @@ class VCGraphVclock : public VCBasis {
   // 3) succ/pred_original are extended to accomodate new
   //    threads+nodes while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void extendGraph(const std::vector<VCEvent>& trace);
+  void extendGraph(const std::vector<VCEvent>& trace,
+                   const VCAnnotation *annotationPtr);
 
   /* *************************** */
   /* EDGE QUESTIONS              */
@@ -390,7 +387,8 @@ class VCGraphVclock : public VCBasis {
                           const VCAnnotationNeg& negative, const Node *readnd) const;
 
   // Linearizes a partial order
-  std::vector<VCEvent> linearize(const PartialOrder& po, const VCIID *mutatedLock) const;
+  std::vector<VCEvent> linearize(const PartialOrder& po,
+                                 const VCAnnotation& annotation) const;
 
   /* *************************** */
   /* DUMPS                       */

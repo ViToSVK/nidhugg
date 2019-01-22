@@ -39,22 +39,20 @@ class VCExplorer {
 
   class TraceExtension {
    public:
-    TraceExtension(std::pair<std::vector<VCEvent>,
-                             std::unordered_set<int>>&& extension_unannot)
-      : trace(std::move(extension_unannot.first)),
-      unannot(std::move(extension_unannot.second)),
+    TraceExtension(std::pair<std::vector<VCEvent>&&, bool>&& extension_someToAnn)
+      : trace(std::move(extension_someToAnn.first)),
+      somethingToAnnotate(extension_someToAnn.second),
       hasError(false), hasAssumeBlockedThread(false)
       {
-        assert(extension_unannot.first.empty());
-        assert(extension_unannot.second.empty());
+        assert(extension_someToAnn.first.empty());
       }
 
     bool empty() const {
-      return (trace.empty() && unannot.empty());
+      return (trace.empty());
     }
 
     std::vector<VCEvent> trace;
-    std::unordered_set<int> unannot;
+    bool somethingToAnnotate;
     bool hasError;
     bool hasAssumeBlockedThread;
   };
@@ -118,14 +116,11 @@ class VCExplorer {
 
   std::pair<bool, bool> // <error?, added_into_worklist?>
     extendAndAdd(PartialOrder&& mutatedPo,
-                 const VCIID *mutatedLock,
-                 const std::unordered_set<int>& mutatedUnannot,
                  const VCAnnotation& mutatedAnnotation,
                  const VCAnnotationNeg& negativeWriteMazBranch,
                  unsigned processMutationPreference);
 
-  TraceExtension extendTrace(std::vector<VCEvent>&& tr,
-                             const std::unordered_set<int>& unannot);
+  TraceExtension extendTrace(std::vector<VCEvent>&& tr);
 
   bool traceRespectsAnnotation() const;
 
@@ -143,18 +138,17 @@ class VCExplorer {
   /* *************************** */
 
   VCExplorer(std::vector<VCEvent>&& initial_trace,
-             std::unordered_set<int>&& initial_unannot,
+             bool somethingToAnnotate,
              VCTraceBuilder& tb,
              int star_root_index, bool p_m_p_f, bool r_b_n)
     : originalTB(tb),
     previous_mutation_process_first(p_m_p_f),
     root_before_nonroots(r_b_n)
     {
-      if (initial_unannot.empty())
+      if (!somethingToAnnotate)
         executed_traces_full = 1;
       else
         worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
-                                                                std::move(initial_unannot),
                                                                 star_root_index)));
       if (tb.someThreadAssumeBlocked)
         executed_traces_assume_blocked_thread = 1;

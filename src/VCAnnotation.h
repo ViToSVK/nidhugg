@@ -50,12 +50,10 @@ class VCAnnotation {
    public:
     ~Ann() { delete goodLocal; }
 
-    Ann(int v) : value(v), loc(Loc::ANY), goodRemote(), goodLocal(), ignore(true) {}
-
     Ann(int v, Loc l, std::unordered_set<VCIID>&& gr, bool haslocal, VCIID gl)
       : value(v), loc(l), goodRemote(std::move(gr)),
-      goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr),
-      ignore(false) {}
+      goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr)
+        {}
 
     Ann(const Ann& oth)
       : value(oth.value),
@@ -64,23 +62,20 @@ class VCAnnotation {
       goodLocal(oth.goodLocal ?
                 new VCIID(oth.goodLocal->first,
                           oth.goodLocal->second) :
-                nullptr),
-      ignore(oth.ignore) {}
+                nullptr)
+        {}
 
     Ann(Ann&& oth)
       : value(oth.value),
       loc(oth.loc),
       goodRemote(std::move(oth.goodRemote)),
-      goodLocal(oth.goodLocal),
-      ignore(oth.ignore)
+      goodLocal(oth.goodLocal)
         { oth.goodLocal = nullptr; }
 
     const int value;
     const Loc loc;
     const std::unordered_set<VCIID> goodRemote;
     const VCIID * goodLocal;
-
-    bool ignore; // whether this Ann is just a dummy
 
     void dump() const;
   };
@@ -220,6 +215,10 @@ class VCAnnotation {
       return (it->second == VCIID(nd->getProcessID(), nd->getEventID()));
   }
 
+  bool locationHasSomeLock(const Node * nd) const {
+    assert(isLock(nd));
+    return (lastlock.find(nd->getEvent()->ml) != lastlock.end());
+  }
 };
 
 namespace std {

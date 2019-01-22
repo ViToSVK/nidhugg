@@ -33,7 +33,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
      out << ev.id << "_spawn " << ev.childs_cpid;
      break;
    case VCEvent::Kind::JOIN :
-     out << ev.id << "_join " << ev.childs_cpid;
+     out << ev.id << "_join " << ev.childs_cpid << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::M_INIT :
      out << ev.id << "_mutexinit " << ev.ml.addr.to_string();
@@ -42,10 +42,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
      out << ev.id << "_mutexdestroy " << ev.ml.addr.to_string();
      break;
    case VCEvent::Kind::M_LOCK :
-     out << ev.id << "_lock " << ev.ml.addr.to_string();
-     break;
-   case VCEvent::Kind::M_LOCKATTEMPT :
-     out << ev.id << "_lockattempt " << ev.ml.addr.to_string();
+     out << ev.id << "_lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::M_UNLOCK :
      out << ev.id << "_unlock " << ev.ml.addr.to_string();
@@ -72,10 +69,15 @@ void Node::dump() const {
   llvm::errs() << *this << "\n";
 }
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Loc& loc) {
+  char c = (loc == VCAnnotation::Loc::LOCAL)?'L':
+    ((loc == VCAnnotation::Loc::REMOTE)?'R':'A');
+  out << c;
+  return out;
+}
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Ann& ann) {
-  char loc = (ann.loc == VCAnnotation::Loc::LOCAL)?'L':
-    ((ann.loc == VCAnnotation::Loc::REMOTE)?'R':'A');
-  out << ann.value << "-" << loc << "_";
+  out << ann.value << "-" << ann.loc << "_";
   if (ann.loc != VCAnnotation::Loc::LOCAL) {
     out << "remotegood:";
     for (auto& iid : ann.goodRemote)

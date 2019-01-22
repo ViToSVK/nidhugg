@@ -72,30 +72,32 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* TRACES                      */
   /* *************************** */
 
-  // We consider the global's initialization event
-  // It 'writes' initial value 0 to all global variables
-  // const VCEvent initial_event = VCEvent(IID<IPid>(0,0));
-
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
-  // (we don't save anything about the invisible ones, just how many there are)
   std::vector<VCEvent> prefix;
 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
   std::vector<VCEvent> replay_trace;
 
-  // The set of threads that have executed a new so far unannotated
-  // (visible) read; we refuse to schedule any such thread any further, we want to
-  // annotate the new read and only next time allow the thread to progress further
-  std::unordered_set<int> threads_with_unannotated_read;
-
   // The index into prefix corresponding to the last event that was
   // scheduled. Has the value -1 when no events have been scheduled.
   // This is defined in TSOPSOTraceBuilder.h where we inherit from
   // I'm commenting it here so I'm aware of it
   // int prefix_idx = -1;
+
+  // Is there something in the extension to annotate?
+  std::unordered_set<unsigned> somethingToAnnotate;
+  // Does a thread contain a join dependant on something to annotate
+  std::unordered_set<unsigned> annotationDependantJoin;
+  // Is this thread dependant on a spawn happening after something to annotate
+  std::unordered_set<unsigned> annotationDependantThread;
+  // Does a thread end with a failed mutex lock attempt?
+  // This can happen in case of a deadlock
+  std::unordered_map<unsigned, SymAddrSize> endsWithLockFail;
+  // Add lock event for every thread ending with a failed mutex lock attempt
+  void add_failed_lock_attempts();
 
   VCEvent& curnode() {
     assert(0 <= prefix_idx);
@@ -130,21 +132,20 @@ class VCTraceBuilder : public TSOTraceBuilder {
     star_root_index(s_r_i),
     previous_mutation_process_first(p_m_p_f),
     root_before_nonroots(r_b_n)
-    {}
+    {
+      prefix.reserve(64);
+    }
 
   // Use when you want to do the following:
   // (step1) replay the trace tr
-  // (step2) extend it until each thread has a new
-  //         unannotated read (or we can not extend further)
+  // (step2) get a maximal extension
   VCTraceBuilder(const Configuration &conf,
-                 llvm::Module *m, std::vector<VCEvent>&& tr,
-                 const std::unordered_set<int>& unannot)
+                 llvm::Module *m, std::vector<VCEvent>&& tr)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(false), sch_replay(true), sch_extend(false),
-    replay_trace(std::move(tr)),
-    threads_with_unannotated_read(unannot)
+    replay_trace(std::move(tr))
     {
-      prefix.reserve(replay_trace.size() + 16);
+      prefix.reserve(replay_trace.size() + 64);
     }
 
   /* *************************** */
@@ -171,8 +172,8 @@ class VCTraceBuilder : public TSOTraceBuilder {
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);
-  virtual void mutex_unlock(const SymAddrSize &ml); // WRITE (val=ipid << 16 + event_order)
-  virtual void mutex_lock(const SymAddrSize &ml); // READ (val)
+  virtual void mutex_unlock(const SymAddrSize &ml);
+  virtual void mutex_lock(const SymAddrSize &ml);
   virtual void mutex_lock_fail(const SymAddrSize &ml);
   virtual void mutex_trylock(const SymAddrSize &ml) {
     llvm::errs() << "No support for pthread_mutex_trylock\n";
@@ -185,8 +186,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
 
   // Called from VCExplorer on a TB created exclusively for this
   // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<VCEvent>,
-    std::unordered_set<int>> extendGivenTrace();
+  std::pair<std::vector<VCEvent>, bool> extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;
