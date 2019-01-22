@@ -368,8 +368,11 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         // current->graph.to_dot(mutatedPo, "");
 
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
+        bool mutationFollowsCurrentTrace =
+          (valpos_ann.first.first == nd->getEvent()->value);
         auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                            negativeWriteMazBranch, nd->getProcessID());
+                                            negativeWriteMazBranch, nd->getProcessID(),
+                                            mutationFollowsCurrentTrace);
         if (error_addedToWL.first)
           return true;
         if (!error_addedToWL.second) {
@@ -421,8 +424,11 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
     VCAnnotation mutatedAnnotation(current->annotation);
     mutatedAnnotation.setLastLock(nd);
+
+    bool mutationFollowsCurrentTrace = false;
     auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                        negativeWriteMazBranch, nd->getProcessID());
+                                        negativeWriteMazBranch, nd->getProcessID(),
+                                        mutationFollowsCurrentTrace);
     return error_addedToWL.first;
   }
 
@@ -484,8 +490,11 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   VCAnnotation mutatedAnnotation(current->annotation);
   mutatedAnnotation.setLastLock(nd);
+
+  bool mutationFollowsCurrentTrace = false;
   auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                      negativeWriteMazBranch, nd->getProcessID());
+                                      negativeWriteMazBranch, nd->getProcessID(),
+                                      mutationFollowsCurrentTrace);
   return error_addedToWL.first;
 }
 
@@ -497,10 +506,12 @@ std::pair<bool, bool>
 VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                          const VCAnnotation& mutatedAnnotation,
                          const VCAnnotationNeg& negativeWriteMazBranch,
-                         unsigned processMutationPreference)
+                         unsigned processMutationPreference,
+                         bool mutationFollowsCurrentTrace)
 {
-  auto mutatedTrace =
-    extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
+  auto mutatedTrace = mutationFollowsCurrentTrace
+    ?reuseTrace(mutatedAnnotation)
+    :extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
 
   executed_traces++;
   if (mutatedTrace.hasError)

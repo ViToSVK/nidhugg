@@ -125,7 +125,8 @@ class VCExplorer {
     extendAndAdd(PartialOrder&& mutatedPo,
                  const VCAnnotation& mutatedAnnotation,
                  const VCAnnotationNeg& negativeWriteMazBranch,
-                 unsigned processMutationPreference);
+                 unsigned processMutationPreference,
+                 bool mutationFollowsCurrentTrace);
 
   TraceExtension reuseTrace(const VCAnnotation& mutatedAnnotation);
 
