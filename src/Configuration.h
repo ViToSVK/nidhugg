@@ -41,10 +41,7 @@ public:
     POWER,
     PSO,
     TSO,
-    VC_MRL, // value centric - mutation,root,leaves
-    VC_MLR, // value centric - mutation,leaves,root
-    VC_RL, // value centric - root,leaves
-    VC_LR, // value centric - leaves,root
+    DC, // data centric
   };
   enum DPORAlgorithm{
     SOURCE,
