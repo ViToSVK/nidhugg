@@ -990,7 +990,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   }
 }
 
-std::map<std::pair<int, VCAnnotation::Loc>, VCAnnotation::Ann>
+std::map<VCIID, VCAnnotation::Ann>
 VCGraphVclock::getMutationCandidates(const PartialOrder& po,
                                      const VCAnnotationNeg& negative, const Node *readnd) const
 {
@@ -1084,8 +1084,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
     }
   }
 
-  auto result = std::map<std::pair<int, VCAnnotation::Loc>,
-                         VCAnnotation::Ann>();
+  auto result = std::map<VCIID, VCAnnotation::Ann>();
 
   // Have mutateWrites, create possible annotations
   while (!mutateWrites.empty()) {
@@ -1098,71 +1097,34 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
       (writend->getProcessID() == readnd->getProcessID()
        ? VCAnnotation::Loc::LOCAL : VCAnnotation::Loc::REMOTE);
 
-    if (loc == VCAnnotation::Loc::LOCAL) {
-      // Done with this Ann
+    assert(!result.count(VCIID(writend->getProcessID(), writend->getEventID())));
+
+    if (writend->getProcessID() == readnd->getProcessID()) {
+      // LOCAL (or ANY with just local good write)
       auto goodRemote = std::unordered_set<VCIID>();
       auto goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
-      assert(!result.count(std::pair<int, VCAnnotation::Loc>(value, loc)));
-      result.emplace(std::pair<int, VCAnnotation::Loc>(value, loc),
+      result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
                      VCAnnotation::Ann(value, loc, std::move(goodRemote), true, goodLocal));
       mutateWrites.erase(it);
       continue;
     }
 
-    assert(loc != VCAnnotation::Loc::LOCAL);
-
+    // REMOTE (or ANY with just remote good write)
+    assert(writend->getProcessID() != readnd->getProcessID());
     auto goodRemote = std::unordered_set<VCIID>();
+    goodRemote.emplace(writend->getProcessID(), writend->getEventID());
     auto goodLocal = VCIID(31337, 47);
-
-    if (writend->getProcessID() == readnd->getProcessID()) {
-      assert(loc == VCAnnotation::Loc::ANY);
-      goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
-    }
-    else
-      goodRemote.emplace(writend->getProcessID(), writend->getEventID());
-
-    if (considerInitEvent && value == 0 && loc == VCAnnotation::Loc::ANY) {
-      assert(goodLocal.first == 31337);
-      considerInitEvent = false;
-      goodLocal = VCIID(INT_MAX, INT_MAX);
-    }
-
-    it = mutateWrites.erase(it);
-    while (it != mutateWrites.end()) {
-      const Node * anothernd = *it;
-      if (value != anothernd->getEvent()->value ||
-          (loc == VCAnnotation::Loc::REMOTE &&
-           anothernd->getProcessID() == readnd->getProcessID())) {
-        ++it;
-      } else {
-        // Good value and acceptable location
-        if (anothernd->getProcessID() == readnd->getProcessID()) {
-          assert(goodLocal.first == 31337);
-          goodLocal = VCIID(anothernd->getProcessID(), anothernd->getEventID());
-        }
-        else
-          goodRemote.emplace(anothernd->getProcessID(), anothernd->getEventID());
-        it = mutateWrites.erase(it);
-      }
-    }
-
-    assert(!result.count(std::pair<int, VCAnnotation::Loc>(value, loc)));
-    result.emplace(std::pair<int, VCAnnotation::Loc>(value, loc),
-                   VCAnnotation::Ann(value, loc,
-                                     std::move(goodRemote),
-                                     (goodLocal.first != 31337),
-                                     goodLocal));
+    result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
+                   VCAnnotation::Ann(value, loc, std::move(goodRemote), false, goodLocal));
+    mutateWrites.erase(it);
   }
 
   if (considerInitEvent) {
     VCAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
       ? VCAnnotation::Loc::ANY : VCAnnotation::Loc::LOCAL;
-    assert(!result.count(std::pair<int, VCAnnotation::Loc>(0, loc)));
-    result.emplace(std::pair<int, VCAnnotation::Loc>(0, loc),
-                   VCAnnotation::Ann(0, loc,
-                                     std::unordered_set<VCIID>(),
-                                     true,
-                                     {INT_MAX, INT_MAX}));
+    assert(!result.count(VCIID(INT_MAX, INT_MAX)));
+    result.emplace(VCIID(INT_MAX, INT_MAX),
+                   VCAnnotation::Ann(0, loc, std::unordered_set<VCIID>(), true, {INT_MAX, INT_MAX}));
   }
 
   return result;

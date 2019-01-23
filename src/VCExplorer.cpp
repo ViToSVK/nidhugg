@@ -295,11 +295,11 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
     if (mutationCandidates.empty())
       ++read_ordered_pos_no_mut_choices;
 
-    for (auto& valpos_ann : mutationCandidates) {
-      // llvm::errs() << valpos_ann.first.first << "_" << valpos_ann.first.second << "...";
+    for (auto& vciid_ann : mutationCandidates) {
+      // llvm::errs() << vciid_ann.first.first << "_" << vciid_ann.first.second << "...";
       if (mutationProducesMaxTrace.count(nd->getProcessID()) &&
           mutationProducesMaxTrace
-          [nd->getProcessID()].count(valpos_ann.first.first)) {
+          [nd->getProcessID()].count(vciid_ann.first)) {
         // This mutation was already done in a sibling Mazurkiewicz branch
         // And it produces a maximal trace with the same value function
         continue;
@@ -309,7 +309,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       // Collect writes that become newly everGood by performing this mutation
       // We will have to order them with conflicting notEverGood writes
       VCAnnotation mutatedAnnotation(current->annotation);
-      auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, valpos_ann.second);
+      auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, vciid_ann.second);
       auto newlyEverGoodWrites = std::vector<const Node *>();
       for (auto& vciid : newlyEverGoodVCIIDs) {
         if (vciid.first != INT_MAX) {
@@ -348,7 +348,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
         init = std::clock();
         auto withMutation = VCValClosure(withoutMutation);
         //llvm::errs() << "closure...";
-        withMutation.valClose(mutatedPo, nd, &(valpos_ann.second));
+        withMutation.valClose(mutatedPo, nd, &(vciid_ann.second));
         //llvm::errs() << "done\n";
         time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -369,7 +369,10 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
         bool mutationFollowsCurrentTrace =
-          (nd->getEvent()->value == valpos_ann.first.first);
+          (vciid_ann.first.first == INT_MAX && nd->getEvent()->observed_id == -1) ||
+          (vciid_ann.first.first != INT_MAX &&
+           nd->getEvent()->observed_id ==
+           (int) current->graph.getNode(vciid_ann.first)->getEvent()->id);
         auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                             negativeWriteMazBranch, nd->getProcessID(),
                                             mutationFollowsCurrentTrace);
@@ -381,11 +384,11 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
           auto it = mutationProducesMaxTrace.find(nd->getProcessID());
           if (it == mutationProducesMaxTrace.end())
             mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
-                                                  std::unordered_set<int>());
+                                                  std::unordered_set<VCIID>());
           assert(!mutationProducesMaxTrace
-                 [nd->getProcessID()].count(valpos_ann.first.first));
+                 [nd->getProcessID()].count(vciid_ann.first));
           mutationProducesMaxTrace
-            [nd->getProcessID()].insert(valpos_ann.first.first);
+            [nd->getProcessID()].insert(vciid_ann.first);
           // Clear the rest of POs with this mutation
           afterMutationChoicePOs.clear();
         }

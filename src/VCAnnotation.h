@@ -122,8 +122,8 @@ class VCAnnotation {
     auto key = VCIID(nd->getProcessID(), nd->getEventID());
     auto it = mapping.find(key);
     assert(it == mapping.end());
-    assert(ann.loc != Loc::REMOTE || !ann.goodLocal);
-    assert(ann.loc != Loc::LOCAL || ann.goodRemote.empty());
+    assert((ann.goodRemote.size() == 1 && !ann.goodLocal) ||
+           (ann.goodRemote.empty() && ann.goodLocal)); // dc
     mapping.emplace_hint(it, key, ann);
 
     // Maintain the set of everGood writes

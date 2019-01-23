@@ -94,6 +94,9 @@ class VCTraceBuilder : public TSOTraceBuilder {
   std::unordered_map<unsigned, SymAddrSize> endsWithLockFail;
   // Add lock event for every thread ending with a failed mutex lock attempt
   void add_failed_lock_attempts();
+  // Trace index of the last write happening in the given location
+  std::unordered_map<SymAddrSize, int> lastWrite;
+
 
   VCEvent& curnode() {
     assert(0 <= prefix_idx);

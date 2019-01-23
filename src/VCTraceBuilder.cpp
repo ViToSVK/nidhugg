@@ -364,6 +364,7 @@ void VCTraceBuilder::atomic_store(const SymData &sd, int val)
     curnode().kind = VCEvent::Kind::STORE;
     mayConflict(&ml);
     curnode().value = val;
+    lastWrite[ml] = prefix_idx;
   }
 }
 
@@ -378,6 +379,8 @@ void VCTraceBuilder::load(const SymAddrSize &ml, int val)
     curnode().kind = VCEvent::Kind::LOAD;
     mayConflict(&ml);
     curnode().value = val;
+    curnode().observed_id =
+      (lastWrite.count(ml)) ? lastWrite[ml] : -1;
     if (!sch_replay)
       somethingToAnnotate.insert(curnode().iid.get_pid());
   }
