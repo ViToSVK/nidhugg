@@ -176,9 +176,10 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
       assert(ev_idx < processes[proc_idx].size());
       nd = processes[proc_idx][ev_idx];
       assert(nd && nodes.count(nd));
+      #ifndef NDEBUG
       bool evType = (nd->getEvent()->kind == ev->kind);
       assert(evType && "Original part of the basis is changed in 'trace'");
-
+      #endif
       auto etnit = event_to_node.find(nd->getEvent());
       assert(etnit != event_to_node.end());
       event_to_node.erase(etnit);
