@@ -49,15 +49,16 @@ class VCEvent {
   VCEvent(const IID<int> &iid, const CPid& cpid,
           unsigned instruction_order, unsigned event_order, unsigned id)
     : kind(Kind::DUMMY),
-      iid(iid), cpid(cpid), childs_cpid(),
-      size(1), md(0),
-      may_conflict(false),
-      ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
-      value(0),
-      instruction_order(instruction_order),
-      event_order(event_order),
-      pid(1337),
-      id(id)
+    iid(iid), cpid(cpid), childs_cpid(),
+    size(1), md(0),
+    may_conflict(false),
+    ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 47), 47), 4),
+    value(0),
+    instruction_order(instruction_order),
+    event_order(event_order),
+    pid(1337),
+    id(id),
+    observed_id(-1)
       {
         assert(iid.get_pid() >= 0);
       }
@@ -68,19 +69,21 @@ class VCEvent {
   // If not blank: the event is used as if it came from an interpreter
   VCEvent(const VCEvent& oth, int id, bool blank)
     : kind(oth.kind),
-      iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
-      size(oth.size) /**/, md(0),
-      may_conflict(oth.may_conflict),
-      ml(oth.ml),
-      value(oth.value),
-      instruction_order(oth.instruction_order) /**/,
-      event_order(oth.event_order) /**/,
-      pid(1337),
-      id(id)
+    iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
+    size(oth.size) /**/, md(0),
+    may_conflict(oth.may_conflict),
+    ml(oth.ml),
+    value(oth.value),
+    instruction_order(oth.instruction_order) /**/,
+    event_order(oth.event_order) /**/,
+    pid(1337),
+    id(id),
+    observed_id(-1)
       {
         assert(iid.get_pid() >= 0);
         if (!blank) {
           childs_cpid = oth.childs_cpid;
+          observed_id = oth.observed_id;
         }
       }
 
@@ -121,6 +124,9 @@ class VCEvent {
   mutable unsigned pid;
   /* ID of the event (index into the trace this event is part of) */
   unsigned id;
+  /* ID of the observed event (lock observes unlock)
+   * -1 means the initial event was observed */
+  int observed_id;
 
   VCEvent copy(int id, bool blank) const {
     return VCEvent(*this, id, blank);

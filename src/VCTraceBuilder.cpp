@@ -396,7 +396,7 @@ void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
   assert(curnode().kind == VCEvent::Kind::DUMMY);
   curnode().kind = VCEvent::Kind::M_INIT;
   mayConflict(&ml);
-  mutexes[ml.addr] = Mutex(prefix_idx);
+  mutexes[ml.addr] = Mutex(-1); // prefix_idx
   mutexes[ml.addr].value = 31337; // default-unlocked mutex
 }
 
@@ -406,7 +406,7 @@ void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
-    mutexes[ml.addr] = Mutex();
+    mutexes[ml.addr] = Mutex(-1);
   }
   assert(mutexes.count(ml.addr));
   assert(curnode().kind == VCEvent::Kind::DUMMY);
@@ -421,7 +421,7 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
-    mutexes[ml.addr] = Mutex();
+    mutexes[ml.addr] = Mutex(-1);
   }
   assert(mutexes.count(ml.addr));
 
@@ -449,7 +449,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
-    mutexes[ml.addr] = Mutex();
+    mutexes[ml.addr] = Mutex(-1);
   }
   assert(mutexes.count(ml.addr));
   Mutex &mutex = mutexes[ml.addr];
@@ -481,6 +481,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   assert(curnode().size == 1);
   assert(curnode().kind == VCEvent::Kind::DUMMY);
   curnode().kind = VCEvent::Kind::M_LOCK;
+  curnode().observed_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
   curnode().value = mutex.value; // READ
@@ -493,7 +494,6 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   mutex.locked = true;
   mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
                 // mutex locked by this process (<0)
-
 }
 
 void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml) {
@@ -501,7 +501,7 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml) {
   assert(!dryrun);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
-    mutexes[ml.addr] = Mutex();
+    mutexes[ml.addr] = Mutex(-1);
   }
   assert(mutexes.count(ml.addr));
   #ifndef NDEBUG

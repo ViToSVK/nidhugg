@@ -369,7 +369,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
         bool mutationFollowsCurrentTrace =
-          (valpos_ann.first.first == nd->getEvent()->value);
+          (nd->getEvent()->value == valpos_ann.first.first);
         auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                             negativeWriteMazBranch, nd->getProcessID(),
                                             mutationFollowsCurrentTrace);
@@ -425,7 +425,8 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
     VCAnnotation mutatedAnnotation(current->annotation);
     mutatedAnnotation.setLastLock(nd);
 
-    bool mutationFollowsCurrentTrace = false;
+    bool mutationFollowsCurrentTrace =
+      (nd->getEvent()->observed_id == -1);
     auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                         negativeWriteMazBranch, nd->getProcessID(),
                                         mutationFollowsCurrentTrace);
@@ -491,7 +492,8 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   VCAnnotation mutatedAnnotation(current->annotation);
   mutatedAnnotation.setLastLock(nd);
 
-  bool mutationFollowsCurrentTrace = false;
+  bool mutationFollowsCurrentTrace =
+    (nd->getEvent()->observed_id == (int) lastunlocknd->getEvent()->id);
   auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                       negativeWriteMazBranch, nd->getProcessID(),
                                       mutationFollowsCurrentTrace);
