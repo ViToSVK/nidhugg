@@ -369,10 +369,13 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
         bool mutationFollowsCurrentTrace =
+          (nd->getEvent()->value == vciid_ann.second.value);
+        /* DC version below
           (vciid_ann.first.first == INT_MAX && nd->getEvent()->observed_id == -1) ||
           (vciid_ann.first.first != INT_MAX &&
            nd->getEvent()->observed_id ==
            (int) current->graph.getNode(vciid_ann.first)->getEvent()->id);
+        */
         auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                             negativeWriteMazBranch, nd->getProcessID(),
                                             mutationFollowsCurrentTrace);
