@@ -121,14 +121,15 @@ bool VCExplorer::explore()
     // Each refinement will be a candidate for possible mutations
     clock_t init = std::clock();
     std::list<PartialOrder> extendedPOs = orderingsAfterExtension();
-    assert(!extendedPOs.empty() && "current->trace is one witness");
     time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-    while (!extendedPOs.empty()) {
-      auto po = std::move(extendedPOs.front());
-      assert(!extendedPOs.front().first.get() &&
-             !extendedPOs.front().second.get());
-      extendedPOs.pop_front();
+    bool once = false;
+    while (!extendedPOs.empty() || !once) {
+      once = true;
+      const PartialOrder& po =
+        extendedPOs.empty() ? current->graph.getOriginal()
+        : extendedPOs.front();
+      bool haveOriginal = (po == current->graph.getOriginal());
 
       init = std::clock();
       auto withoutMutation = VCValClosure(current->graph, current->annotation);
@@ -142,8 +143,10 @@ bool VCExplorer::explore()
         // makes the original annotation unrealizable
         // therefore no need to try any mutations
         ++cl_ordering_failed;
-        po.first.reset();
-        po.second.reset();
+        assert(!haveOriginal && "current->trace is one witness");
+        extendedPOs.front().first.reset();
+        extendedPOs.front().second.reset();
+        extendedPOs.pop_front();
         continue;
       }
 
@@ -188,9 +191,12 @@ bool VCExplorer::explore()
         ++executed_traces_full;
         ++executed_traces_full_deadlock;
       }
-      po.first.reset();
-      po.second.reset();
-    }
+      if (!haveOriginal) {
+        extendedPOs.front().first.reset();
+        extendedPOs.front().second.reset();
+        extendedPOs.pop_front();
+      }
+    } // end of loop for working with extension POs
 
     // Delete managed VCTrace
     current.reset();
@@ -222,7 +228,8 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
         // and with all nonroot writes such that:
         // 1) at least one is everGood
         // 2) both are observable
-        current->graph.orderEventMaz(&ev, current->annotation, false);
+        current->graph.orderEventMaz(&ev, current->annotation, false,
+                                     current->graph.getOriginal());
       }
     }
   }
@@ -235,7 +242,7 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
   assert(isRead(nd));
   assert(current.get());
   assert(!current->annotation.defines(nd));
-  current->graph.initWorklist(po);
+  current->graph.initWorklist();
 
   if (current->graph.lessThanTwoLeavesWithRorW())
     return current->graph.dumpDoneWorklist();
@@ -243,7 +250,8 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
   // If the read is nonroot,
   // order it with all nonroot writes
   if (nd->getProcessID() != current->graph.starRoot())
-    current->graph.orderEventMaz(nd->getEvent(), current->annotation, false);
+    current->graph.orderEventMaz(nd->getEvent(), current->annotation,
+                                 false, po);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -252,6 +260,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 (const PartialOrder& po, const std::vector<const Node *> newEverGood)
 {
   assert(current.get());
+  // We have to create a po copy here since we try a mutation on it
   current->graph.initWorklist(po);
 
   if (current->graph.lessThanTwoLeavesWithRorW())
@@ -263,7 +272,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
   // are notEverGood (if both are observable)
   for (auto& newEGnd : newEverGood)
     if (newEGnd->getProcessID() != current->graph.starRoot())
-      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true);
+      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true, po);
 
   return current->graph.dumpDoneWorklist();
 }
@@ -279,21 +288,30 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
   // Orderings of the read just before mutating it
   clock_t init = std::clock();
   std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
-  assert(!readOrderedPOs.empty());
   time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-  while (!readOrderedPOs.empty()) {
-    auto roPo = std::move(readOrderedPOs.front());
-    assert(!readOrderedPOs.front().first.get() &&
-           !readOrderedPOs.front().second.get());
-    readOrderedPOs.pop_front();
+  bool once = false;
+  while (!readOrderedPOs.empty() || !once) {
+    once = true;
+    const PartialOrder& roPo =
+      readOrderedPOs.empty() ? po : readOrderedPOs.front();
+    bool haveArg = (roPo == po);
     ++read_ordered_pos;
 
     // We could do closure here to already rule out some po-s, but don't have to
     auto mutationCandidates =
       current->graph.getMutationCandidates(roPo, negativeWriteMazBranch, nd);
-    if (mutationCandidates.empty())
+    if (mutationCandidates.empty()) {
+      // All candidates are ruled out by negative annotation
+      if (!haveArg) {
+        readOrderedPOs.front().first.reset();
+        readOrderedPOs.front().second.reset();
+        readOrderedPOs.pop_front();
+      }
       ++read_ordered_pos_no_mut_choices;
+      continue;
+    }
+
 
     for (auto& valpos_ann : mutationCandidates) {
       // llvm::errs() << valpos_ann.first.first << "_" << valpos_ann.first.second << "...";
@@ -392,6 +410,11 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
       } // end of loop for newEverGoodOrdered partial order
     } // end of loop for mutation annotation
+    if (!haveArg) {
+        readOrderedPOs.front().first.reset();
+        readOrderedPOs.front().second.reset();
+        readOrderedPOs.pop_front();
+    }
   } // end of loop for readOrdered partial order
 
   return false;

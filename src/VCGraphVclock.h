@@ -80,6 +80,8 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  const PartialOrder& getOriginal() { return original; }
+
   bool lessThanTwoLeavesWithRorW() const { return leafThreadsWithRorW.size() < 2; }
 
   bool empty() const {
@@ -320,10 +322,6 @@ class VCGraphVclock : public VCBasis {
   void initWorklist() {
     assert(worklist_ready.empty());
     assert(worklist_done.empty());
-    worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
-                               (new ThreadPairsVclocks(*(original.first))),
-                               std::unique_ptr<ThreadPairsVclocks>
-                               (new ThreadPairsVclocks(*(original.second))));
   }
 
   // Used just before ordering a non-star read-to-be-mutated
@@ -340,8 +338,11 @@ class VCGraphVclock : public VCBasis {
   // Each PO will be a target for mutations
   std::list<PartialOrder> dumpDoneWorklist() {
     assert(worklist_ready.empty());
-    assert(!worklist_done.empty());
 
+    if (worklist_done.empty())
+      return std::list<PartialOrder>();
+
+    assert(!worklist_done.empty());
     auto result = std::list<PartialOrder>();
     result.swap(worklist_done);
     assert(worklist_done.empty());
@@ -364,7 +365,7 @@ class VCGraphVclock : public VCBasis {
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
   void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                     bool newlyEverGoodWrite);
+                     bool newlyEverGoodWrite, const PartialOrder& po);
 
   // Returns last nodes of processes that are reads or locks
   std::unordered_set<const Node *> getNodesToMutate(const VCAnnotation& annotation) const {
