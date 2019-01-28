@@ -65,6 +65,8 @@ class VCGraphVclock : public VCBasis {
 
   std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
 
+  std::unordered_set<unsigned> leafThreadsWithRorW;
+
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
   // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
   // returns -1 if there is no such write
@@ -78,6 +80,10 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  const PartialOrder& getOriginal() { return original; }
+
+  bool lessThanTwoLeavesWithRorW() const { return leafThreadsWithRorW.size() < 2; }
+
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
             event_to_node.empty() &&
@@ -85,7 +91,7 @@ class VCGraphVclock : public VCBasis {
             !original.first.get() && !original.second.get() &&
             readsNonroot.empty() && readsRoot.empty() &&
             wNonrootUnord.empty() && wRoot.empty() &&
-            tw_candidate.empty() &&
+            leafThreadsWithRorW.empty() && tw_candidate.empty() &&
             worklist_ready.empty() && worklist_done.empty());
   }
 
@@ -111,6 +117,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(),
     wNonrootUnord(),
     wRoot(),
+    leafThreadsWithRorW(),
     tw_candidate(),
     original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
@@ -130,6 +137,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(std::move(oth.readsRoot)),
     wNonrootUnord(std::move(oth.wNonrootUnord)),
     wRoot(std::move(oth.wRoot)),
+    leafThreadsWithRorW(std::move(oth.leafThreadsWithRorW)),
     tw_candidate(std::move(oth.tw_candidate)),
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
@@ -156,6 +164,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(),
     wNonrootUnord(),
     wRoot(),
+    leafThreadsWithRorW(),
     tw_candidate(),
     original(std::move(po)),
     worklist_ready(),
@@ -313,10 +322,6 @@ class VCGraphVclock : public VCBasis {
   void initWorklist() {
     assert(worklist_ready.empty());
     assert(worklist_done.empty());
-    worklist_done.emplace_back(std::unique_ptr<ThreadPairsVclocks>
-                               (new ThreadPairsVclocks(*(original.first))),
-                               std::unique_ptr<ThreadPairsVclocks>
-                               (new ThreadPairsVclocks(*(original.second))));
   }
 
   // Used just before ordering a non-star read-to-be-mutated
@@ -333,8 +338,11 @@ class VCGraphVclock : public VCBasis {
   // Each PO will be a target for mutations
   std::list<PartialOrder> dumpDoneWorklist() {
     assert(worklist_ready.empty());
-    assert(!worklist_done.empty());
 
+    if (worklist_done.empty())
+      return std::list<PartialOrder>();
+
+    assert(!worklist_done.empty());
     auto result = std::list<PartialOrder>();
     result.swap(worklist_done);
     assert(worklist_done.empty());
@@ -357,14 +365,15 @@ class VCGraphVclock : public VCBasis {
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
   void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                     bool newlyEverGoodWrite);
+                     bool newlyEverGoodWrite, const PartialOrder& po);
 
   // Returns last nodes of processes that are reads or locks
-  std::unordered_set<const Node *> getNodesToMutate() const {
+  std::unordered_set<const Node *> getNodesToMutate(const VCAnnotation& annotation) const {
     auto result = std::unordered_set<const Node *>();
     for (unsigned tid = 0; tid < processes.size(); ++tid) {
       const Node *nd = processes[tid][ processes[tid].size() - 1 ];
-      if (isRead(nd) || isLock(nd))
+      if ((isRead(nd) && !annotation.defines(nd)) ||
+          (isLock(nd) && !annotation.isLastLock(nd)))
         result.insert(nd);
     }
     return result;

@@ -212,6 +212,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         wRoot[ev->ml].push_back(nd);
       } else {
         // Nonroot write
+        leafThreadsWithRorW.insert(nd->getProcessID());
         auto itml = wNonrootUnord.find(ev->ml);
         if (itml == wNonrootUnord.end()) {
           wNonrootUnord.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
@@ -251,6 +252,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         readsRoot[ev->ml].insert(nd);
       } else {
         // Nonroot read
+        leafThreadsWithRorW.insert(nd->getProcessID());
         auto itml = readsNonroot.find(ev->ml);
         if (itml == readsNonroot.end()) {
           readsNonroot.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
@@ -887,7 +889,7 @@ bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
 }
 
 void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
-                                  bool newlyEverGoodWrite)
+                                  bool newlyEverGoodWrite, const PartialOrder& po)
 {
   assert(isWrite(ev1) || isRead(ev1));
   auto it = event_to_node.find(ev1);
@@ -951,25 +953,20 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
 
     // Prepare worklist
     worklist_ready.swap(worklist_done);
-    assert(worklist_done.empty() &&
-           !worklist_ready.empty());
+    assert(worklist_done.empty());
 
-    while (!worklist_ready.empty()) {
-      PartialOrder current = std::move(worklist_ready.front());
-      assert(!worklist_ready.front().first.get() &&
-             !worklist_ready.front().second.get());
-      worklist_ready.pop_front();
-
-      if (!areOrdered(nd1, nd2, current) &&
+    if (worklist_ready.empty()) {
+      // So far we work only with one po - the argument
+      if (!areOrdered(nd1, nd2, po) &&
           (isRead(nd1) || isRead(nd2) ||
-           (isObservable(nd1, current) && isObservable(nd2, current))
+           (isObservable(nd1, po) && isObservable(nd2, po))
           )) {
-        // Unordered and either one of them read,
-        // or both writes that are observable
-        // Order these two
+        PartialOrder current = PartialOrder
+          (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
+           std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second))));
         PartialOrder otherorder = PartialOrder
-          (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
-           std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
+          (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
+           std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second))));
         // Handle current: w1 -> w2
         addEdge(nd1, nd2, current);
         worklist_done.push_back(std::move(current));
@@ -980,11 +977,40 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
         worklist_done.push_back(std::move(otherorder));
         assert(!otherorder.first.get() &&
                !otherorder.second.get());
-      } else {
-        // These two do not have to be ordered
-        worklist_done.push_back(std::move(current));
-        assert(!current.first.get() &&
-               !current.second.get());
+      }
+    } else {
+      while (!worklist_ready.empty()) {
+        PartialOrder current = std::move(worklist_ready.front());
+        assert(!worklist_ready.front().first.get() &&
+               !worklist_ready.front().second.get());
+        worklist_ready.pop_front();
+
+        if (!areOrdered(nd1, nd2, current) &&
+            (isRead(nd1) || isRead(nd2) ||
+             (isObservable(nd1, current) && isObservable(nd2, current))
+            )) {
+          // Unordered and either one of them read,
+          // or both writes that are observable
+          // Order these two
+          PartialOrder otherorder = PartialOrder
+            (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
+             std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
+          // Handle current: w1 -> w2
+          addEdge(nd1, nd2, current);
+          worklist_done.push_back(std::move(current));
+          assert(!current.first.get() &&
+                 !current.second.get());
+          // Handle otherorder: w2 -> w1
+          addEdge(nd2, nd1, otherorder);
+          worklist_done.push_back(std::move(otherorder));
+          assert(!otherorder.first.get() &&
+                 !otherorder.second.get());
+        } else {
+          // These two do not have to be ordered
+          worklist_done.push_back(std::move(current));
+          assert(!current.first.get() &&
+                 !current.second.get());
+        }
       }
     }
   }
