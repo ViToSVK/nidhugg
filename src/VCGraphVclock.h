@@ -360,11 +360,12 @@ class VCGraphVclock : public VCBasis {
                      bool newlyEverGoodWrite);
 
   // Returns last nodes of processes that are reads or locks
-  std::unordered_set<const Node *> getNodesToMutate() const {
+  std::unordered_set<const Node *> getNodesToMutate(const VCAnnotation& annotation) const {
     auto result = std::unordered_set<const Node *>();
     for (unsigned tid = 0; tid < processes.size(); ++tid) {
       const Node *nd = processes[tid][ processes[tid].size() - 1 ];
-      if (isRead(nd) || isLock(nd))
+      if ((isRead(nd) && !annotation.defines(nd)) ||
+          (isLock(nd) && !annotation.isLastLock(nd)))
         result.insert(nd);
     }
     return result;

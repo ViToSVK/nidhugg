@@ -73,16 +73,7 @@ bool VCExplorer::explore()
     assert(traceRespectsAnnotation());
 
     // Get nodes available to be mutated
-    auto nodesToMutate = current->graph.getNodesToMutate();
-    for (auto it = nodesToMutate.begin(); it != nodesToMutate.end();) {
-      const Node * nd = *it;
-      assert(isRead(nd) || isLock(nd));
-      if ((isRead(nd) && current->annotation.defines(nd)) ||
-          (isLock(nd) && current->annotation.isLastLock(nd)))
-        it = nodesToMutate.erase(it);
-      else
-        ++it;
-    }
+    auto nodesToMutate = current->graph.getNodesToMutate(current->annotation);
     assert(!nodesToMutate.empty());
 
     // Ordering of nodes to try mutations
