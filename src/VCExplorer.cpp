@@ -208,6 +208,9 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
   assert(current.get());
   current->graph.initWorklist();
 
+  if (current->graph.lessThanTwoLeavesWithRorW())
+    return current->graph.dumpDoneWorklist();
+
   // Go through all nonroot writes
   for (unsigned trace_idx = 0;
        trace_idx < current->trace.size(); ++trace_idx) {
@@ -234,6 +237,9 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
   assert(!current->annotation.defines(nd));
   current->graph.initWorklist(po);
 
+  if (current->graph.lessThanTwoLeavesWithRorW())
+    return current->graph.dumpDoneWorklist();
+
   // If the read is nonroot,
   // order it with all nonroot writes
   if (nd->getProcessID() != current->graph.starRoot())
@@ -247,6 +253,9 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 {
   assert(current.get());
   current->graph.initWorklist(po);
+
+  if (current->graph.lessThanTwoLeavesWithRorW())
+    return current->graph.dumpDoneWorklist();
 
   // After mutation choice, some nonrootwrites
   // become everGood, so they are from now required

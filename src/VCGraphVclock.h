@@ -65,6 +65,8 @@ class VCGraphVclock : public VCBasis {
 
   std::unordered_map<SymAddrSize, std::vector<const Node *>> wRoot;
 
+  std::unordered_set<unsigned> leafThreadsWithRorW;
+
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
   // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
   // returns -1 if there is no such write
@@ -78,6 +80,8 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  bool lessThanTwoLeavesWithRorW() const { return leafThreadsWithRorW.size() < 2; }
+
   bool empty() const {
     return (processes.empty() && cpid_to_processid.empty() &&
             event_to_node.empty() &&
@@ -85,7 +89,7 @@ class VCGraphVclock : public VCBasis {
             !original.first.get() && !original.second.get() &&
             readsNonroot.empty() && readsRoot.empty() &&
             wNonrootUnord.empty() && wRoot.empty() &&
-            tw_candidate.empty() &&
+            leafThreadsWithRorW.empty() && tw_candidate.empty() &&
             worklist_ready.empty() && worklist_done.empty());
   }
 
@@ -111,6 +115,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(),
     wNonrootUnord(),
     wRoot(),
+    leafThreadsWithRorW(),
     tw_candidate(),
     original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
@@ -130,6 +135,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(std::move(oth.readsRoot)),
     wNonrootUnord(std::move(oth.wNonrootUnord)),
     wRoot(std::move(oth.wRoot)),
+    leafThreadsWithRorW(std::move(oth.leafThreadsWithRorW)),
     tw_candidate(std::move(oth.tw_candidate)),
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
@@ -156,6 +162,7 @@ class VCGraphVclock : public VCBasis {
     readsRoot(),
     wNonrootUnord(),
     wRoot(),
+    leafThreadsWithRorW(),
     tw_candidate(),
     original(std::move(po)),
     worklist_ready(),

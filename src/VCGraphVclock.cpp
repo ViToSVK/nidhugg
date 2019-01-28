@@ -212,6 +212,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         wRoot[ev->ml].push_back(nd);
       } else {
         // Nonroot write
+        leafThreadsWithRorW.insert(nd->getProcessID());
         auto itml = wNonrootUnord.find(ev->ml);
         if (itml == wNonrootUnord.end()) {
           wNonrootUnord.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
@@ -251,6 +252,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         readsRoot[ev->ml].insert(nd);
       } else {
         // Nonroot read
+        leafThreadsWithRorW.insert(nd->getProcessID());
         auto itml = readsNonroot.find(ev->ml);
         if (itml == readsNonroot.end()) {
           readsNonroot.emplace_hint(itml, ev->ml, std::unordered_set<const Node*>());
