@@ -216,8 +216,8 @@ DPORDriver::Result DPORDriver::run(){
   case Configuration::POWER:
     TB = new POWERTraceBuilder(conf);
     break;
-  case Configuration::DC: // no mutation priority, root before leaves
-    TB = new VCTraceBuilder(conf, mod, 1, false, true);
+  case Configuration::DC: // mutation priority, leaves before root - MLR
+    TB = new VCTraceBuilder(conf, mod, 1, true, false);
     break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
