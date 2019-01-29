@@ -67,6 +67,8 @@ class VCGraphVclock : public VCBasis {
 
   std::unordered_set<unsigned> leafThreadsWithRorW;
 
+  mutable std::vector<int> closureSafeUntil;
+
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
   // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
   // returns -1 if there is no such write
@@ -91,7 +93,8 @@ class VCGraphVclock : public VCBasis {
             !original.first.get() && !original.second.get() &&
             readsNonroot.empty() && readsRoot.empty() &&
             wNonrootUnord.empty() && wRoot.empty() &&
-            leafThreadsWithRorW.empty() && tw_candidate.empty() &&
+            leafThreadsWithRorW.empty() && closureSafeUntil.empty() &&
+            tw_candidate.empty() &&
             worklist_ready.empty() && worklist_done.empty());
   }
 
@@ -118,6 +121,7 @@ class VCGraphVclock : public VCBasis {
     wNonrootUnord(),
     wRoot(),
     leafThreadsWithRorW(),
+    closureSafeUntil(),
     tw_candidate(),
     original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
@@ -138,6 +142,7 @@ class VCGraphVclock : public VCBasis {
     wNonrootUnord(std::move(oth.wNonrootUnord)),
     wRoot(std::move(oth.wRoot)),
     leafThreadsWithRorW(std::move(oth.leafThreadsWithRorW)),
+    closureSafeUntil(std::move(oth.closureSafeUntil)),
     tw_candidate(std::move(oth.tw_candidate)),
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
@@ -165,6 +170,7 @@ class VCGraphVclock : public VCBasis {
     wNonrootUnord(),
     wRoot(),
     leafThreadsWithRorW(),
+    closureSafeUntil(),
     tw_candidate(),
     original(std::move(po)),
     worklist_ready(),

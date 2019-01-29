@@ -453,10 +453,12 @@ std::pair<bool, bool> VCValClosure::ruleTwo
       } else {
         // The write above is not tail,
         // add edge(s) from readnd to nonroot tail(s)
+        // that supress write above from being tail
         assert(tails.second.size() > 0);
         for (const Node * nonroottail : tails.second) {
-          assert(!graph.areOrdered(readnd, nonroottail, po));
-          graph.addEdge(readnd, nonroottail, po);
+          assert(!graph.hasEdge(readnd, nonroottail, po));
+          if (!graph.hasEdge(nonroottail, readnd, po))
+            graph.addEdge(readnd, nonroottail, po);
         }
         change = true;
       }
@@ -717,9 +719,13 @@ void VCValClosure::valClose
   while (change) {
     change = false;
     for (const auto& key_ann : annotation) {
-      auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
-      if (res.first) { closed = false; return; }
-      if (res.second) change = true;
+      assert(graph.closureSafeUntil.size() > key_ann.first.first);
+      if (graph.closureSafeUntil[key_ann.first.first]
+          < (int) key_ann.first.second) {
+        auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
+        if (res.first) { closed = false; return; }
+        if (res.second) change = true;
+      }
     }
     if (newread) {
       auto res = rules(po, newread, *newann);
