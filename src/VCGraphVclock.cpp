@@ -54,7 +54,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
   has_unannotated_read_or_lock.reserve(trace.size() / 2);
 
   std::unordered_set<SymAddrSize> found_last_lock_for_location;
-  has_unannotated_read_or_lock.reserve(8);
+  found_last_lock_for_location.reserve(8);
 
   std::unordered_set<unsigned> forbidden_processes_ipid;
   forbidden_processes_ipid.reserve(8);
@@ -353,12 +353,24 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
     } // end of loop for evid
   } // end of loop for tid
 
-  // EDGES - extend for original processes
   ThreadPairsVclocks& succ_original = *(original.first);
   ThreadPairsVclocks& pred_original = *(original.second);
   succ_original.reserve(processes.size());
   pred_original.reserve(processes.size());
 
+  // CLOSURE SAFE UNTIL EVENT ID - init
+  bool newProcesses = (succ_original.size() < processes.size());
+  if (newProcesses) {
+    closureSafeUntil = std::vector<int>(processes.size(), -1);
+  } else {
+    closureSafeUntil = std::vector<int>();
+    closureSafeUntil.reserve(succ_original.size());
+    for (unsigned i=0; i<succ_original.size(); i++) {
+      closureSafeUntil.push_back( processes[i].size() - 2);
+    }
+  }
+
+  // EDGES - extend for original processes
   for (unsigned i=0; i<succ_original.size(); i++) {
     succ_original[i].reserve(processes.size());
     pred_original[i].reserve(processes.size());
@@ -371,6 +383,12 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         // new pred slots should be filled with what the last original slot says
         int last_pred = pred_original[i][j]
                                      [pred_original[i][j].size() - 1];
+        if (succ_original[i][j].size() < processes[i].size()) {
+          // New node at process i, all the nodes of process j
+          // after last_pred become unsafe wrt closure
+          if (closureSafeUntil[j] > last_pred)
+            closureSafeUntil[j] = last_pred;
+        }
         while (succ_original[i][j].size() < processes[i].size()) {
           succ_original[i][j].push_back(INT_MAX);
           pred_original[i][j].push_back(last_pred);
@@ -554,6 +572,21 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
   assert( pred[tj][ti][tj_evx] < (int) ti_evx && // ! ti[ti_evx] HB tj[tj_evx]
           pred[ti][tj][ti_evx] < (int) tj_evx && // ! tj[tj_evx] HB ti[ti_evx]
           "Inconsistent succ/pred vector clocks");
+
+  // CLOSURE SAFE UNTIL EVENT ID - update before updating succ+pred
+  // Must be done here because also edges added to maintain
+  // transitivity can affect closure safety
+  for (unsigned i=0; i<succ.size(); i++)
+    if (i != tj) {
+      // Events in thread i up until 'newbound' already happened
+      // before [tj][tj_evx]
+      int newbound = pred[tj][i][tj_evx];
+      if (closureSafeUntil[i] > newbound)
+        closureSafeUntil[i] = newbound;
+    } else {
+      if (closureSafeUntil[tj] > (int) tj_evx - 1)
+        closureSafeUntil[tj] = (int) tj_evx - 1;
+    }
 
   succ[ti][tj][ti_evx] = (int) tj_evx;
   pred[tj][ti][tj_evx] = (int) ti_evx;
