@@ -37,27 +37,20 @@ class VCValClosure {
 
  private:
 
-  inline bool isGood(const Node * writend, const VCAnnotation::Ann& ann) {
-    assert(writend && "Checking nullptr for good");
-    assert(!writend->getEvent() || isWrite(writend));
-    auto key = std::pair<unsigned, unsigned>(writend->getProcessID(),
-                                             writend->getEventID());
-    if (ann.goodLocal && *(ann.goodLocal) == key) {
+  const Node *getGood(const VCAnnotation::Ann& ann) {
+    if (ann.goodLocal) {
       assert(ann.loc != VCAnnotation::Loc::REMOTE);
-      return true;
+      if (ann.goodLocal->first == INT_MAX)
+        return graph.initial_node;
+      auto result = graph.getNode(*(ann.goodLocal));
+      assert(isWrite(result));
+      return result;
     }
-    if (ann.goodRemote.count(key)) {
-      assert(ann.loc != VCAnnotation::Loc::LOCAL);
-      return true;
-    }
-    return false;
+    assert(ann.goodRemote.size() == 1);
+    auto result = graph.getNode(*(ann.goodRemote.begin()));
+    assert(isWrite(result));
+    return result;
   }
-
-  void prepare(const PartialOrder& po, const Node * newread);
-
-  void prepareBounds(const PartialOrder& po, const Node * readnd);
-
-  void updateBounds(const PartialOrder& po, const Node * readnd);
 
   std::pair<bool, bool> ruleOne
     (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
@@ -85,11 +78,6 @@ class VCValClosure {
   const VCAnnotation& annotation;
 
   bool closed;
-
-  // Bounds for NONROOT reads
-  // on visibility of ROOT writes
-  std::unordered_map
-  <const Node *, std::pair<int, int>> wBounds;
 };
 
 #endif // _VC_VALCLOSURE_H
