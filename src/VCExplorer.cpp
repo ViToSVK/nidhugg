@@ -82,38 +82,7 @@ bool VCExplorer::explore()
     // 'rl' means root process is considered before leaf processes
     // 'lr' considers leaf processes before root
     // leaves themselves are always ordered ascendingly by processID
-    auto orderedNodesToMutate = std::list<const Node *>();
-    auto nonrootpid = std::vector<const Node *>(current->graph.size(), nullptr);
-    const Node *pref = nullptr;
-    const Node *root = nullptr;
-    for (auto& ndtomut : nodesToMutate) {
-      if (ndtomut->getProcessID() == current->processMutationPreference &&
-          previous_mutation_process_first)
-        pref = ndtomut;
-      else if (ndtomut->getProcessID() == current->graph.starRoot())
-        root = ndtomut;
-      else
-        nonrootpid.at(ndtomut->getProcessID()) = ndtomut;
-    }
-
-    // Nonroots are taken in the process-id-ascending fashion
-    for (unsigned i=0; i<nonrootpid.size(); ++i)
-      if (nonrootpid[i])
-        orderedNodesToMutate.push_back(nonrootpid[i]);
-
-    if (root) {
-      if (root_before_nonroots)
-        orderedNodesToMutate.push_front(root); // Root before nonroots
-      else
-        orderedNodesToMutate.push_back(root); // Root after nonroots
-    }
-
-    if (pref) {
-      // Preference very first
-      assert(previous_mutation_process_first);
-      if (!root || pref != root)
-        orderedNodesToMutate.push_front(pref);
-    }
+    auto orderedNodesToMutate = orderNodesToMutate(nodesToMutate);
 
     std::vector<unsigned> processLengths = current->graph.getProcessLengths();
 
@@ -204,6 +173,117 @@ bool VCExplorer::explore()
 
   return false;
 }
+
+
+/* *************************** */
+/* ORDER NODES TO MUTATE       */
+/* *************************** */
+
+std::list<const Node *>
+VCExplorer::orderNodesToMutate(std::unordered_set<const Node *>& nodesToMutate)
+{
+  auto result = std::list<const Node *>();
+  auto& valcon = current->graph.scores_valueconflict;
+  auto& conf = current->graph.scores_conflict;
+  auto& wrno = current->graph.scores_writeno;
+
+  while (!nodesToMutate.empty()) {
+    // Find (an arbitrary) maximal node (wrt our score)
+    auto it = nodesToMutate.begin();
+    assert(it != nodesToMutate.end());
+    const Node *maxscore = *it;
+    ++it;
+    while (it != nodesToMutate.end()) {
+      // Comparison
+      bool yes = false;
+      bool no = false;
+      const Node *oth = *it;
+      unsigned max_pid = maxscore->getProcessID();
+      unsigned oth_pid = oth->getProcessID();
+      /*
+      // 3.) hides write conflicting with maxscore with same value as maxscore observed
+      if (valcon.count(oth_pid) && valcon[oth_pid].count(max_pid) &&
+          (!valcon.count(max_pid) || !valcon[max_pid].count(oth_pid)))
+        yes = true;
+      if (valcon.count(max_pid) && valcon[max_pid].count(oth_pid) &&
+          (!valcon.count(oth_pid) || !valcon[oth_pid].count(max_pid)))
+        no = true;
+        // 2.) hides write conflicting with maxscore
+      if (!yes && !no) {
+        if (conf.count(oth_pid) && conf[oth_pid].count(max_pid) &&
+            (!conf.count(max_pid) || !conf[max_pid].count(oth_pid)))
+          yes = true;
+        if (conf.count(max_pid) && conf[max_pid].count(oth_pid) &&
+            (!conf.count(oth_pid) || !conf[oth_pid].count(max_pid)))
+          no = true;
+      }
+      // 1.) hides more writes than maxscore*/
+      if (!yes && !no) {
+        if (wrno.count(oth_pid) &&
+            (!wrno.count(max_pid) || wrno[oth_pid] > wrno[max_pid]))
+          yes = true;
+        if (wrno.count(max_pid) &&
+            (!wrno.count(oth_pid) || wrno[max_pid] > wrno[oth_pid]))
+          no = true;
+      }
+      // 0.) process ID
+      if (!yes && !no) {
+        assert(max_pid != oth_pid);
+        if (oth_pid < max_pid)
+          yes = true;
+        else
+          no = true;
+      }
+      assert(yes != no);
+      if (yes)
+        maxscore = oth;
+      ++it;
+    }
+
+    result.push_back(maxscore);
+    nodesToMutate.erase(maxscore);
+  }
+
+  assert(nodesToMutate.empty());
+  return result;
+
+  /*
+  auto nonrootpid = std::vector<const Node *>(current->graph.size(), nullptr);
+  const Node *pref = nullptr;
+  const Node *root = nullptr;
+  for (auto& ndtomut : nodesToMutate) {
+    if (ndtomut->getProcessID() == current->processMutationPreference &&
+        previous_mutation_process_first)
+      pref = ndtomut;
+    else if (ndtomut->getProcessID() == current->graph.starRoot())
+      root = ndtomut;
+    else
+      nonrootpid.at(ndtomut->getProcessID()) = ndtomut;
+  }
+
+  // Nonroots are taken in the process-id-ascending fashion
+  for (unsigned i=0; i<nonrootpid.size(); ++i)
+    if (nonrootpid[i])
+      result.push_back(nonrootpid[i]);
+
+  if (root) {
+    if (root_before_nonroots)
+      result.push_front(root); // Root before nonroots
+    else
+      result.push_back(root); // Root after nonroots
+  }
+
+  if (pref) {
+    // Preference very first
+    assert(previous_mutation_process_first);
+    if (!root || pref != root)
+      result.push_front(pref);
+  }
+  */
+
+  return result;
+}
+
 
 /* *************************** */
 /* EXTENSION EVENTS ORDERINGS  */

@@ -82,6 +82,10 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  std::unordered_map<unsigned, unsigned> scores_writeno;
+  std::unordered_map<unsigned, std::unordered_set<unsigned>> scores_conflict;
+  std::unordered_map<unsigned, std::unordered_set<unsigned>> scores_valueconflict;
+
   const PartialOrder& getOriginal() { return original; }
 
   bool lessThanTwoLeavesWithRorW() const { return leafThreadsWithRorW.size() < 2; }
@@ -126,7 +130,10 @@ class VCGraphVclock : public VCBasis {
     original(std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks()),
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
     worklist_ready(),
-    worklist_done()
+    worklist_done(),
+    scores_writeno(),
+    scores_conflict(),
+    scores_valueconflict()
       {
         extendGraph(trace, nullptr);
         assert(starRoot() < processes.size() &&
@@ -146,7 +153,10 @@ class VCGraphVclock : public VCBasis {
     tw_candidate(std::move(oth.tw_candidate)),
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
-    worklist_done(std::move(oth.worklist_done))
+    worklist_done(std::move(oth.worklist_done)),
+    scores_writeno(std::move(oth.scores_writeno)),
+    scores_conflict(std::move(oth.scores_conflict)),
+    scores_valueconflict(std::move(oth.scores_valueconflict))
       {
         oth.initial_node = nullptr;
         assert(oth.empty());
@@ -174,7 +184,10 @@ class VCGraphVclock : public VCBasis {
     tw_candidate(),
     original(std::move(po)),
     worklist_ready(),
-    worklist_done()
+    worklist_done(),
+    scores_writeno(),
+    scores_conflict(),
+    scores_valueconflict()
       {
         for (const Node *othnd : oth.nodes) {
           Node *nd = new Node(*othnd);

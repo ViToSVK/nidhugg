@@ -108,6 +108,9 @@ class VCExplorer {
   /* ALGORITHM                   */
   /* *************************** */
 
+  std::list<const Node *>
+    orderNodesToMutate(std::unordered_set<const Node *>& nodesToMutate);
+
   std::list<PartialOrder> orderingsAfterExtension();
 
   std::list<PartialOrder> orderingsReadToBeMutated(const PartialOrder& po, const Node * nd);

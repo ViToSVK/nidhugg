@@ -833,12 +833,10 @@ std::pair<bool, bool> VCValClosure::rules
   // Rule2
   res = ruleTwo(po, readnd, ann);
   if (res.first) return {true, false};
-  //assert(!res.first);
   if (res.second) change = true;
   //Rule3
   res = ruleThree(po, readnd, ann);
   if (res.first) return {true, false};
-  //assert(!res.first);
   if (res.second) change = true;
 
   return {false, change};

@@ -39,32 +39,39 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
   assert(!trace.empty());
   assert(trace.size() >= nodes_size());
 
-  cpid_to_processid.reserve(trace.size() / 2);
-  processes.reserve(trace.size() / 2);
+  cpid_to_processid.reserve(4);
+  processes.reserve(4);
   event_to_node.reserve(trace.size());
 
   // Faster than cpid_to_processid
   std::unordered_map<int, unsigned> ipid_to_processid;
-  ipid_to_processid.reserve(trace.size() / 2);
+  ipid_to_processid.reserve(4);
 
   std::vector<unsigned> cur_evidx(processes.size(), 0);
-  cur_evidx.reserve(trace.size() / 2);
+  cur_evidx.reserve(4);
 
-  std::unordered_set<unsigned> has_unannotated_read_or_lock;
-  has_unannotated_read_or_lock.reserve(trace.size() / 2);
+  std::unordered_map<unsigned, const Node *> has_unannotated_read_or_lock;
+  has_unannotated_read_or_lock.reserve(4);
+
+  std::unordered_set<unsigned> has_second_unannot;
+  has_second_unannot.reserve(4);
 
   std::unordered_set<SymAddrSize> found_last_lock_for_location;
-  found_last_lock_for_location.reserve(8);
+  found_last_lock_for_location.reserve(4);
 
   std::unordered_set<unsigned> forbidden_processes_ipid;
-  forbidden_processes_ipid.reserve(8);
+  forbidden_processes_ipid.reserve(4);
 
   std::unordered_set<CPid> processes_created_within_po_cpid;
-  processes_created_within_po_cpid.reserve(8);
+  processes_created_within_po_cpid.reserve(4);
   processes_created_within_po_cpid.insert(trace[0].cpid);
 
   std::unordered_set<unsigned> processes_with_event_we_dont_add;
-  processes_with_event_we_dont_add.reserve(8);
+  processes_with_event_we_dont_add.reserve(4);
+
+  scores_writeno.reserve(4);
+  scores_conflict.reserve(4);
+  scores_valueconflict.reserve(4);
 
   std::vector<const Node *> spawns;
   spawns.reserve(8);
@@ -140,7 +147,35 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
       // This event happens after something we need to
       // annotate first, so we don't add it into the graph
       assert(ev_idx == processes[proc_idx].size());
+      if (has_second_unannot.count(proc_idx))
+        continue;
       processes_with_event_we_dont_add.insert(proc_idx);
+      if (isRead(ev) || isLock(ev)) {
+        has_second_unannot.insert(proc_idx);
+        continue;
+      }
+      // Compute scores for this thread
+      if (isWrite(ev)) {
+        if (scores_writeno.count(proc_idx))
+          scores_writeno[proc_idx] = scores_writeno[proc_idx] + 1;
+        else
+          scores_writeno.emplace(proc_idx, 1);
+        for (auto& prid_nd : has_unannotated_read_or_lock)
+          if (isRead(prid_nd.second) && prid_nd.first != proc_idx) {
+            if (sameMl(ev, prid_nd.second->getEvent())) {
+              // Hides write that conflicts with nd
+              if (!scores_conflict.count(proc_idx)) {
+                scores_conflict.emplace(proc_idx, std::unordered_set<unsigned>());
+                scores_valueconflict.emplace(proc_idx, std::unordered_set<unsigned>());
+              }
+              scores_conflict[proc_idx].insert(prid_nd.first);
+              if (ev->value == prid_nd.second->getEvent()->value) {
+                // Same value written than what nd observes now
+                scores_valueconflict[proc_idx].insert(prid_nd.first);
+              }
+            }
+          }
+      }
       continue;
     }
     // Joins of processes with an event we didn't include also
@@ -227,7 +262,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
       // Check if nd is not annotated yet
       if (!annotationPtr || !(annotationPtr->defines(nd))) {
         // This will be the last node for the corresponding thread
-        has_unannotated_read_or_lock.insert(nd->getProcessID());
+        has_unannotated_read_or_lock.emplace(nd->getProcessID(), nd);
       }
       auto ittw = tw_candidate.find(ev->ml);
       if (ittw == tw_candidate.end())
@@ -276,7 +311,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
       if (!annotationPtr || !(annotationPtr->locationHasSomeLock(nd))) {
         // No annotated lock has held this location yet
         // This will be the last node for the corresponding thread
-        has_unannotated_read_or_lock.insert(nd->getProcessID());
+        has_unannotated_read_or_lock.emplace(nd->getProcessID(), nd);
       } else {
         // Some lock has already happened on this location
         if (annotationPtr->isLastLock(nd)) {
@@ -286,7 +321,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
         } else if (found_last_lock_for_location.count(nd->getEvent()->ml)) {
           // This is a lock after the last annotated lock for this location
           // This will be the last node for the corresponding thread
-          has_unannotated_read_or_lock.insert(nd->getProcessID());
+          has_unannotated_read_or_lock.emplace(nd->getProcessID(), nd);
         }
       }
     }
