@@ -21,24 +21,29 @@
 #include "VCValClosure.h"
 
 void VCValClosure::prepare
-(const PartialOrder& po, const Node * newread)
+(const PartialOrder& po, const Node * newread, const VCAnnotation::Ann * newann)
 {
   if (newread) {
     // performing a new annotation
     // caches for all old nonroot annotations are set
     #ifndef NDEBUG
     for (auto& key_ann : annotation)
-      assert(graph.getNode(key_ann.first)->getProcessID() == graph.starRoot() ||
+      assert(key_ann.second.oneGW ||
+             graph.getNode(key_ann.first)->getProcessID() == graph.starRoot() ||
              wBounds.count(graph.getNode(key_ann.first)));
     #endif
-    if (newread->getProcessID() != graph.starRoot())
+    assert(newann);
+    if (newread->getProcessID() != graph.starRoot() && !newann->oneGW)
       prepareBounds(po, newread);
   } else {
     // either fully preparing an extension according to the
     // previous annotation, or closing after a lock annotation
-    for (auto& key_ann : annotation)
+    for (auto& key_ann : annotation) {
+      if (key_ann.second.oneGW)
+        continue;
       if (graph.getNode(key_ann.first)->getProcessID() != graph.starRoot())
         prepareBounds(po, graph.getNode(key_ann.first));
+    }
   }
 }
 
@@ -120,13 +125,30 @@ std::pair<bool, bool> VCValClosure::ruleOne
  const VCAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
-  assert(readnd->getProcessID() == graph.starRoot() ||
+  assert(readnd->getProcessID() == graph.starRoot() || ann.oneGW ||
          wBounds.count(readnd));
   // Rule1: there exists a write such that
   // (i) GOOD (ii) HEAD (iii) HB read
   //
   // Note: a local write is always
   // either *HEAD* or *covered*
+
+  if (ann.oneGW && ann.loc != VCAnnotation::Loc::LOCAL) {
+    /* ***************** */
+    /* DATACENTRIC       */
+    /* ***************** */
+    // Rule1: r observes w ...
+    // make w -> r
+    const Node *good = getGood(ann);
+    if (graph.hasEdge(good, readnd, po))
+      return {false, false}; // done, no change
+    if (graph.hasEdge(readnd, good, po))
+      return {true, false}; // impossible
+    graph.addEdge(good, readnd, po);
+    return {false, true}; // done, change
+  }
+
+  assert(!ann.oneGW || ann.loc == VCAnnotation::Loc::LOCAL);
 
   if (readnd->getProcessID() != graph.starRoot()) {
     /* ***************** */
@@ -352,7 +374,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
  const VCAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
-  assert(readnd->getProcessID() == graph.starRoot() ||
+  assert(readnd->getProcessID() == graph.starRoot() || ann.oneGW ||
          wBounds.count(readnd));
   // Rule2: there exists a write such that
   // (i) GOOD (ii) TAIL
@@ -360,6 +382,55 @@ std::pair<bool, bool> VCValClosure::ruleTwo
   // Note: if there is a local and a remote
   // GOOD write, make TAIL the one which
   // forces to add a weaker edge
+
+  if (ann.oneGW && ann.loc != VCAnnotation::Loc::LOCAL) {
+    /* ***************** */
+    /* DATACENTRIC       */
+    /* ***************** */
+    // Rule2: r observes w ...
+    // w -> w' implies r -> w'
+    const Node *good = getGood(ann);
+    bool change = false;
+
+    while (true) {
+      auto tails = graph.getTailWrites(readnd, po);
+      const Node *roottail = tails.first;
+      const auto& nonroottails = tails.second;
+
+      // Is Good a tail?
+      if (roottail && roottail == good)
+        break;
+      bool found = false;
+      for (const Node * nonroottail : nonroottails)
+        if (nonroottail && nonroottail == good) {
+          found = true;
+          break;
+        }
+      if (found) break;
+
+      // Good is not a tail, for all tails
+      // such that w -> w' make r -> w'
+      if (roottail && graph.hasEdge(good, roottail, po)) {
+        if (graph.hasEdge(roottail, readnd, po))
+          return {true, false}; // impossible
+        assert(!graph.hasEdge(readnd, roottail, po));
+        graph.addEdge(readnd, roottail, po);
+        change = true;
+      }
+      for (const Node * nonroottail : nonroottails)
+        if (nonroottail && graph.hasEdge(good, nonroottail, po)) {
+          if (graph.hasEdge(nonroottail, readnd, po))
+            return {true, false}; // impossible
+          assert(!graph.hasEdge(readnd, nonroottail, po));
+          graph.addEdge(readnd, nonroottail, po);
+          change = true;
+        }
+    }
+
+    return {false, change}; // done, change-bool
+  }
+
+  assert(!ann.oneGW || ann.loc == VCAnnotation::Loc::LOCAL);
 
   if (readnd->getProcessID() != graph.starRoot()) {
     /* ***************** */
@@ -505,7 +576,7 @@ std::pair<bool, bool> VCValClosure::ruleThree
  const VCAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
-  assert(readnd->getProcessID() == graph.starRoot() ||
+  assert(readnd->getProcessID() == graph.starRoot() || ann.oneGW ||
          wBounds.count(readnd));
   // Rule3: for every write such that
   // (i) BAD (ii) HEAD (iii) HB read
@@ -516,6 +587,73 @@ std::pair<bool, bool> VCValClosure::ruleThree
   // some visible GOOD write,
   // we need it to HB the 'other' tail
   // (which is GOOD after Rule2)
+
+  if (ann.oneGW && ann.loc != VCAnnotation::Loc::LOCAL) {
+    /* ***************** */
+    /* DATACENTRIC       */
+    /* ***************** */
+    // Rule3: r observes w ...
+    // w' -> r implies w' -> w
+    const Node *good = getGood(ann);
+    bool change = false;
+
+    auto heads = graph.getHeadWrites(readnd, po);
+    const Node *roothead = heads.first;
+    const auto& nonrootheads = heads.second;
+
+    bool found = false;
+    std::unordered_set<const Node *> addEdgeToGood;
+    if (roothead) {
+      if (roothead == good)
+        found = true;
+      else {
+        assert(!graph.hasEdge(readnd, roothead, po));
+        if (graph.hasEdge(roothead, readnd, po))
+          addEdgeToGood.insert(roothead);
+      }
+    }
+    for (const Node * nonroothead : nonrootheads) {
+      if (nonroothead) {
+        if (nonroothead == good)
+          found = true;
+        else {
+          assert(!graph.hasEdge(readnd, nonroothead, po));
+          if (graph.hasEdge(nonroothead, readnd, po))
+            addEdgeToGood.insert(nonroothead);
+        }
+      }
+    }
+
+    if (!found)
+      return {true, false}; // impossible
+
+    for (const Node *badhead : addEdgeToGood) {
+      assert(!graph.areOrdered(badhead, good, po));
+      graph.addEdge(badhead, good, po);
+      change = true;
+    }
+
+    #ifndef NDEBUG
+    heads = graph.getHeadWrites(readnd, po);
+    roothead = heads.first;
+    found = false;
+    if (roothead && roothead == good)
+      found = true;
+    else
+      assert(!roothead || !graph.hasEdge(roothead, readnd, po));
+    for (const Node * nonroothead : heads.second) {
+      if (nonroothead && nonroothead == good)
+        found = true;
+      else
+        assert(!nonroothead || !graph.hasEdge(nonroothead, readnd, po));
+    }
+    assert(found);
+    #endif
+
+    return {false, change}; // done, change-bool
+  }
+
+  assert(!ann.oneGW || ann.loc == VCAnnotation::Loc::LOCAL);
 
   if (readnd->getProcessID() != graph.starRoot()) {
     /* ***************** */
@@ -684,7 +822,7 @@ std::pair<bool, bool> VCValClosure::rules
   //readnd->dump();
   //ann.dump();
   // Update the bounds if it is a nonroot write
-  if (readnd->getProcessID() != graph.starRoot())
+  if (readnd->getProcessID() != graph.starRoot() && !ann.oneGW)
     updateBounds(po, readnd);
 
   bool change = false;
@@ -694,11 +832,13 @@ std::pair<bool, bool> VCValClosure::rules
   if (res.second) change = true;
   // Rule2
   res = ruleTwo(po, readnd, ann);
-  assert(!res.first);
+  if (res.first) return {true, false};
+  //assert(!res.first);
   if (res.second) change = true;
   //Rule3
   res = ruleThree(po, readnd, ann);
-  assert(!res.first);
+  if (res.first) return {true, false};
+  //assert(!res.first);
   if (res.second) change = true;
 
   return {false, change};
@@ -713,7 +853,7 @@ void VCValClosure::valClose
 (const PartialOrder& po, const Node * newread,
  const VCAnnotation::Ann * newann)
 {
-  prepare(po, newread);
+  prepare(po, newread, newann);
 
   bool change = true;
   while (change) {

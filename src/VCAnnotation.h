@@ -53,7 +53,9 @@ class VCAnnotation {
     Ann(int v, Loc l, std::unordered_set<VCIID>&& gr, bool haslocal, VCIID gl)
       : value(v), loc(l), goodRemote(std::move(gr)),
       goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr)
-        {}
+        {
+          oneGW = (goodRemote.empty() || (!haslocal && goodRemote.size() == 1));
+        }
 
     Ann(const Ann& oth)
       : value(oth.value),
@@ -62,20 +64,23 @@ class VCAnnotation {
       goodLocal(oth.goodLocal ?
                 new VCIID(oth.goodLocal->first,
                           oth.goodLocal->second) :
-                nullptr)
+                nullptr),
+      oneGW(oth.oneGW)
         {}
 
     Ann(Ann&& oth)
       : value(oth.value),
       loc(oth.loc),
       goodRemote(std::move(oth.goodRemote)),
-      goodLocal(oth.goodLocal)
+      goodLocal(oth.goodLocal),
+      oneGW(oth.oneGW)
         { oth.goodLocal = nullptr; }
 
     const int value;
     const Loc loc;
     const std::unordered_set<VCIID> goodRemote;
     const VCIID * goodLocal;
+    bool oneGW;
 
     void dump() const;
   };

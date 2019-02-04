@@ -53,7 +53,23 @@ class VCValClosure {
     return false;
   }
 
-  void prepare(const PartialOrder& po, const Node * newread);
+  const Node *getGood(const VCAnnotation::Ann& ann) {
+    if (ann.goodLocal) {
+      assert(ann.loc != VCAnnotation::Loc::REMOTE);
+      if (ann.goodLocal->first == INT_MAX)
+        return graph.initial_node;
+      auto result = graph.getNode(*(ann.goodLocal));
+      assert(isWrite(result));
+      return result;
+    }
+    assert(ann.goodRemote.size() == 1);
+    auto result = graph.getNode(*(ann.goodRemote.begin()));
+    assert(isWrite(result));
+    return result;
+  }
+
+  void prepare(const PartialOrder& po, const Node * newread,
+               const VCAnnotation::Ann * newann);
 
   void prepareBounds(const PartialOrder& po, const Node * readnd);
 
