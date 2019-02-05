@@ -103,6 +103,8 @@ class VCExplorer {
   double time_closure = 0;
   // Whether current extension-po ends in a deadlock
   bool deadlockedExtension;
+  // Count full trace bc of 'read obs val leads into maxtrace' only once
+  bool once_counted_full_trace;
 
   /* *************************** */
   /* ALGORITHM                   */

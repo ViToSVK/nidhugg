@@ -91,13 +91,16 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
                      std::unordered_map<unsigned, const Node *>> mutex_last;
   mutex_first.reserve(8);
 
+  bool someJoinOrProcessNotAdded = false;
+
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
     const VCEvent *ev = &(*traceit);
 
     if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
         // This is a forbidden process because it
         // happens after a so-far unannotated node
-        continue;
+      someJoinOrProcessNotAdded = true;
+      continue;
     }
 
     unsigned proc_idx = INT_MAX;
@@ -136,7 +139,8 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
     unsigned ev_idx = cur_evidx[proc_idx];
 
     // Check if we already haven't added a process-predecessor
-    if (processes_with_event_we_dont_add.count(proc_idx)) {
+    if (processes_with_event_we_dont_add.count(proc_idx) &&
+        !has_unannotated_read_or_lock.count(proc_idx)) {
       assert(ev_idx == processes[proc_idx].size());
       continue;
     }
@@ -169,6 +173,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
           processes_with_event_we_dont_add.count(childs_proc_it->second)) {
         assert(ev_idx == processes[proc_idx].size());
         processes_with_event_we_dont_add.insert(proc_idx);
+        someJoinOrProcessNotAdded = true;
         continue;
       }
     }
@@ -336,6 +341,20 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
            && "Didn't go through entire original part of the basis");
   }
   #endif
+
+  // If there is only one read left and it does not have
+  // any read happening after it in the trace, we do not
+  // have to mutate the read into observing the value it
+  // observes in the trace, we know it creates a safe maxtrace
+  if (has_unannotated_read_or_lock.size() == 1 &&
+      has_second_unannot.empty() &&
+      !someJoinOrProcessNotAdded) {
+    auto it = has_unannotated_read_or_lock.begin();
+    assert(it != has_unannotated_read_or_lock.end());
+    const Node *lastread = it->second;
+    oneReadAndValueCausesMaxTrace = lastread->getEvent()->value;
+    assert(oneReadAndValueCausesMaxTrace != INT_MAX);
+  }
 
   // TAIL WRITE CANDIDATES CACHE
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml

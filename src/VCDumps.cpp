@@ -19,33 +19,34 @@ void removeSubstrings(std::string& s, std::string&& p) {
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
 {
+  out << ev.id << "_" << ev.iid.get_pid();
   switch(ev.kind) {
    case VCEvent::Kind::DUMMY :
-     out << ev.id << "_<size: " << ev.size << ">";
+     out << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::LOAD :
-     out << ev.id << "_read " << ev.ml.addr.to_string() << " <- " << ev.value;
+     out << "_read " << ev.ml.addr.to_string() << " <- " << ev.value;
      break;
    case VCEvent::Kind::STORE :
-     out << ev.id << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
+     out << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
      break;
    case VCEvent::Kind::SPAWN :
-     out << ev.id << "_spawn " << ev.childs_cpid;
+     out << "_spawn " << ev.childs_cpid;
      break;
    case VCEvent::Kind::JOIN :
-     out << ev.id << "_join " << ev.childs_cpid << "_<size: " << ev.size << ">";
+     out << "_join " << ev.childs_cpid << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::M_INIT :
-     out << ev.id << "_mutexinit " << ev.ml.addr.to_string();
+     out << "_mutexinit " << ev.ml.addr.to_string();
      break;
    case VCEvent::Kind::M_DESTROY :
-     out << ev.id << "_mutexdestroy " << ev.ml.addr.to_string();
+     out << "_mutexdestroy " << ev.ml.addr.to_string();
      break;
    case VCEvent::Kind::M_LOCK :
-     out << ev.id << "_lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
+     out << "_lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
      break;
    case VCEvent::Kind::M_UNLOCK :
-     out << ev.id << "_unlock " << ev.ml.addr.to_string();
+     out << "_unlock " << ev.ml.addr.to_string();
      break;
    default :
      out << "_unknown";

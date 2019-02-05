@@ -82,6 +82,8 @@ class VCGraphVclock : public VCBasis {
 
  public:
 
+  int oneReadAndValueCausesMaxTrace;
+
   std::unordered_map<unsigned, unsigned> scores_writeno;
 
   const PartialOrder& getOriginal() { return original; }
@@ -129,6 +131,7 @@ class VCGraphVclock : public VCBasis {
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
     worklist_ready(),
     worklist_done(),
+    oneReadAndValueCausesMaxTrace(INT_MAX),
     scores_writeno()
       {
         extendGraph(trace, nullptr);
@@ -150,6 +153,7 @@ class VCGraphVclock : public VCBasis {
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
     worklist_done(std::move(oth.worklist_done)),
+    oneReadAndValueCausesMaxTrace(oth.oneReadAndValueCausesMaxTrace),
     scores_writeno(std::move(oth.scores_writeno))
       {
         oth.initial_node = nullptr;
@@ -179,6 +183,7 @@ class VCGraphVclock : public VCBasis {
     original(std::move(po)),
     worklist_ready(),
     worklist_done(),
+    oneReadAndValueCausesMaxTrace(INT_MAX),
     scores_writeno()
       {
         for (const Node *othnd : oth.nodes) {

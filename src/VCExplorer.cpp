@@ -75,6 +75,8 @@ bool VCExplorer::explore()
     // Get nodes available to be mutated
     auto nodesToMutate = current->graph.getNodesToMutate(current->annotation);
     assert(!nodesToMutate.empty());
+    assert(current->graph.oneReadAndValueCausesMaxTrace == INT_MAX ||
+           nodesToMutate.size() == 1);
 
     // Ordering of nodes to try mutations
     // Four VCDPOR version: mrl, mlr, rl, lr
@@ -93,6 +95,7 @@ bool VCExplorer::explore()
     time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool once = false;
+    once_counted_full_trace = false;
     while (!extendedPOs.empty() || !once) {
       once = true;
       const PartialOrder& po =
@@ -337,9 +340,20 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       continue;
     }
 
-
+    int oneReadAndValueCausesMaxTrace = current->graph.oneReadAndValueCausesMaxTrace;
     for (auto& valpos_ann : mutationCandidates) {
       // llvm::errs() << valpos_ann.first.first << "_" << valpos_ann.first.second << "...";
+      assert(valpos_ann.first.first != INT_MAX);
+      if (oneReadAndValueCausesMaxTrace == valpos_ann.first.first) {
+        // There is only one read to mutate, after it comes no read if it
+        // sees this value, so we do not have to perform this mutation
+        if (!once_counted_full_trace) {
+          once_counted_full_trace = true;
+          ++executed_traces_full;
+        }
+        continue;
+      }
+
       if (mutationProducesMaxTrace.count(nd->getProcessID()) &&
           mutationProducesMaxTrace
           [nd->getProcessID()].count(valpos_ann.first.first)) {
