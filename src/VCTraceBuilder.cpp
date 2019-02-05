@@ -40,9 +40,7 @@ bool VCTraceBuilder::reset()
   VCExplorer explorer = VCExplorer(std::move(prefix),
                                    !somethingToAnnotate.empty(),
                                    *this,
-                                   this->star_root_index,
-                                   this->previous_mutation_process_first,
-                                   this->root_before_nonroots);
+                                   this->star_root_index);
 
   // Call the main method
   bool error = explorer.explore();

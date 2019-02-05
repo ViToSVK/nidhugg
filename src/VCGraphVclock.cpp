@@ -70,8 +70,6 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
   processes_with_event_we_dont_add.reserve(4);
 
   scores_writeno.reserve(4);
-  scores_conflict.reserve(4);
-  scores_valueconflict.reserve(4);
 
   std::vector<const Node *> spawns;
   spawns.reserve(8);
@@ -160,21 +158,6 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
           scores_writeno[proc_idx] = scores_writeno[proc_idx] + 1;
         else
           scores_writeno.emplace(proc_idx, 1);
-        for (auto& prid_nd : has_unannotated_read_or_lock)
-          if (isRead(prid_nd.second) && prid_nd.first != proc_idx) {
-            if (sameMl(ev, prid_nd.second->getEvent())) {
-              // Hides write that conflicts with nd
-              if (!scores_conflict.count(proc_idx)) {
-                scores_conflict.emplace(proc_idx, std::unordered_set<unsigned>());
-                scores_valueconflict.emplace(proc_idx, std::unordered_set<unsigned>());
-              }
-              scores_conflict[proc_idx].insert(prid_nd.first);
-              if (ev->value == prid_nd.second->getEvent()->value) {
-                // Same value written than what nd observes now
-                scores_valueconflict[proc_idx].insert(prid_nd.first);
-              }
-            }
-          }
       }
       continue;
     }

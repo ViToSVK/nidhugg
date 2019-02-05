@@ -137,9 +137,6 @@ class VCExplorer {
 
   bool traceRespectsAnnotation() const;
 
-  bool previous_mutation_process_first = true;
-  bool root_before_nonroots = true;
-
  public:
 
   bool explore();
@@ -153,10 +150,8 @@ class VCExplorer {
   VCExplorer(std::vector<VCEvent>&& initial_trace,
              bool somethingToAnnotate,
              VCTraceBuilder& tb,
-             int star_root_index, bool p_m_p_f, bool r_b_n)
-    : originalTB(tb),
-    previous_mutation_process_first(p_m_p_f),
-    root_before_nonroots(r_b_n)
+             int star_root_index)
+    : originalTB(tb)
     {
       if (!somethingToAnnotate)
         executed_traces_full = 1;

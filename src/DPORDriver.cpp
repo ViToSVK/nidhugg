@@ -116,16 +116,7 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(llvm::Module *mod, Tr
   case Configuration::ARM: case Configuration::POWER:
     EE = POWERInterpreter::create(mod,static_cast<POWERARMTraceBuilder&>(TB),conf,&ErrorMsg);
     break;
-  case Configuration::VC_MRL:
-    EE = VCInterpreter::create(mod,static_cast<VCTraceBuilder&>(TB),conf,&ErrorMsg);
-    break;
-  case Configuration::VC_MLR:
-    EE = VCInterpreter::create(mod,static_cast<VCTraceBuilder&>(TB),conf,&ErrorMsg);
-    break;
-  case Configuration::VC_RL:
-    EE = VCInterpreter::create(mod,static_cast<VCTraceBuilder&>(TB),conf,&ErrorMsg);
-    break;
-  case Configuration::VC_LR:
+  case Configuration::VC:
     EE = VCInterpreter::create(mod,static_cast<VCTraceBuilder&>(TB),conf,&ErrorMsg);
     break;
   case Configuration::MM_UNDEF:
@@ -225,17 +216,8 @@ DPORDriver::Result DPORDriver::run(){
   case Configuration::POWER:
     TB = new POWERTraceBuilder(conf);
     break;
-  case Configuration::VC_MRL:
-    TB = new VCTraceBuilder(conf, mod, 1, true, true);
-    break;
-  case Configuration::VC_MLR:
-    TB = new VCTraceBuilder(conf, mod, 1, true, false);
-    break;
-  case Configuration::VC_RL:
-    TB = new VCTraceBuilder(conf, mod, 1, false, true);
-    break;
-  case Configuration::VC_LR:
-    TB = new VCTraceBuilder(conf, mod, 1, false, false);
+  case Configuration::VC:
+    TB = new VCTraceBuilder(conf, mod, 1);
     break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
@@ -254,10 +236,7 @@ DPORDriver::Result DPORDriver::run(){
   int computation_count = 0;
   int estimate = 1;
 
-  if (conf.memory_model == Configuration::VC_MRL ||
-      conf.memory_model == Configuration::VC_MLR ||
-      conf.memory_model == Configuration::VC_RL ||
-      conf.memory_model == Configuration::VC_LR) {
+  if (conf.memory_model == Configuration::VC) {
 		run_once(*TB);
 		bool has_error = TB->reset();
 		if (has_error) {

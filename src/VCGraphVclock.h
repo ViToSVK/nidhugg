@@ -83,8 +83,6 @@ class VCGraphVclock : public VCBasis {
  public:
 
   std::unordered_map<unsigned, unsigned> scores_writeno;
-  std::unordered_map<unsigned, std::unordered_set<unsigned>> scores_conflict;
-  std::unordered_map<unsigned, std::unordered_set<unsigned>> scores_valueconflict;
 
   const PartialOrder& getOriginal() { return original; }
 
@@ -131,9 +129,7 @@ class VCGraphVclock : public VCBasis {
              std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks())),
     worklist_ready(),
     worklist_done(),
-    scores_writeno(),
-    scores_conflict(),
-    scores_valueconflict()
+    scores_writeno()
       {
         extendGraph(trace, nullptr);
         assert(starRoot() < processes.size() &&
@@ -154,9 +150,7 @@ class VCGraphVclock : public VCBasis {
     original(std::move(oth.original)),
     worklist_ready(std::move(oth.worklist_ready)),
     worklist_done(std::move(oth.worklist_done)),
-    scores_writeno(std::move(oth.scores_writeno)),
-    scores_conflict(std::move(oth.scores_conflict)),
-    scores_valueconflict(std::move(oth.scores_valueconflict))
+    scores_writeno(std::move(oth.scores_writeno))
       {
         oth.initial_node = nullptr;
         assert(oth.empty());
@@ -185,9 +179,7 @@ class VCGraphVclock : public VCBasis {
     original(std::move(po)),
     worklist_ready(),
     worklist_done(),
-    scores_writeno(),
-    scores_conflict(),
-    scores_valueconflict()
+    scores_writeno()
       {
         for (const Node *othnd : oth.nodes) {
           Node *nd = new Node(*othnd);
