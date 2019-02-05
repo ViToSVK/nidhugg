@@ -853,7 +853,22 @@ void VCValClosure::valClose
 {
   prepare(po, newread, newann);
 
-  bool change = true;
+  bool change = false;
+  if (newread) {
+    auto res = rules(po, newread, *newann);
+    if (res.first) { closed = false; return; }
+    if (res.second) change = true;
+  }
+  if (newread && !change && graph.lessThanTwoLeavesWithRorW()) {
+    // 1) this is not a closure after a lock-annotation
+    // 2) there was no edge added to satisfy rules for newread
+    // 3) we have one leaf with vis. event so no Maz orderings
+    // Therefore we can state that the PO is already closed
+    closed = true;
+    return;
+  }
+
+  change = true;
   while (change) {
     change = false;
     for (const auto& key_ann : annotation) {
@@ -862,10 +877,10 @@ void VCValClosure::valClose
           < (int) key_ann.first.second) {
         auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
         if (res.first) { closed = false; return; }
-        if (res.second) change = true;
+        if (res.second) { change = true; break; }
       }
     }
-    if (newread) {
+    if (newread && !change) {
       auto res = rules(po, newread, *newann);
       if (res.first) { closed = false; return; }
       if (res.second) change = true;
