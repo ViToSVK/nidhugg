@@ -877,10 +877,10 @@ void VCValClosure::valClose
           < (int) key_ann.first.second) {
         auto res = rules(po, graph.getNode(key_ann.first), key_ann.second);
         if (res.first) { closed = false; return; }
-        if (res.second) { change = true; break; }
+        if (res.second) { change = true; }
       }
     }
-    if (newread && !change) {
+    if (newread) {
       auto res = rules(po, newread, *newann);
       if (res.first) { closed = false; return; }
       if (res.second) change = true;
