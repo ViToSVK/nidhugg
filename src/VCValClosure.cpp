@@ -296,12 +296,12 @@ std::pair<bool, bool> VCValClosure::ruleOne
       assert(!isGood(badNonrootHead, ann));
     }
   #endif
-  // Remote good writes are fully ordered, quicksort them
+  // Remote observable good writes are fully ordered, quicksort them
   auto remoteGoodWrites = std::vector<const Node *>();
   auto itunord = graph.wNonrootUnord.find(readnd->getEvent()->ml);
   assert(itunord != graph.wNonrootUnord.end());
   for (auto& remoteWrite : itunord->second)
-    if (isGood(remoteWrite, ann))
+    if (isGood(remoteWrite, ann) && graph.isObservableBy(remoteWrite, readnd, po))
       remoteGoodWrites.push_back(remoteWrite);
 
   if (remoteGoodWrites.size() == 0)
@@ -310,8 +310,9 @@ std::pair<bool, bool> VCValClosure::ruleOne
   for (auto it1 = remoteGoodWrites.begin();
        it1 != remoteGoodWrites.end(); ++it1)
     for (auto it2 = remoteGoodWrites.begin();
-         it2 != it1; ++it2)
+         it2 != it1; ++it2) {
       assert(graph.areOrdered(*it1, *it2, po));
+    }
   #endif
   std::sort(remoteGoodWrites.begin(), remoteGoodWrites.end(),
             VCGraphVclock::POcomp(graph, po));
