@@ -210,10 +210,14 @@ VCExplorer::orderNodesToMutate(std::unordered_set<const Node *>& nodesToMutate)
             (!wrno.count(oth_pid) || wrno[max_pid] > wrno[oth_pid]))
           no = true;
       }
-      // 0.) process ID
+      // 0.) process ID (root first)
       if (!yes && !no) {
         assert(max_pid != oth_pid);
-        if (oth_pid < max_pid)
+        if (oth_pid == current->graph.starRoot())
+          yes = true;
+        else if (max_pid == current->graph.starRoot())
+          no = true;
+        else if (oth_pid < max_pid)
           yes = true;
         else
           no = true;
