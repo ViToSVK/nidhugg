@@ -38,6 +38,8 @@ class VCTrace {
 
   unsigned processMutationPreference;
 
+  bool reusedTrace;
+
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
@@ -50,26 +52,27 @@ class VCTrace {
     annotation(),
     negative(),
     graph(this->trace, star_root_index),
-    processMutationPreference(0)
+    processMutationPreference(0),
+    reusedTrace(false)
       {};
 
   VCTrace(std::vector<VCEvent>&& trace,
           const VCAnnotation& annotation,
           const VCAnnotationNeg& negative,
           VCGraphVclock&& graph,
-          unsigned pref)
+          unsigned pref, bool reus)
   : trace(std::move(trace)),
     annotation(annotation),
     negative(negative),
     graph(std::move(graph)),
-    processMutationPreference(pref)
+    processMutationPreference(pref),
+    reusedTrace(reus)
       {};
 
   VCTrace(VCTrace&& tr) = default;
   VCTrace& operator=(VCTrace&& tr) = delete;
   VCTrace(const VCTrace&) = delete;
   VCTrace& operator=(const VCTrace&) = delete;
-
 };
 
 #endif

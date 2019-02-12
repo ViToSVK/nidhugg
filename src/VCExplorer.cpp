@@ -611,7 +611,8 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                  mutatedAnnotation,
                  negativeWriteMazBranch,
                  std::move(mutatedGraph),
-                 processMutationPreference));
+                 processMutationPreference,
+                 mutationFollowsCurrentTrace));
   assert(mutatedTrace.empty() && mutatedGraph.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -683,18 +684,55 @@ VCExplorer::extendTrace(std::vector<VCEvent>&& tr)
 /* *************************** */
 
 bool VCExplorer::traceRespectsAnnotation() const {
+  std::unordered_map<SymAddrSize, VCIID> toObserve;
+  std::unordered_set<SymAddrSize> dontObserve;
   for (unsigned i=0; i < current->trace.size(); ++i) {
     const VCEvent& ev = current->trace[i];
+    if (isWrite(ev)) {
+      if (!current->graph.hasNodeWithEvent(ev))
+        dontObserve.insert(ev.ml);
+      else
+        toObserve[ev.ml] = VCIID(ev.pid, ev.event_order);
+    }
     if (isRead(ev) && current->annotation.defines(ev.pid, ev.event_order)) {
+      if (!current->reusedTrace && dontObserve.count(ev.ml)) {
+        //current->graph.to_dot("");
+        //current->annotation.dump();
+        //current->graph.getNode(ev)->dump();
+        //llvm::errs() << "OBSERVED WRITE NOT IN GRAPH\n";
+        return false;
+      }
       const auto& ann = current->annotation.getAnn(ev.pid, ev.event_order);
       if (ann.value != ev.value) {
         //current->graph.to_dot("");
         //current->annotation.dump();
         //current->graph.getNode(ev)->dump();
+        //ann.dump();
         //llvm::errs() << "ANNVALUE: " << ann.value << "  EVENTVALUE: " << ev.value << "\n";
+        //llvm::errs() << (current->reusedTrace?"REUSED":"FRESH") << " TRACE\n";
         return false;
       }
-      // TODO: check also if observes one of the good writes
+      if (!current->reusedTrace) {
+        VCIID observed = (toObserve.count(ev.ml))?toObserve[ev.ml]:
+          VCIID(INT_MAX, INT_MAX);
+        bool observedIsGood = false;
+        if (ann.goodLocal && (*(ann.goodLocal)) == observed)
+          observedIsGood = true;
+        else {
+          for (const VCIID& gr : ann.goodRemote)
+            if (gr == observed)
+              observedIsGood = true;
+        }
+        if (!observedIsGood) {
+          //current->graph.to_dot("");
+          //current->annotation.dump();
+          //current->graph.getNode(ev)->dump();
+          //ann.dump();
+          //llvm::errs() << "OBSERVED WRITE IS NOT GOOD: ["
+          //             << observed.first << "][" << observed.second << "]\n";
+          return false;
+        }
+      }
     }
   }
 
