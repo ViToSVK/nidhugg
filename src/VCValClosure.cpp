@@ -369,9 +369,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
   assert(ann.loc == VCAnnotation::Loc::ANY);
   assert(wBounds.count(readnd));
-  #ifndef NDEBUG
   int& low = wBounds[readnd].first;
-  #endif
   int& high = wBounds[readnd].second;
   const std::vector<const Node *>&
     wRemote = graph.wRoot.at(readnd->getEvent()->ml);
