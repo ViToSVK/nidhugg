@@ -116,19 +116,19 @@ class VCExplorer {
     (const PartialOrder& po, const std::vector<const Node *> newEverGood);
 
   bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
-                  const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
+                  const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
   bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
-                  const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd);
+                  const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
   std::pair<bool, bool> // <error?, added_into_worklist?>
     extendAndAdd(PartialOrder&& mutatedPo,
-                 const VCAnnotation& mutatedAnnotation,
-                 const VCAnnotationNeg& negativeWriteMazBranch,
+                 const ZAnnotation& mutatedAnnotation,
+                 const ZAnnotationNeg& negativeWriteMazBranch,
                  unsigned processMutationPreference,
                  bool mutationFollowsCurrentTrace);
 
-  TraceExtension reuseTrace(const VCAnnotation& mutatedAnnotation);
+  TraceExtension reuseTrace(const ZAnnotation& mutatedAnnotation);
 
   TraceExtension extendTrace(std::vector<VCEvent>&& tr);
 

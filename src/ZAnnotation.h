@@ -18,8 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_ANNOTATION_H_
-#define _VC_ANNOTATION_H_
+#ifndef _Z_ANNOTATION_H_
+#define _Z_ANNOTATION_H_
 
 #include "VCBasis.h"
 #include "VCHelpers.h"
@@ -40,7 +40,7 @@ namespace std {
   };
 }
 
-class VCAnnotation {
+class ZAnnotation {
  public:
   enum class Loc {
     LOCAL, REMOTE, ANY
@@ -92,11 +92,11 @@ class VCAnnotation {
 
  public:
 
-  VCAnnotation() = default;
-  VCAnnotation(const VCAnnotation&) = default;
-  VCAnnotation& operator=(const VCAnnotation&) = default;
-  VCAnnotation(VCAnnotation&& a) = default;
-  VCAnnotation& operator=(VCAnnotation&& a) = default;
+  ZAnnotation() = default;
+  ZAnnotation(const ZAnnotation&) = default;
+  ZAnnotation& operator=(const ZAnnotation&) = default;
+  ZAnnotation(ZAnnotation&& a) = default;
+  ZAnnotation& operator=(ZAnnotation&& a) = default;
 
   bool empty() const { return mapping.empty(); }
   size_t size() const { return mapping.size(); }
@@ -223,12 +223,12 @@ class VCAnnotation {
 
 namespace std {
   template <>
-  struct hash<std::pair<int, VCAnnotation::Loc>> {
-    std::size_t operator()(const std::pair<int, VCAnnotation::Loc>& val_loc) const {
+  struct hash<std::pair<int, ZAnnotation::Loc>> {
+    std::size_t operator()(const std::pair<int, ZAnnotation::Loc>& val_loc) const {
       return hash<int>()(val_loc.first) +
              (size_t) val_loc.second;
     }
   };
 }
 
-#endif // _VC_ANNOTATION_H_
+#endif // _Z_ANNOTATION_H_

@@ -27,7 +27,7 @@
 class VCValClosure {
  public:
 
-  VCValClosure(const VCGraphVclock& gr, const VCAnnotation& an)
+  VCValClosure(const VCGraphVclock& gr, const ZAnnotation& an)
   : graph(gr), annotation(an) {}
 
   VCValClosure(const VCValClosure& oth) = default;
@@ -37,9 +37,9 @@ class VCValClosure {
 
  private:
 
-  const Node *getGood(const VCAnnotation::Ann& ann) {
+  const Node *getGood(const ZAnnotation::Ann& ann) {
     if (ann.goodLocal) {
-      assert(ann.loc != VCAnnotation::Loc::REMOTE);
+      assert(ann.loc != ZAnnotation::Loc::REMOTE);
       if (ann.goodLocal->first == INT_MAX)
         return graph.initial_node;
       auto result = graph.getNode(*(ann.goodLocal));
@@ -53,21 +53,21 @@ class VCValClosure {
   }
 
   std::pair<bool, bool> ruleOne
-    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleTwo
-    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleThree
-    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> rules
-    (const PartialOrder& po, const Node * readnd, const VCAnnotation::Ann& ann);
+    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
 
  public:
 
   void valClose(const PartialOrder& po, const Node * newread,
-                const VCAnnotation::Ann * newval);
+                const ZAnnotation::Ann * newval);
 
   void valCloseLock(const PartialOrder& po,
                     const Node * locknode,
@@ -75,7 +75,7 @@ class VCValClosure {
 
   const VCGraphVclock& graph;
 
-  const VCAnnotation& annotation;
+  const ZAnnotation& annotation;
 
   bool closed;
 };

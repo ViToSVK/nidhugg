@@ -27,7 +27,7 @@
 
 #include "Debug.h"
 #include "VCBasis.h"
-#include "VCAnnotationNeg.h"
+#include "ZAnnotationNeg.h"
 
 using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
 
@@ -161,7 +161,7 @@ class VCGraphVclock : public VCBasis {
   VCGraphVclock(const VCGraphVclock& oth,
                 PartialOrder&& po,
                 const std::vector<VCEvent>& trace,
-                const VCAnnotation& annotation)
+                const ZAnnotation& annotation)
   : VCBasis(oth),
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
@@ -214,7 +214,7 @@ class VCGraphVclock : public VCBasis {
   //    threads+nodes while keeping all the original info
   // Special case: initial trace extends an empty graph
   void extendGraph(const std::vector<VCEvent>& trace,
-                   const VCAnnotation *annotationPtr);
+                   const ZAnnotation *annotationPtr);
 
   /* *************************** */
   /* EDGE QUESTIONS              */
@@ -370,11 +370,11 @@ class VCGraphVclock : public VCBasis {
 
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-  void orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
+  void orderEventMaz(const VCEvent *ev1, const ZAnnotation& annotation,
                      bool newlyEverGoodWrite, const PartialOrder& po);
 
   // Returns last nodes of processes that are reads or locks
-  std::unordered_set<const Node *> getNodesToMutate(const VCAnnotation& annotation) const {
+  std::unordered_set<const Node *> getNodesToMutate(const ZAnnotation& annotation) const {
     auto result = std::unordered_set<const Node *>();
     for (unsigned tid = 0; tid < processes.size(); ++tid) {
       const Node *nd = processes[tid][ processes[tid].size() - 1 ];
@@ -397,13 +397,13 @@ class VCGraphVclock : public VCBasis {
   }
 
   // Returns mutation candidates for a read node
-  std::map<VCIID, VCAnnotation::Ann>
+  std::map<VCIID, ZAnnotation::Ann>
     getMutationCandidates(const PartialOrder& po,
-                          const VCAnnotationNeg& negative, const Node *readnd) const;
+                          const ZAnnotationNeg& negative, const Node *readnd) const;
 
   // Linearizes a partial order
   std::vector<VCEvent> linearize(const PartialOrder& po,
-                                 const VCAnnotation& annotation) const;
+                                 const ZAnnotation& annotation) const;
 
   /* *************************** */
   /* DUMPS                       */

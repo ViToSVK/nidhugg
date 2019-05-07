@@ -6,7 +6,7 @@
 #include <llvm/IR/Instructions.h>
 
 #include "VCEvent.h"
-#include "VCAnnotation.h"
+#include "ZAnnotation.h"
 #include "VCGraphVclock.h"
 
 void removeSubstrings(std::string& s, std::string&& p) {
@@ -69,21 +69,21 @@ void Node::dump() const {
   llvm::errs() << *this << "\n";
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Loc& loc) {
-  char c = (loc == VCAnnotation::Loc::LOCAL)?'L':
-    ((loc == VCAnnotation::Loc::REMOTE)?'R':'A');
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Loc& loc) {
+  char c = (loc == ZAnnotation::Loc::LOCAL)?'L':
+    ((loc == ZAnnotation::Loc::REMOTE)?'R':'A');
   out << c;
   return out;
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Ann& ann) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Ann& ann) {
   out << ann.value << "-" << ann.loc << "_";
-  if (ann.loc != VCAnnotation::Loc::LOCAL) {
+  if (ann.loc != ZAnnotation::Loc::LOCAL) {
     out << "remotegood:";
     for (auto& iid : ann.goodRemote)
       out << "[" << iid.first << "][" << iid.second << "] ";
   }
-  if (ann.loc != VCAnnotation::Loc::REMOTE
+  if (ann.loc != ZAnnotation::Loc::REMOTE
       && ann.goodLocal) {
     if (ann.goodLocal->first == INT_MAX)
       out << "_localgood:INIT ";
@@ -94,11 +94,11 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation::Ann& a
   return out;
 }
 
-void VCAnnotation::Ann::dump() const {
+void ZAnnotation::Ann::dump() const {
   llvm::errs() << *this << "\n";
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot) {
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) {
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
     out << "( ["  << pr.first.first << "][" << pr.first.second
@@ -110,7 +110,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCAnnotation& annot)
   return out;
 }
 
-void VCAnnotation::dump() const {
+void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
 

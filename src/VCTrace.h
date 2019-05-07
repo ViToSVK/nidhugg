@@ -23,7 +23,7 @@
 
 #include <vector>
 
-#include "VCAnnotationNeg.h"
+#include "ZAnnotationNeg.h"
 #include "VCGraphVclock.h"
 
 class VCTrace {
@@ -31,8 +31,8 @@ class VCTrace {
 
   std::vector<VCEvent> trace;
 
-  VCAnnotation annotation;
-  VCAnnotationNeg negative;
+  ZAnnotation annotation;
+  ZAnnotationNeg negative;
 
   VCGraphVclock graph;
 
@@ -54,8 +54,8 @@ class VCTrace {
       {};
 
   VCTrace(std::vector<VCEvent>&& trace,
-          const VCAnnotation& annotation,
-          const VCAnnotationNeg& negative,
+          const ZAnnotation& annotation,
+          const ZAnnotationNeg& negative,
           VCGraphVclock&& graph,
           unsigned pref)
   : trace(std::move(trace)),

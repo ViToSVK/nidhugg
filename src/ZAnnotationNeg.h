@@ -18,20 +18,20 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_ANNOTATIONNEG_H_
-#define _VC_ANNOTATIONNEG_H_
+#ifndef _Z_ANNOTATIONNEG_H_
+#define _Z_ANNOTATIONNEG_H_
 
-#include "VCAnnotation.h"
+#include "ZAnnotation.h"
 
 #include <vector>
 
-class VCAnnotationNeg {
+class ZAnnotationNeg {
  public:
-  VCAnnotationNeg()
+  ZAnnotationNeg()
     : forbids_init(false) {}
 
-  VCAnnotationNeg(const VCAnnotationNeg& oth) = default;
-  VCAnnotationNeg(VCAnnotationNeg&& oth) = default;
+  ZAnnotationNeg(const ZAnnotationNeg& oth) = default;
+  ZAnnotationNeg(ZAnnotationNeg&& oth) = default;
 
   bool forbidsInitialEvent(const Node * readnd) const {
     assert(isRead(readnd) || isLock(readnd));
@@ -80,4 +80,4 @@ class VCAnnotationNeg {
 
 };
 
-#endif // _VC_ANNOTATIONNEG_H_
+#endif // _Z_ANNOTATIONNEG_H_

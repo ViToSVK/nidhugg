@@ -32,7 +32,7 @@
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
 void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
-                                const VCAnnotation *annotationPtr)
+                                const ZAnnotation *annotationPtr)
 {
   assert(worklist_ready.empty());
   assert(worklist_done.empty());
@@ -921,7 +921,7 @@ bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
   return false;
 }
 
-void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annotation,
+void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const ZAnnotation& annotation,
                                   bool newlyEverGoodWrite, const PartialOrder& po)
 {
   assert(isWrite(ev1) || isRead(ev1));
@@ -1049,9 +1049,9 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const VCAnnotation& annota
   }
 }
 
-std::map<VCIID, VCAnnotation::Ann>
+std::map<VCIID, ZAnnotation::Ann>
 VCGraphVclock::getMutationCandidates(const PartialOrder& po,
-                                     const VCAnnotationNeg& negative, const Node *readnd) const
+                                     const ZAnnotationNeg& negative, const Node *readnd) const
 {
   assert(nodes.count(readnd));
   assert(isRead(readnd));
@@ -1143,7 +1143,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
     }
   }
 
-  auto result = std::map<VCIID, VCAnnotation::Ann>();
+  auto result = std::map<VCIID, ZAnnotation::Ann>();
 
   // Have mutateWrites, create possible annotations
   while (!mutateWrites.empty()) {
@@ -1151,10 +1151,10 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
     const Node * writend = *it;
 
     int value = writend->getEvent()->value;
-    VCAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
-      ? VCAnnotation::Loc::ANY :
+    ZAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
+      ? ZAnnotation::Loc::ANY :
       (writend->getProcessID() == readnd->getProcessID()
-       ? VCAnnotation::Loc::LOCAL : VCAnnotation::Loc::REMOTE);
+       ? ZAnnotation::Loc::LOCAL : ZAnnotation::Loc::REMOTE);
 
     assert(!result.count(VCIID(writend->getProcessID(), writend->getEventID())));
 
@@ -1163,7 +1163,7 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
       auto goodRemote = std::unordered_set<VCIID>();
       auto goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
       result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
-                     VCAnnotation::Ann(value, loc, std::move(goodRemote), true, goodLocal));
+                     ZAnnotation::Ann(value, loc, std::move(goodRemote), true, goodLocal));
       mutateWrites.erase(it);
       continue;
     }
@@ -1174,23 +1174,23 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
     goodRemote.emplace(writend->getProcessID(), writend->getEventID());
     auto goodLocal = VCIID(31337, 47);
     result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
-                   VCAnnotation::Ann(value, loc, std::move(goodRemote), false, goodLocal));
+                   ZAnnotation::Ann(value, loc, std::move(goodRemote), false, goodLocal));
     mutateWrites.erase(it);
   }
 
   if (considerInitEvent) {
-    VCAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
-      ? VCAnnotation::Loc::ANY : VCAnnotation::Loc::LOCAL;
+    ZAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
+      ? ZAnnotation::Loc::ANY : ZAnnotation::Loc::LOCAL;
     assert(!result.count(VCIID(INT_MAX, INT_MAX)));
     result.emplace(VCIID(INT_MAX, INT_MAX),
-                   VCAnnotation::Ann(0, loc, std::unordered_set<VCIID>(), true, {INT_MAX, INT_MAX}));
+                   ZAnnotation::Ann(0, loc, std::unordered_set<VCIID>(), true, {INT_MAX, INT_MAX}));
   }
 
   return result;
 }
 
 std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po,
-                                              const VCAnnotation& annotation) const
+                                              const ZAnnotation& annotation) const
 {
   auto result = std::vector<VCEvent>();
   result.reserve(nodes_size());

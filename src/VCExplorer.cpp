@@ -154,7 +154,7 @@ bool VCExplorer::explore()
       //llvm::errs() << "********* EXTENSION *********\n";
       //current->graph.to_dot(po, "");
 
-      auto negativeWriteMazBranch = VCAnnotationNeg(current->negative);
+      auto negativeWriteMazBranch = ZAnnotationNeg(current->negative);
       deadlockedExtension = true;
 
       // Try all possible nodes available to mutate
@@ -282,7 +282,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 /* *************************** */
 
 bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
-                            const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
+                            const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isRead(nd));
   // Orderings of the read just before mutating it
@@ -326,7 +326,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
       ++mutations_considered;
       // Collect writes that become newly everGood by performing this mutation
       // We will have to order them with conflicting notEverGood writes
-      VCAnnotation mutatedAnnotation(current->annotation);
+      ZAnnotation mutatedAnnotation(current->annotation);
       auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, vciid_ann.second);
       auto newlyEverGoodWrites = std::vector<const Node *>();
       for (auto& vciid : newlyEverGoodVCIIDs) {
@@ -431,7 +431,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 /* *************************** */
 
 bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
-                            const VCAnnotationNeg& negativeWriteMazBranch, const Node *nd)
+                            const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isLock(nd));
   auto lastLock = current->annotation.getLastLock(nd);
@@ -451,7 +451,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
                                   std::unique_ptr<ThreadPairsVclocks>
                                   (new ThreadPairsVclocks(*(po.second))));
 
-    VCAnnotation mutatedAnnotation(current->annotation);
+    ZAnnotation mutatedAnnotation(current->annotation);
     mutatedAnnotation.setLastLock(nd);
 
     bool mutationFollowsCurrentTrace =
@@ -518,7 +518,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
   // The lock-mutation on 'mutatedPo' succeeded
   ++cl_mutation_succeeded;
 
-  VCAnnotation mutatedAnnotation(current->annotation);
+  ZAnnotation mutatedAnnotation(current->annotation);
   mutatedAnnotation.setLastLock(nd);
 
   bool mutationFollowsCurrentTrace =
@@ -535,8 +535,8 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
 std::pair<bool, bool>
 VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
-                         const VCAnnotation& mutatedAnnotation,
-                         const VCAnnotationNeg& negativeWriteMazBranch,
+                         const ZAnnotation& mutatedAnnotation,
+                         const ZAnnotationNeg& negativeWriteMazBranch,
                          unsigned processMutationPreference,
                          bool mutationFollowsCurrentTrace)
 {
@@ -589,7 +589,7 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 /* *************************** */
 
 VCExplorer::TraceExtension
-VCExplorer::reuseTrace(const VCAnnotation& mutatedAnnotation)
+VCExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
 {
   auto tr = std::vector<VCEvent>();
   tr.reserve(current->trace.size());

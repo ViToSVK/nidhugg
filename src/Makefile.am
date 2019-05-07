@@ -40,8 +40,8 @@ libnidhugg_a_SOURCES = \
   vecset.h vecset.tcc \
   VCEvent.h \
   VCHelpers.h \
-  VCAnnotation.h \
-  VCAnnotationNeg.h \
+  ZAnnotation.h \
+  ZAnnotationNeg.h \
   VCTrace.h \
   VCBasis.h \
   VCGraphVclock.cpp VCGraphVclock.h \

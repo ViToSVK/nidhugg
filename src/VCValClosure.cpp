@@ -28,7 +28,7 @@
 // second) true iff something changed
 std::pair<bool, bool> VCValClosure::ruleOne
 (const PartialOrder& po, const Node * readnd,
- const VCAnnotation::Ann& ann)
+ const ZAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
   // Rule1: r observes w ...
@@ -50,7 +50,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 // second) true iff something changed
 std::pair<bool, bool> VCValClosure::ruleTwo
 (const PartialOrder& po, const Node * readnd,
- const VCAnnotation::Ann& ann)
+ const ZAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
   // Rule2: r observes w ...
@@ -104,7 +104,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 // second) true iff something changed
 std::pair<bool, bool> VCValClosure::ruleThree
 (const PartialOrder& po, const Node * readnd,
- const VCAnnotation::Ann& ann)
+ const ZAnnotation::Ann& ann)
 {
   assert(isRead(readnd));
   // Rule3: r observes w ...
@@ -174,7 +174,7 @@ std::pair<bool, bool> VCValClosure::ruleThree
 
 std::pair<bool, bool> VCValClosure::rules
 (const PartialOrder& po, const Node * readnd,
- const VCAnnotation::Ann& ann)
+ const ZAnnotation::Ann& ann)
 {
   assert(readnd && isRead(readnd));
 
@@ -199,7 +199,7 @@ std::pair<bool, bool> VCValClosure::rules
 
 void VCValClosure::valClose
 (const PartialOrder& po, const Node * newread,
- const VCAnnotation::Ann * newann)
+ const ZAnnotation::Ann * newann)
 {
   // Rule1 for new annotation
   if (newread) {
