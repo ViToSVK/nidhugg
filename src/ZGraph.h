@@ -18,15 +18,15 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_GRAPHVCLOCK_H
-#define _VC_GRAPHVCLOCK_H
+#ifndef __Z_GRAPH_H__
+#define __Z_GRAPH_H__
 
 #include <list>
 #include <vector>
 #include <unordered_set>
 
 #include "Debug.h"
-#include "VCBasis.h"
+#include "ZBasis.h"
 #include "ZAnnotationNeg.h"
 
 using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
@@ -34,7 +34,7 @@ using ThreadPairsVclocks = std::vector<std::vector<  std::vector<int>  >>;
 using PartialOrder = std::pair<std::unique_ptr<ThreadPairsVclocks>,
                                std::unique_ptr<ThreadPairsVclocks>>;
 
-class VCGraphVclock : public VCBasis {
+class ZGraph : public ZBasis {
 
   // succ[i][j][a] = b means:
   // t_i[<=a] *HB* t_j[b<=]
@@ -102,18 +102,18 @@ class VCGraphVclock : public VCBasis {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ~VCGraphVclock() {
+  ~ZGraph() {
     delete initial_node;
     for (const Node *nd: nodes) {
       delete nd;
     }
   }
 
-  VCGraphVclock() = delete;
+  ZGraph() = delete;
 
-  VCGraphVclock(const std::vector<VCEvent>& trace,
+  ZGraph(const std::vector<ZEvent>& trace,
                 int star_root_index)
-  : VCBasis(star_root_index),
+  : ZBasis(star_root_index),
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
     readsNonroot(),
@@ -133,8 +133,8 @@ class VCGraphVclock : public VCBasis {
                "Star root index too big (not enough processes in the initial trace)");
       }
 
-  VCGraphVclock(VCGraphVclock&& oth)
-  : VCBasis(std::move(oth)),
+  ZGraph(ZGraph&& oth)
+  : ZBasis(std::move(oth)),
     initial_node(oth.initial_node),
     nodes(std::move(oth.nodes)),
     readsNonroot(std::move(oth.readsNonroot)),
@@ -152,17 +152,17 @@ class VCGraphVclock : public VCBasis {
         assert(oth.empty());
       }
 
-  VCGraphVclock& operator=(VCGraphVclock&& oth) = delete;
+  ZGraph& operator=(ZGraph&& oth) = delete;
 
-  VCGraphVclock(const VCGraphVclock& oth) = delete;
+  ZGraph(const ZGraph& oth) = delete;
 
   // Partial order that will be moved as original
   // Trace and annotation that will extend this copy of the graph
-  VCGraphVclock(const VCGraphVclock& oth,
+  ZGraph(const ZGraph& oth,
                 PartialOrder&& po,
-                const std::vector<VCEvent>& trace,
+                const std::vector<ZEvent>& trace,
                 const ZAnnotation& annotation)
-  : VCBasis(oth),
+  : ZBasis(oth),
     initial_node(new Node(INT_MAX, INT_MAX, nullptr)),
     nodes(),
     readsNonroot(),
@@ -193,7 +193,7 @@ class VCGraphVclock : public VCBasis {
         extendGraph(trace, &annotation);
       }
 
-  VCGraphVclock& operator=(VCGraphVclock& oth) = delete;
+  ZGraph& operator=(ZGraph& oth) = delete;
 
   /* *************************** */
   /* GRAPH EXTENSION             */
@@ -213,7 +213,7 @@ class VCGraphVclock : public VCBasis {
   // 3) succ/pred_original are extended to accomodate new
   //    threads+nodes while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void extendGraph(const std::vector<VCEvent>& trace,
+  void extendGraph(const std::vector<ZEvent>& trace,
                    const ZAnnotation *annotationPtr);
 
   /* *************************** */
@@ -236,10 +236,10 @@ class VCGraphVclock : public VCBasis {
   }
 
   class POcomp {
-    const VCGraphVclock& gr;
+    const ZGraph& gr;
     const PartialOrder& po;
    public:
-    POcomp(const VCGraphVclock& gr, const PartialOrder& po) : gr(gr), po(po) {}
+    POcomp(const ZGraph& gr, const PartialOrder& po) : gr(gr), po(po) {}
     bool operator() (const Node *n1, const Node *n2) {
       return (gr.hasEdge(n1, n2, po));
     }
@@ -305,7 +305,7 @@ class VCGraphVclock : public VCBasis {
   /* MAIN ALGORITHM              */
   /* *************************** */
 
-  friend class VCValClosure;
+  friend class ZClosure;
 
   // Given 'nd', returns a candidate for a tail write from
   // the thread 'thr_id' using 'succ' and 'tw_candidate'
@@ -370,7 +370,7 @@ class VCGraphVclock : public VCBasis {
 
   // Input: partial orders in worklist_ready
   // Output: partial orders in worklist_done
-  void orderEventMaz(const VCEvent *ev1, const ZAnnotation& annotation,
+  void orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
                      bool newlyEverGoodWrite, const PartialOrder& po);
 
   // Returns last nodes of processes that are reads or locks
@@ -402,7 +402,7 @@ class VCGraphVclock : public VCBasis {
                           const ZAnnotationNeg& negative, const Node *readnd) const;
 
   // Linearizes a partial order
-  std::vector<VCEvent> linearize(const PartialOrder& po,
+  std::vector<ZEvent> linearize(const PartialOrder& po,
                                  const ZAnnotation& annotation) const;
 
   /* *************************** */
@@ -417,4 +417,4 @@ class VCGraphVclock : public VCBasis {
 
 };
 
-#endif // _VC_GRAPHVCLOCK_H
+#endif // __Z_GRAPH_H__

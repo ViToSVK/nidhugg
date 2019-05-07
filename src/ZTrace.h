@@ -18,23 +18,23 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __VC_TRACE_H__
-#define __VC_TRACE_H__
+#ifndef __Z_TRACE_H__
+#define __Z_TRACE_H__
 
 #include <vector>
 
 #include "ZAnnotationNeg.h"
-#include "VCGraphVclock.h"
+#include "ZGraph.h"
 
-class VCTrace {
+class ZTrace {
  public:
 
-  std::vector<VCEvent> trace;
+  std::vector<ZEvent> trace;
 
   ZAnnotation annotation;
   ZAnnotationNeg negative;
 
-  VCGraphVclock graph;
+  ZGraph graph;
 
   unsigned processMutationPreference;
 
@@ -42,9 +42,9 @@ class VCTrace {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  VCTrace() = delete;
+  ZTrace() = delete;
 
-  VCTrace(std::vector<VCEvent>&& initial_trace,
+  ZTrace(std::vector<ZEvent>&& initial_trace,
           int star_root_index)
   : trace(std::move(initial_trace)),
     annotation(),
@@ -53,10 +53,10 @@ class VCTrace {
     processMutationPreference(0)
       {};
 
-  VCTrace(std::vector<VCEvent>&& trace,
+  ZTrace(std::vector<ZEvent>&& trace,
           const ZAnnotation& annotation,
           const ZAnnotationNeg& negative,
-          VCGraphVclock&& graph,
+          ZGraph&& graph,
           unsigned pref)
   : trace(std::move(trace)),
     annotation(annotation),
@@ -65,11 +65,11 @@ class VCTrace {
     processMutationPreference(pref)
       {};
 
-  VCTrace(VCTrace&& tr) = default;
-  VCTrace& operator=(VCTrace&& tr) = delete;
-  VCTrace(const VCTrace&) = delete;
-  VCTrace& operator=(const VCTrace&) = delete;
+  ZTrace(ZTrace&& tr) = default;
+  ZTrace& operator=(ZTrace&& tr) = delete;
+  ZTrace(const ZTrace&) = delete;
+  ZTrace& operator=(const ZTrace&) = delete;
 
 };
 
-#endif
+#endif // __Z_TRACE_H__

@@ -18,10 +18,10 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_BASIS_H_
-#define _VC_BASIS_H_
+#ifndef _Z_BASIS_H_
+#define _Z_BASIS_H_
 
-#include "VCEvent.h"
+#include "ZEvent.h"
 
 #include <vector>
 #include <unordered_map>
@@ -33,10 +33,10 @@ class Node {
   const unsigned event_id;
   // Pointer to the Event
   // nullptr -> the initial node
-  const VCEvent *event;
+  const ZEvent *event;
 
  public:
-  Node(unsigned pid, unsigned evid, const VCEvent* ev)
+  Node(unsigned pid, unsigned evid, const ZEvent* ev)
   : process_id(pid), event_id(evid), event(ev) {}
   Node(const Node& oth)
   : process_id(oth.process_id),
@@ -57,8 +57,8 @@ class Node {
 
   unsigned getProcessID() const { return process_id; }
   unsigned getEventID() const { return event_id; }
-  const VCEvent *getEvent() const { return event; }
-  void setEvent(const VCEvent *ev) {
+  const ZEvent *getEvent() const { return event; }
+  void setEvent(const ZEvent *ev) {
     assert(process_id != INT_MAX);
     event = ev;
   }
@@ -73,7 +73,7 @@ class NodePtrComp {
   }
 };
 
-class VCBasis {
+class ZBasis {
  public:
   typedef std::vector<Node *> ProcessT;
   typedef std::vector<ProcessT> ProcessesT;
@@ -84,17 +84,17 @@ class VCBasis {
  protected:
   ProcessesT processes;
   std::unordered_map<CPid, unsigned> cpid_to_processid;
-  std::unordered_map<const VCEvent *, Node *> event_to_node;
+  std::unordered_map<const ZEvent *, Node *> event_to_node;
 
  public:
   // Basis is not responsible for any resources
   // All Node* allocation and deletion happens
   // in the graph classes that inherit Basis
-  VCBasis(int star_root_index) : star_root_index(star_root_index) {}
-  VCBasis(VCBasis&& oth) = default;
-  VCBasis& operator=(VCBasis&& oth) = delete;
-  VCBasis(const VCBasis& oth) = default;
-  VCBasis& operator=(const VCBasis& oth) = delete;
+  ZBasis(int star_root_index) : star_root_index(star_root_index) {}
+  ZBasis(ZBasis&& oth) = default;
+  ZBasis& operator=(ZBasis&& oth) = delete;
+  ZBasis(const ZBasis& oth) = default;
+  ZBasis& operator=(const ZBasis& oth) = delete;
 
   const ProcessT& operator[](unsigned idx) const {
     assert(idx < size());
@@ -146,7 +146,7 @@ class VCBasis {
     : processes(processes), process_idx(process), event_idx(event)
     { assert(process < processes.size() && event < processes[process].size()); }
 
-    friend class VCBasis;
+    friend class ZBasis;
 
    public:
     events_iterator(events_iterator&& oth)
@@ -294,20 +294,20 @@ class VCBasis {
     return nodes_iterator(nd->getProcessID(), nd->getEventID());
   }
 
-  bool hasNodeWithEvent(const VCEvent& ev) const {
+  bool hasNodeWithEvent(const ZEvent& ev) const {
     return event_to_node.find(&ev) != event_to_node.end();
   }
 
-  // Node corresponding to the given VCEvent
-  const Node *getNode(const VCEvent& ev) const {
+  // Node corresponding to the given ZEvent
+  const Node *getNode(const ZEvent& ev) const {
     auto it = event_to_node.find(&ev);
     assert(it != event_to_node.end()
            && "Given event is not tied to any node");
     return it->second;
   }
 
-  // Iterator corresponding to the given VCEvent
-  events_iterator nodes_iterator(const VCEvent& ev) const {
+  // Iterator corresponding to the given ZEvent
+  events_iterator nodes_iterator(const ZEvent& ev) const {
     return nodes_iterator(getNode(ev));
   }
 
@@ -336,4 +336,4 @@ class VCBasis {
 
 };
 
-#endif // _VC_BASIS_H_
+#endif // _Z_BASIS_H_

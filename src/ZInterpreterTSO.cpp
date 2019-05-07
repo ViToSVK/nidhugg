@@ -37,9 +37,8 @@
 
 #include<iostream>
 
-#include "VCInterpreter.h"
-#include "VCTraceBuilder.h"
-#include "VCEvent.h"
+#include "ZInterpreterTSO.h"
+#include "ZBuilderTSO.h"
 
 
 static void SetValue(llvm::Value *V,
@@ -48,13 +47,13 @@ static void SetValue(llvm::Value *V,
   SF.Values[V] = Val;
 }
 
-VCInterpreter::VCInterpreter(llvm::Module *M, VCTraceBuilder &TB,
+ZInterpreterTSO::ZInterpreterTSO(llvm::Module *M, ZBuilderTSO &TB,
                              const Configuration &conf)
   : TSOInterpreter(M,TB,conf), TB(TB)
 {
 }
 
-llvm::ExecutionEngine *VCInterpreter::create(llvm::Module *M, VCTraceBuilder &TB,
+llvm::ExecutionEngine *ZInterpreterTSO::create(llvm::Module *M, ZBuilderTSO &TB,
                                               const Configuration &conf,
                                               std::string *ErrorStr)
 {
@@ -83,10 +82,10 @@ llvm::ExecutionEngine *VCInterpreter::create(llvm::Module *M, VCTraceBuilder &TB
   }
 #endif
 
-  return new VCInterpreter(M,TB,conf);
+  return new ZInterpreterTSO(M,TB,conf);
 }
 
-void VCInterpreter::visitLoadInst(llvm::LoadInst &I)
+void ZInterpreterTSO::visitLoadInst(llvm::LoadInst &I)
 {
   using namespace llvm;
 
@@ -106,7 +105,7 @@ void VCInterpreter::visitLoadInst(llvm::LoadInst &I)
   SetValue(&I, Result, SF);
 }
 
-void VCInterpreter::visitStoreInst(llvm::StoreInst &I)
+void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I)
 {
   using namespace llvm;
 
@@ -123,7 +122,7 @@ void VCInterpreter::visitStoreInst(llvm::StoreInst &I)
   CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
 }
 
-bool VCInterpreter::checkRefuse(llvm::Instruction &I)
+bool ZInterpreterTSO::checkRefuse(llvm::Instruction &I)
 {
   int tid;
   if(isPthreadJoin(I,&tid)){

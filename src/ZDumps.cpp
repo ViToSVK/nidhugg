@@ -5,9 +5,9 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 
-#include "VCEvent.h"
+#include "ZEvent.h"
 #include "ZAnnotation.h"
-#include "VCGraphVclock.h"
+#include "ZGraph.h"
 
 void removeSubstrings(std::string& s, std::string&& p) {
   std::string::size_type n = p.length();
@@ -17,34 +17,34 @@ void removeSubstrings(std::string& s, std::string&& p) {
     s.erase(i, n);
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev)
 {
   switch(ev.kind) {
-   case VCEvent::Kind::DUMMY :
+   case ZEvent::Kind::DUMMY :
      out << ev.id << "_<size: " << ev.size << ">";
      break;
-   case VCEvent::Kind::LOAD :
+   case ZEvent::Kind::LOAD :
      out << ev.id << "_read " << ev.ml.addr.to_string() << " <- " << ev.value;
      break;
-   case VCEvent::Kind::STORE :
+   case ZEvent::Kind::STORE :
      out << ev.id << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
      break;
-   case VCEvent::Kind::SPAWN :
+   case ZEvent::Kind::SPAWN :
      out << ev.id << "_spawn " << ev.childs_cpid;
      break;
-   case VCEvent::Kind::JOIN :
+   case ZEvent::Kind::JOIN :
      out << ev.id << "_join " << ev.childs_cpid << "_<size: " << ev.size << ">";
      break;
-   case VCEvent::Kind::M_INIT :
+   case ZEvent::Kind::M_INIT :
      out << ev.id << "_mutexinit " << ev.ml.addr.to_string();
      break;
-   case VCEvent::Kind::M_DESTROY :
+   case ZEvent::Kind::M_DESTROY :
      out << ev.id << "_mutexdestroy " << ev.ml.addr.to_string();
      break;
-   case VCEvent::Kind::M_LOCK :
+   case ZEvent::Kind::M_LOCK :
      out << ev.id << "_lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
      break;
-   case VCEvent::Kind::M_UNLOCK :
+   case ZEvent::Kind::M_UNLOCK :
      out << ev.id << "_unlock " << ev.ml.addr.to_string();
      break;
    default :
@@ -53,7 +53,7 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const VCEvent& ev)
   return out;
 }
 
-void VCEvent::dump() const {
+void ZEvent::dump() const {
   llvm::errs() << *this << "\n";
 }
 
@@ -114,7 +114,7 @@ void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
 
-void VCGraphVclock::dump_po(const PartialOrder& po) const {
+void ZGraph::dump_po(const PartialOrder& po) const {
   ThreadPairsVclocks& succ = *(po.first);
   ThreadPairsVclocks& pred = *(po.second);
 
@@ -136,7 +136,7 @@ void VCGraphVclock::dump_po(const PartialOrder& po) const {
   llvm::errs() << "\n";
 }
 
-void VCGraphVclock::to_dot(const PartialOrder& po, const char *edge_params) const {
+void ZGraph::to_dot(const PartialOrder& po, const char *edge_params) const {
   ThreadPairsVclocks& succ = *(po.first);
 
   llvm::errs() << "\ndigraph {\n";

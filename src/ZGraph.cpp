@@ -22,8 +22,8 @@
 #include <map>
 #include <stack>
 
-#include "VCHelpers.h"
-#include "VCGraphVclock.h"
+#include "ZHelpers.h"
+#include "ZGraph.h"
 
 /* *************************** */
 /* GRAPH EXTENSION             */
@@ -31,7 +31,7 @@
 
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
-void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
+void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
                                 const ZAnnotation *annotationPtr)
 {
   assert(worklist_ready.empty());
@@ -87,7 +87,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
   mutex_first.reserve(8);
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    const VCEvent *ev = &(*traceit);
+    const ZEvent *ev = &(*traceit);
 
     if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
         // This is a forbidden process because it
@@ -332,7 +332,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
   for (unsigned tid = 0; tid < processes.size(); ++tid) {
     for (unsigned evid = 0; evid < processes[tid].size(); ++evid) {
       // update [ml][tid][evid] for all ml
-      const VCEvent *ev = processes[tid][evid]->getEvent();
+      const ZEvent *ev = processes[tid][evid]->getEvent();
       if (!isWrite(ev) || !tw_candidate.count(ev->ml)) {
         // no update anywhere
         if (evid > 0)
@@ -492,7 +492,7 @@ void VCGraphVclock::extendGraph(const std::vector<VCEvent>& trace,
 // This method maintains:
 // 1) thread-pair-wise transitivity
 // 2) complete transitivity
-void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& po) const
+void ZGraph::addEdge(const Node *n1, const Node *n2, const PartialOrder& po) const
 {
   assert(n1 && n2 && "Do not have such node");
   assert(!areOrdered(n1, n2, po));
@@ -560,7 +560,7 @@ void VCGraphVclock::addEdge(const Node *n1, const Node *n2, const PartialOrder& 
 
 // Helper method for addEdge,
 // maintains thread-pair-wise transitivity
-void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
+void ZGraph::addEdgeHelp(unsigned ti, unsigned ti_evx,
                                 unsigned tj, unsigned tj_evx,
                                 const PartialOrder& po) const
 {
@@ -619,7 +619,7 @@ void VCGraphVclock::addEdgeHelp(unsigned ti, unsigned ti_evx,
 /* MAIN ALGORITHM              */
 /* *************************** */
 
-const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
+const Node * ZGraph::getTailWcandidate(const Node *nd, unsigned thr_id,
                                               const PartialOrder& po) const
 {
   assert(isRead(nd));
@@ -659,7 +659,7 @@ const Node * VCGraphVclock::getTailWcandidate(const Node *nd, unsigned thr_id,
 }
 
 std::pair<const Node *, std::unordered_set<const Node *>>
-VCGraphVclock::getTailWrites(const Node *nd, const PartialOrder& po) const
+ZGraph::getTailWrites(const Node *nd, const PartialOrder& po) const
 {
   assert(isRead(nd));
 
@@ -702,7 +702,7 @@ VCGraphVclock::getTailWrites(const Node *nd, const PartialOrder& po) const
 }
 
 std::pair<const Node *, std::pair<int, int>>
-VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const
+ZGraph::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const
 {
   // TAIL WRITE CANDIDATES CACHE
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
@@ -762,7 +762,7 @@ VCGraphVclock::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialO
 }
 
 std::pair<const Node *, std::unordered_set<const Node *>>
-VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
+ZGraph::getHeadWrites(const Node *nd, const PartialOrder& po) const
 {
   assert(isRead(nd));
 
@@ -866,7 +866,7 @@ VCGraphVclock::getHeadWrites(const Node *nd, const PartialOrder& po) const
   return {rootHead, result};
 }
 
-bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
+bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
 {
   assert(isWrite(nd));
 
@@ -889,7 +889,7 @@ bool VCGraphVclock::isObservable(const Node *nd, const PartialOrder& po) const
   return false;
 }
 
-bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
+bool ZGraph::isObservableBy(const Node *writend, const Node *readnd,
                                    const PartialOrder& po) const
 {
   assert(isWrite(writend) && isRead(readnd) &&
@@ -921,7 +921,7 @@ bool VCGraphVclock::isObservableBy(const Node *writend, const Node *readnd,
   return false;
 }
 
-void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const ZAnnotation& annotation,
+void ZGraph::orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
                                   bool newlyEverGoodWrite, const PartialOrder& po)
 {
   assert(isWrite(ev1) || isRead(ev1));
@@ -1050,7 +1050,7 @@ void VCGraphVclock::orderEventMaz(const VCEvent *ev1, const ZAnnotation& annotat
 }
 
 std::map<VCIID, ZAnnotation::Ann>
-VCGraphVclock::getMutationCandidates(const PartialOrder& po,
+ZGraph::getMutationCandidates(const PartialOrder& po,
                                      const ZAnnotationNeg& negative, const Node *readnd) const
 {
   assert(nodes.count(readnd));
@@ -1189,10 +1189,10 @@ VCGraphVclock::getMutationCandidates(const PartialOrder& po,
   return result;
 }
 
-std::vector<VCEvent> VCGraphVclock::linearize(const PartialOrder& po,
+std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
                                               const ZAnnotation& annotation) const
 {
-  auto result = std::vector<VCEvent>();
+  auto result = std::vector<ZEvent>();
   result.reserve(nodes_size());
 
   auto current = std::vector<unsigned>(processes.size(), 0);

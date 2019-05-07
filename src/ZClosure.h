@@ -18,22 +18,22 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_VALCLOSURE_H
-#define _VC_VALCLOSURE_H
+#ifndef __Z_CLOSURE_H__
+#define __Z_CLOSURE_H__
 
 #include "Debug.h"
-#include "VCGraphVclock.h"
+#include "ZGraph.h"
 
-class VCValClosure {
+class ZClosure {
  public:
 
-  VCValClosure(const VCGraphVclock& gr, const ZAnnotation& an)
+  ZClosure(const ZGraph& gr, const ZAnnotation& an)
   : graph(gr), annotation(an) {}
 
-  VCValClosure(const VCValClosure& oth) = default;
-  VCValClosure& operator=(VCValClosure& oth) = delete;
-  VCValClosure(VCValClosure&& oth) = default;
-  VCValClosure& operator=(VCValClosure&& oth) = delete;
+  ZClosure(const ZClosure& oth) = default;
+  ZClosure& operator=(ZClosure& oth) = delete;
+  ZClosure(ZClosure&& oth) = default;
+  ZClosure& operator=(ZClosure&& oth) = delete;
 
  private:
 
@@ -73,11 +73,11 @@ class VCValClosure {
                     const Node * locknode,
                     const Node * lastunlocknode);
 
-  const VCGraphVclock& graph;
+  const ZGraph& graph;
 
   const ZAnnotation& annotation;
 
   bool closed;
 };
 
-#endif // _VC_VALCLOSURE_H
+#endif // __Z_CLOSURE_H__

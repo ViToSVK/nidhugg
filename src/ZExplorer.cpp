@@ -21,11 +21,11 @@
 #include <iostream>
 #include <iomanip>
 
-#include "VCExplorer.h"
-#include "VCHelpers.h"
-#include "VCDumps.cpp"
+#include "ZExplorer.h"
+#include "ZHelpers.h"
+#include "ZDumps.cpp"
 
-void VCExplorer::print_stats()
+void ZExplorer::print_stats()
 {
   std::setprecision(4);
   std::cout << "\n";
@@ -57,10 +57,10 @@ void VCExplorer::print_stats()
 /* EXPLORE                     */
 /* *************************** */
 
-bool VCExplorer::explore()
+bool ZExplorer::explore()
 {
   while (!worklist.empty()) {
-    // Get a VCTrace
+    // Get a ZTrace
     assert(!current.get());
     current = std::move(worklist.front());
     assert(!worklist.front().get());
@@ -132,7 +132,7 @@ bool VCExplorer::explore()
       bool haveOriginal = (po == current->graph.getOriginal());
 
       init = std::clock();
-      auto withoutMutation = VCValClosure(current->graph, current->annotation);
+      auto withoutMutation = ZClosure(current->graph, current->annotation);
       //llvm::errs() << "no-mutation-closure...";
       withoutMutation.valClose(po, nullptr, nullptr);
       //llvm::errs() << "done\n";
@@ -198,7 +198,7 @@ bool VCExplorer::explore()
       }
     } // end of loop for working with extension POs
 
-    // Delete managed VCTrace
+    // Delete managed ZTrace
     current.reset();
   }
 
@@ -209,7 +209,7 @@ bool VCExplorer::explore()
 /* EXTENSION EVENTS ORDERINGS  */
 /* *************************** */
 
-std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
+std::list<PartialOrder> ZExplorer::orderingsAfterExtension()
 {
   assert(current.get());
   current->graph.initWorklist();
@@ -220,7 +220,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
   // Go through all nonroot writes
   for (unsigned trace_idx = 0;
        trace_idx < current->trace.size(); ++trace_idx) {
-    const VCEvent& ev = current->trace[trace_idx];
+    const ZEvent& ev = current->trace[trace_idx];
     if (current->graph.hasNodeWithEvent(ev)) {
       const Node *nd = current->graph.getNode(ev);
       if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
@@ -237,7 +237,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterExtension()
   return current->graph.dumpDoneWorklist();
 }
 
-std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder& po, const Node * nd)
+std::list<PartialOrder> ZExplorer::orderingsReadToBeMutated(const PartialOrder& po, const Node * nd)
 {
   assert(isRead(nd));
   assert(current.get());
@@ -256,7 +256,7 @@ std::list<PartialOrder> VCExplorer::orderingsReadToBeMutated(const PartialOrder&
   return current->graph.dumpDoneWorklist();
 }
 
-std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
+std::list<PartialOrder> ZExplorer::orderingsAfterMutationChoice
 (const PartialOrder& po, const std::vector<const Node *> newEverGood)
 {
   assert(current.get());
@@ -281,7 +281,7 @@ std::list<PartialOrder> VCExplorer::orderingsAfterMutationChoice
 /* MUTATE READ                 */
 /* *************************** */
 
-bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
+bool ZExplorer::mutateRead(const PartialOrder& po, const ZClosure& withoutMutation,
                             const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isRead(nd));
@@ -364,7 +364,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 
         // Closure after read+mutationChoice orderings and the actual mutation
         init = std::clock();
-        auto withMutation = VCValClosure(withoutMutation);
+        auto withMutation = ZClosure(withoutMutation);
         //llvm::errs() << "closure...";
         withMutation.valClose(mutatedPo, nd, &(vciid_ann.second));
         //llvm::errs() << "done\n";
@@ -430,7 +430,7 @@ bool VCExplorer::mutateRead(const PartialOrder& po, const VCValClosure& withoutM
 /* MUTATE LOCK                 */
 /* *************************** */
 
-bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
+bool ZExplorer::mutateLock(const PartialOrder& po, const ZClosure& withoutMutation,
                             const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
   assert(isLock(nd));
@@ -473,7 +473,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   while (!lastunlockit.atProcessEnd()) {
     ++lastunlockit;
-    const VCEvent& cand = *((*lastunlockit)->getEvent());
+    const ZEvent& cand = *((*lastunlockit)->getEvent());
     if (isUnlock(cand) && cand.ml == nd->getEvent()->ml) {
       assert(cand.ml == lastlocknd->getEvent()->ml);
       lastunlocknd = (*lastunlockit);
@@ -503,7 +503,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 
   clock_t init = std::clock();
   // Closure with lock-mutation
-  auto withMutation = VCValClosure(withoutMutation);
+  auto withMutation = ZClosure(withoutMutation);
   withMutation.valCloseLock(mutatedPo, nd, lastunlocknd);
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -534,7 +534,7 @@ bool VCExplorer::mutateLock(const PartialOrder& po, const VCValClosure& withoutM
 /* *************************** */
 
 std::pair<bool, bool>
-VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
+ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                          const ZAnnotation& mutatedAnnotation,
                          const ZAnnotationNeg& negativeWriteMazBranch,
                          unsigned processMutationPreference,
@@ -564,13 +564,13 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 
   clock_t init = std::clock();
   assert(mutatedPo.first.get() && mutatedPo.second.get());
-  VCGraphVclock mutatedGraph(current->graph,       // base for graph
+  ZGraph mutatedGraph(current->graph,       // base for graph
                              std::move(mutatedPo), // base for 'original' po
                              mutatedTrace.trace,   // to extend the graph
                              mutatedAnnotation);   // to extend the graph
   assert(!mutatedPo.first.get() && !mutatedPo.second.get());
-  std::unique_ptr<VCTrace> mutatedVCTrace
-    (new VCTrace(std::move(mutatedTrace.trace),
+  std::unique_ptr<ZTrace> mutatedZTrace
+    (new ZTrace(std::move(mutatedTrace.trace),
                  mutatedAnnotation,
                  negativeWriteMazBranch,
                  std::move(mutatedGraph),
@@ -578,8 +578,8 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   assert(mutatedTrace.empty() && mutatedGraph.empty());
   time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-  worklist.push_front(std::move(mutatedVCTrace));
-  assert(!mutatedVCTrace.get());
+  worklist.push_front(std::move(mutatedZTrace));
+  assert(!mutatedZTrace.get());
 
   return {false, true};
 }
@@ -588,15 +588,15 @@ VCExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 /* REUSE TRACE                 */
 /* *************************** */
 
-VCExplorer::TraceExtension
-VCExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
+ZExplorer::TraceExtension
+ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
 {
-  auto tr = std::vector<VCEvent>();
+  auto tr = std::vector<ZEvent>();
   tr.reserve(current->trace.size());
   bool somethingToAnnotate = false;
 
 
-  for (const VCEvent& ev : current->trace) {
+  for (const ZEvent& ev : current->trace) {
     if (!somethingToAnnotate) {
       const Node *nd = (current->graph.hasNodeWithEvent(ev))
         ?current->graph.getNode(ev):nullptr;
@@ -620,11 +620,11 @@ VCExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
 /* EXTEND TRACE                */
 /* *************************** */
 
-VCExplorer::TraceExtension
-VCExplorer::extendTrace(std::vector<VCEvent>&& tr)
+ZExplorer::TraceExtension
+ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 {
   clock_t init = std::clock();
-  VCTraceBuilder TB(originalTB.config, originalTB.M, std::move(tr));
+  ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(tr));
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
   time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
   interpreter_used++;
@@ -645,9 +645,9 @@ VCExplorer::extendTrace(std::vector<VCEvent>&& tr)
 /* TRACE RESPECTS ANNOTATION   */
 /* *************************** */
 
-bool VCExplorer::traceRespectsAnnotation() const {
+bool ZExplorer::traceRespectsAnnotation() const {
   for (unsigned i=0; i < current->trace.size(); ++i) {
-    const VCEvent& ev = current->trace[i];
+    const ZEvent& ev = current->trace[i];
     if (isRead(ev) && current->annotation.defines(ev.pid, ev.event_order)) {
       const auto& ann = current->annotation.getAnn(ev.pid, ev.event_order);
       if (ann.value != ev.value) {

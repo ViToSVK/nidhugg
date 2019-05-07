@@ -18,8 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __VC_TRACE_BUILDER_H__
-#define __VC_TRACE_BUILDER_H__
+#ifndef __Z_BUILDER_TSO_H__
+#define __Z_BUILDER_TSO_H__
 
 #include <iostream>
 #include <config.h>
@@ -35,9 +35,9 @@
 #include "DPORDriver.h"
 #include "TSOTraceBuilder.h"
 #include "Trace.h"
-#include "VCEvent.h"
+#include "ZEvent.h"
 
-class VCTraceBuilder : public TSOTraceBuilder {
+class ZBuilderTSO : public TSOTraceBuilder {
 
  public:
 
@@ -75,11 +75,11 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
-  std::vector<VCEvent> prefix;
+  std::vector<ZEvent> prefix;
 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
-  std::vector<VCEvent> replay_trace;
+  std::vector<ZEvent> replay_trace;
 
   // The index into prefix corresponding to the last event that was
   // scheduled. Has the value -1 when no events have been scheduled.
@@ -98,13 +98,13 @@ class VCTraceBuilder : public TSOTraceBuilder {
   std::unordered_map<SymAddrSize, int> lastWrite;
 
 
-  VCEvent& curnode() {
+  ZEvent& curnode() {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
   };
 
-  const VCEvent& curnode() const {
+  const ZEvent& curnode() const {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
     return prefix[prefix_idx];
@@ -124,7 +124,7 @@ class VCTraceBuilder : public TSOTraceBuilder {
   /* *************************** */
 
   // Use at the very beginning to get an initial trace
-  VCTraceBuilder(const Configuration &conf, llvm::Module *m,
+  ZBuilderTSO(const Configuration &conf, llvm::Module *m,
                  unsigned s_r_i, bool p_m_p_f, bool r_b_n)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(true), sch_replay(false), sch_extend(false),
@@ -138,8 +138,8 @@ class VCTraceBuilder : public TSOTraceBuilder {
   // Use when you want to do the following:
   // (step1) replay the trace tr
   // (step2) get a maximal extension
-  VCTraceBuilder(const Configuration &conf,
-                 llvm::Module *m, std::vector<VCEvent>&& tr)
+  ZBuilderTSO(const Configuration &conf,
+                 llvm::Module *m, std::vector<ZEvent>&& tr)
   : TSOTraceBuilder(conf), config(conf), M(m),
     sch_initial(false), sch_replay(true), sch_extend(false),
     replay_trace(std::move(tr))
@@ -183,9 +183,9 @@ class VCTraceBuilder : public TSOTraceBuilder {
     abort();
   }
 
-  // Called from VCExplorer on a TB created exclusively for this
+  // Called from ZExplorer on a TB created exclusively for this
   // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<VCEvent>, bool> extendGivenTrace();
+  std::pair<std::vector<ZEvent>, bool> extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;
@@ -199,4 +199,4 @@ class VCTraceBuilder : public TSOTraceBuilder {
 
 };
 
-#endif
+#endif // __Z_BUILDER_TSO_H__

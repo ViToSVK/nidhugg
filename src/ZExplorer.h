@@ -18,31 +18,31 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __VC_EXPLORER_H__
-#define __VC_EXPLORER_H__
+#ifndef __Z_EXPLORER_H__
+#define __Z_EXPLORER_H__
 
 #include <list>
 #include <memory>
 #include <time.h>
 
-#include "VCTraceBuilder.h"
-#include "VCTrace.h"
-#include "VCValClosure.h"
+#include "ZBuilderTSO.h"
+#include "ZTrace.h"
+#include "ZClosure.h"
 
-class VCExplorer {
+class ZExplorer {
 
-  VCTraceBuilder& originalTB;
+  ZBuilderTSO& originalTB;
 
-  std::list<std::unique_ptr<VCTrace>> worklist;
+  std::list<std::unique_ptr<ZTrace>> worklist;
 
-  std::unique_ptr<VCTrace> current;
+  std::unique_ptr<ZTrace> current;
 
   std::unordered_map<int, std::unordered_set<VCIID>>
     mutationProducesMaxTrace;
 
   class TraceExtension {
    public:
-    TraceExtension(std::vector<VCEvent>&& extension, bool someToAnn)
+    TraceExtension(std::vector<ZEvent>&& extension, bool someToAnn)
       : trace(std::move(extension)),
       somethingToAnnotate(someToAnn),
       hasError(false), hasAssumeBlockedThread(false)
@@ -50,7 +50,7 @@ class VCExplorer {
         assert(extension.empty());
       }
 
-    TraceExtension(std::pair<std::vector<VCEvent>&&, bool>&& extension_someToAnn)
+    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn)
       : TraceExtension(std::move(extension_someToAnn.first),
                        extension_someToAnn.second) {}
 
@@ -58,7 +58,7 @@ class VCExplorer {
       return (trace.empty());
     }
 
-    std::vector<VCEvent> trace;
+    std::vector<ZEvent> trace;
     bool somethingToAnnotate;
     bool hasError;
     bool hasAssumeBlockedThread;
@@ -115,10 +115,10 @@ class VCExplorer {
   std::list<PartialOrder> orderingsAfterMutationChoice
     (const PartialOrder& po, const std::vector<const Node *> newEverGood);
 
-  bool mutateRead(const PartialOrder& po, const VCValClosure& withoutMutation,
+  bool mutateRead(const PartialOrder& po, const ZClosure& withoutMutation,
                   const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
-  bool mutateLock(const PartialOrder& po, const VCValClosure& withoutMutation,
+  bool mutateLock(const PartialOrder& po, const ZClosure& withoutMutation,
                   const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
   std::pair<bool, bool> // <error?, added_into_worklist?>
@@ -130,7 +130,7 @@ class VCExplorer {
 
   TraceExtension reuseTrace(const ZAnnotation& mutatedAnnotation);
 
-  TraceExtension extendTrace(std::vector<VCEvent>&& tr);
+  TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
   bool traceRespectsAnnotation() const;
 
@@ -147,9 +147,9 @@ class VCExplorer {
   /* CONSTRUCTOR                 */
   /* *************************** */
 
-  VCExplorer(std::vector<VCEvent>&& initial_trace,
+  ZExplorer(std::vector<ZEvent>&& initial_trace,
              bool somethingToAnnotate,
-             VCTraceBuilder& tb,
+             ZBuilderTSO& tb,
              int star_root_index, bool p_m_p_f, bool r_b_n)
     : originalTB(tb),
     previous_mutation_process_first(p_m_p_f),
@@ -158,7 +158,7 @@ class VCExplorer {
       if (!somethingToAnnotate)
         executed_traces_full = 1;
       else
-        worklist.push_back(std::unique_ptr<VCTrace>(new VCTrace(std::move(initial_trace),
+        worklist.push_back(std::unique_ptr<ZTrace>(new ZTrace(std::move(initial_trace),
                                                                 star_root_index)));
       if (tb.someThreadAssumeBlocked)
         interpreter_assume_blocked_thread = 1;
@@ -166,4 +166,4 @@ class VCExplorer {
 
 };
 
-#endif
+#endif // __Z_EXPLORER_H__

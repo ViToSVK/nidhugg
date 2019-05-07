@@ -18,7 +18,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include "VCValClosure.h"
+#include "ZClosure.h"
 
 /* *************************** */
 /* RULE 1                      */
@@ -26,7 +26,7 @@
 
 // first) true iff impossible
 // second) true iff something changed
-std::pair<bool, bool> VCValClosure::ruleOne
+std::pair<bool, bool> ZClosure::ruleOne
 (const PartialOrder& po, const Node * readnd,
  const ZAnnotation::Ann& ann)
 {
@@ -48,7 +48,7 @@ std::pair<bool, bool> VCValClosure::ruleOne
 
 // first) true iff impossible
 // second) true iff something changed
-std::pair<bool, bool> VCValClosure::ruleTwo
+std::pair<bool, bool> ZClosure::ruleTwo
 (const PartialOrder& po, const Node * readnd,
  const ZAnnotation::Ann& ann)
 {
@@ -102,7 +102,7 @@ std::pair<bool, bool> VCValClosure::ruleTwo
 
 // first) true iff impossible
 // second) true iff something changed
-std::pair<bool, bool> VCValClosure::ruleThree
+std::pair<bool, bool> ZClosure::ruleThree
 (const PartialOrder& po, const Node * readnd,
  const ZAnnotation::Ann& ann)
 {
@@ -172,7 +172,7 @@ std::pair<bool, bool> VCValClosure::ruleThree
 /* RULES                       */
 /* *************************** */
 
-std::pair<bool, bool> VCValClosure::rules
+std::pair<bool, bool> ZClosure::rules
 (const PartialOrder& po, const Node * readnd,
  const ZAnnotation::Ann& ann)
 {
@@ -197,7 +197,7 @@ std::pair<bool, bool> VCValClosure::rules
 /* VAL CLOSE                   */
 /* *************************** */
 
-void VCValClosure::valClose
+void ZClosure::valClose
 (const PartialOrder& po, const Node * newread,
  const ZAnnotation::Ann * newann)
 {
@@ -234,7 +234,7 @@ void VCValClosure::valClose
 /* VAL CLOSE LOCK              */
 /* *************************** */
 
-void VCValClosure::valCloseLock(const PartialOrder& po,
+void ZClosure::valCloseLock(const PartialOrder& po,
                                 const Node * locknode,
                                 const Node * lastunlocknode)
 {

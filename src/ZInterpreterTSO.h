@@ -1,5 +1,5 @@
 /* Copyright (C) 2014-2016 Carl Leonardsson
- * Copyright (C) 2016-2017 Marek Chalupa 
+ * Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2018 Viktor Toman
  *
  * This file is part of Nidhugg.
@@ -19,27 +19,27 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __VC_INTERPRETER_H__
-#define __VC_INTERPRETER_H__
+#ifndef __Z_INTERPRETER_TSO_H__
+#define __Z_INTERPRETER_TSO_H__
 
 #include <config.h>
 #include "TSOInterpreter.h"
-#include "VCTraceBuilder.h"
+#include "ZBuilderTSO.h"
 
-/* A VCInterpreter is an interpreter running under the TSO
+/* A ZInterpreterTSO is an interpreter running under the TSO
  * semantics. The execution should be guided by scheduling from a
- * VCTraceBuilder.
+ * ZBuilderTSO.
  */
-class VCInterpreter : public TSOInterpreter {
+class ZInterpreterTSO : public TSOInterpreter {
 
-  VCTraceBuilder& TB;
+  ZBuilderTSO& TB;
 
  public:
-  explicit VCInterpreter(llvm::Module *M, VCTraceBuilder &TB,
+  explicit ZInterpreterTSO(llvm::Module *M, ZBuilderTSO &TB,
                           const Configuration &conf = Configuration::default_conf);
-  virtual ~VCInterpreter() = default;
+  virtual ~ZInterpreterTSO() = default;
 
-  static llvm::ExecutionEngine *create(llvm::Module *M, VCTraceBuilder &TB,
+  static llvm::ExecutionEngine *create(llvm::Module *M, ZBuilderTSO &TB,
                                  const Configuration &conf = Configuration::default_conf,
                                  std::string *ErrorStr = 0);
 
@@ -63,4 +63,4 @@ class VCInterpreter : public TSOInterpreter {
 };
 
 
-#endif
+#endif // __Z_INTERPRETER_TSO_H__

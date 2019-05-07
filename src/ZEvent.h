@@ -18,8 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VC_EVENT_H_
-#define _VC_EVENT_H_
+#ifndef _Z_EVENT_H_
+#define _Z_EVENT_H_
 
 #if defined(HAVE_LLVM_IR_METADATA_H)
 #include <llvm/IR/Metadata.h>
@@ -43,10 +43,10 @@
  * with other events, and if the sequence has a conflicting event,
  * it must be the LAST event in the sequence.
  */
-class VCEvent {
+class ZEvent {
 
  public:
-  VCEvent(const IID<int> &iid, const CPid& cpid,
+  ZEvent(const IID<int> &iid, const CPid& cpid,
           unsigned instruction_order, unsigned event_order, unsigned id)
     : kind(Kind::DUMMY),
     iid(iid), cpid(cpid), childs_cpid(),
@@ -67,7 +67,7 @@ class VCEvent {
   // Returns a 'copy' of the event
   // If blank: the event will be a part of replay_trace
   // If not blank: the event is used as if it came from an interpreter
-  VCEvent(const VCEvent& oth, int id, bool blank)
+  ZEvent(const ZEvent& oth, int id, bool blank)
     : kind(oth.kind),
     iid(oth.iid) /**/, cpid(oth.cpid) /**/, childs_cpid(),
     size(oth.size) /**/, md(0),
@@ -128,8 +128,8 @@ class VCEvent {
    * -1 means the initial event was observed */
   int observed_id;
 
-  VCEvent copy(int id, bool blank) const {
-    return VCEvent(*this, id, blank);
+  ZEvent copy(int id, bool blank) const {
+    return ZEvent(*this, id, blank);
   }
 
   void setPID(unsigned procid) const {
@@ -139,4 +139,4 @@ class VCEvent {
   void dump() const;
 };
 
-#endif // _VC_EVENT_H_
+#endif // _Z_EVENT_H_

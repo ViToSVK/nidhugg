@@ -21,11 +21,11 @@
 #include <iostream>
 
 #include "Debug.h"
-#include "VCTrace.h"
-#include "VCTraceBuilder.h"
-#include "VCExplorer.h"
+#include "ZTrace.h"
+#include "ZBuilderTSO.h"
+#include "ZExplorer.h"
 
-bool VCTraceBuilder::reset()
+bool ZBuilderTSO::reset()
 {
   if (this->has_error()) {
     this->error_trace = this->get_trace();
@@ -37,7 +37,7 @@ bool VCTraceBuilder::reset()
 
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
-  VCExplorer explorer = VCExplorer(std::move(prefix),
+  ZExplorer explorer = ZExplorer(std::move(prefix),
                                    !somethingToAnnotate.empty(),
                                    *this,
                                    this->star_root_index,
@@ -57,7 +57,7 @@ bool VCTraceBuilder::reset()
 /* SCHEDULING                  */
 /* *************************** */
 
-bool VCTraceBuilder::schedule(int *proc, int *aux, int *alt, bool *dryrun)
+bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 {
   // Not using these arguments
   *dryrun = false;
@@ -75,7 +75,7 @@ bool VCTraceBuilder::schedule(int *proc, int *aux, int *alt, bool *dryrun)
   return schedule_arbitrarily(proc);
 }
 
-bool VCTraceBuilder::schedule_replay_trace(int *proc)
+bool ZBuilderTSO::schedule_replay_trace(int *proc)
 {
   assert(!replay_trace.empty());
   assert(prefix_idx < (int) replay_trace.size());
@@ -154,7 +154,7 @@ bool VCTraceBuilder::schedule_replay_trace(int *proc)
   return ret;
 }
 
-bool VCTraceBuilder::schedule_arbitrarily(int *proc)
+bool ZBuilderTSO::schedule_arbitrarily(int *proc)
 {
   assert(!sch_replay && (sch_initial || sch_extend));
 
@@ -183,7 +183,7 @@ bool VCTraceBuilder::schedule_arbitrarily(int *proc)
 }
 
 // Schedule the next instruction to be the next instruction from thread p
-bool VCTraceBuilder::schedule_thread(int *proc, unsigned p)
+bool ZBuilderTSO::schedule_thread(int *proc, unsigned p)
 {
   if (threads[p].available && !threads[p].sleeping &&
       (conf.max_search_depth < 0 || threads[p].last_event_index() < conf.max_search_depth)) {
@@ -204,7 +204,7 @@ bool VCTraceBuilder::schedule_thread(int *proc, unsigned p)
 }
 
 // Used only when we are not replaying replay_trace
-void VCTraceBuilder::update_prefix(unsigned p)
+void ZBuilderTSO::update_prefix(unsigned p)
 {
   // Here used to be:
   // ++threads[p].clock[p];
@@ -243,7 +243,7 @@ void VCTraceBuilder::update_prefix(unsigned p)
 /* ADDRESSING FEEDBACK FROM INTERPRETER AFTER SCHEDULING   */
 /* ******************************************************* */
 
-void VCTraceBuilder::refuse_schedule()
+void ZBuilderTSO::refuse_schedule()
 {
   // llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
@@ -278,7 +278,7 @@ void VCTraceBuilder::refuse_schedule()
   mark_unavailable(p/2, -1);
 }
 
-void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
+void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
 {
   auto& curn = curnode();
   curn.may_conflict = true;
@@ -291,23 +291,23 @@ void VCTraceBuilder::mayConflict(const SymAddrSize *ml)
   #endif
 }
 
-void VCTraceBuilder::metadata(const llvm::MDNode *md)
+void ZBuilderTSO::metadata(const llvm::MDNode *md)
 {
   if (md) curnode().md = md;
 }
 
-IID<CPid> VCTraceBuilder::get_iid() const
+IID<CPid> ZBuilderTSO::get_iid() const
 {
   IPid pid = curnode().iid.get_pid();
   int idx = curnode().iid.get_index();
   return IID<CPid>(threads[pid].cpid,idx);
 }
 
-void VCTraceBuilder::spawn()
+void ZBuilderTSO::spawn()
 {
   //llvm::errs() << " SPAWN";
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::SPAWN;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::SPAWN;
   mayConflict();
   // store the CPid of the new thread
   IPid parent_ipid = curnode().iid.get_pid();
@@ -319,10 +319,10 @@ void VCTraceBuilder::spawn()
   threads.back().available = false; // Empty store buffer
 }
 
-void VCTraceBuilder::join(int tgt_proc)
+void ZBuilderTSO::join(int tgt_proc)
 {
   //llvm::errs() << " JOIN";
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
   // We make sure that every join is an event with exactly
   // one instruction - only the join instruction itself
   assert(prefix_idx == (int) (prefix.size() - 1));
@@ -346,13 +346,13 @@ void VCTraceBuilder::join(int tgt_proc)
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::JOIN;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::JOIN;
   mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
 }
 
-void VCTraceBuilder::atomic_store(const SymData &sd, int val)
+void ZBuilderTSO::atomic_store(const SymData &sd, int val)
 {
   // Stores to local memory on stack may not conflict
   // Global stores happening with just one thread existing may not conflict
@@ -360,23 +360,23 @@ void VCTraceBuilder::atomic_store(const SymData &sd, int val)
   const SymAddrSize &ml = sd.get_ref();
   if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
     //llvm::errs() << " STORE_" << ml.to_string() << " ";
-    assert(curnode().kind == VCEvent::Kind::DUMMY);
-    curnode().kind = VCEvent::Kind::STORE;
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    curnode().kind = ZEvent::Kind::STORE;
     mayConflict(&ml);
     curnode().value = val;
     lastWrite[ml] = prefix_idx;
   }
 }
 
-void VCTraceBuilder::load(const SymAddrSize &ml, int val)
+void ZBuilderTSO::load(const SymAddrSize &ml, int val)
 {
   // Loads from local memory on stack may not conflict
   // Also global loads happening with just one thread existing may not conflict
   if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
       threads.size() > 2) { // 2 because two entries for each thread
     //llvm::errs() << " LOAD_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
-    assert(curnode().kind == VCEvent::Kind::DUMMY);
-    curnode().kind = VCEvent::Kind::LOAD;
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    curnode().kind = ZEvent::Kind::LOAD;
     mayConflict(&ml);
     curnode().value = val;
     curnode().observed_id =
@@ -386,24 +386,24 @@ void VCTraceBuilder::load(const SymAddrSize &ml, int val)
   }
 }
 
-void VCTraceBuilder::fence()
+void ZBuilderTSO::fence()
 {
   assert(curnode().iid.get_pid() % 2 == 0);
 }
 
-void VCTraceBuilder::mutex_init(const SymAddrSize &ml)
+void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   fence();
   assert(!mutexes.count(ml.addr));
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_INIT;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(-1); // prefix_idx
   mutexes[ml.addr].value = 31337; // default-unlocked mutex
 }
 
-void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
+void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
   fence();
@@ -412,13 +412,13 @@ void VCTraceBuilder::mutex_destroy(const SymAddrSize &ml)
     mutexes[ml.addr] = Mutex(-1);
   }
   assert(mutexes.count(ml.addr));
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_DESTROY;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::M_DESTROY;
   mayConflict(&ml);
   mutexes.erase(ml.addr);
 }
 
-void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
+void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
   fence();
@@ -434,8 +434,8 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   assert(mutex.value == - 1 - (curnode().iid.get_pid() * 1000000)
          && "Unlocked by different process than the one that locked");
 
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_UNLOCK;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::M_UNLOCK;
   mayConflict(&ml);
   curnode().value = ( curnode().iid.get_pid() * 1000000 )
                     + curnode().event_order; // WRITE
@@ -446,7 +446,7 @@ void VCTraceBuilder::mutex_unlock(const SymAddrSize &ml)
   mutex.value = curnode().value; // WRITE
 }
 
-void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
+void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   fence();
@@ -457,7 +457,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   assert(mutexes.count(ml.addr));
   Mutex &mutex = mutexes[ml.addr];
 
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
   // We make sure that every lock is an event with exactly
   // one instruction - only the lock instruction itself
   assert(prefix_idx == (int) (prefix.size() - 1));
@@ -482,8 +482,8 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
   }
 
   assert(curnode().size == 1);
-  assert(curnode().kind == VCEvent::Kind::DUMMY);
-  curnode().kind = VCEvent::Kind::M_LOCK;
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::M_LOCK;
   curnode().observed_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
@@ -499,7 +499,7 @@ void VCTraceBuilder::mutex_lock(const SymAddrSize &ml)
                 // mutex locked by this process (<0)
 }
 
-void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml) {
+void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
   //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
@@ -518,7 +518,7 @@ void VCTraceBuilder::mutex_lock_fail(const SymAddrSize &ml) {
   endsWithLockFail.emplace(curnode().iid.get_pid(), ml);
 }
 
-std::pair<std::vector<VCEvent>, bool> VCTraceBuilder::extendGivenTrace() {
+std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, config));
@@ -535,7 +535,7 @@ std::pair<std::vector<VCEvent>, bool> VCTraceBuilder::extendGivenTrace() {
   return {prefix, !somethingToAnnotate.empty()};
 }
 
-void VCTraceBuilder::add_failed_lock_attempts() {
+void ZBuilderTSO::add_failed_lock_attempts() {
   // Add lock event for every thread ending with a failed mutex lock attempt
   for (auto p_ml : endsWithLockFail) {
     unsigned p = p_ml.first;
@@ -553,14 +553,14 @@ void VCTraceBuilder::add_failed_lock_attempts() {
     assert(prefix.back().id == prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
     assert(curnode().size == 1);
-    assert(curnode().kind == VCEvent::Kind::DUMMY);
-    curnode().kind = VCEvent::Kind::M_LOCK;
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    curnode().kind = ZEvent::Kind::M_LOCK;
 
     mayConflict(&(p_ml.second));
   }
 }
 
-Trace *VCTraceBuilder::get_trace() const
+Trace *ZBuilderTSO::get_trace() const
 {
   if (error_trace) {
     assert(errors.size() == 0);
