@@ -41,7 +41,7 @@ public:
     POWER,
     PSO,
     TSO,
-    DC, // data centric
+    DCTSO, // data centric TSO
   };
   enum DPORAlgorithm{
     SOURCE,
