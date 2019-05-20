@@ -30,3 +30,7 @@ src/Makefile
 src/Makefile.in
 stamp-*
 test-driver
+
+src/GPATH
+src/GRTAGS
+src/GTAGS
