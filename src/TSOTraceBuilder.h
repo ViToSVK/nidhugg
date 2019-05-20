@@ -144,6 +144,12 @@ protected:
     /* Indices in prefix of the events of this process.
      */
     std::vector<unsigned> event_indices;
+		/* Number of instructions executed in this process.
+		 */
+		unsigned executed_instructions = 0;
+		/* Number of events executed in this process.
+		 */
+		unsigned executed_events = 0;
     /* The store buffer of this thread. The store buffer is kept in
      * the Thread object for the real thread, not for the auxiliary.
      *
@@ -251,11 +257,12 @@ protected:
    */
   class Mutex{
   public:
-    Mutex() : last_access(-1), last_lock(-1), locked(false) {};
-    Mutex(int lacc) : last_access(lacc), last_lock(-1), locked(false) {};
+    Mutex() : last_access(-1), last_lock(-1), locked(false), value(-1) {};
+    Mutex(int lacc) : last_access(lacc), last_lock(-1), locked(false), value(-1) {};
     int last_access;
     int last_lock;
     bool locked;
+    int value;
   };
   /* A map containing all pthread mutex objects in the current
    * execution. The key is the position in memory of the actual

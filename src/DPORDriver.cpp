@@ -30,6 +30,8 @@
 #include "StrModule.h"
 #include "TSOInterpreter.h"
 #include "TSOTraceBuilder.h"
+#include "VCInterpreter.h"
+#include "VCTraceBuilder.h"
 
 #include <fstream>
 #include <stdexcept>
@@ -98,8 +100,7 @@ void DPORDriver::reparse(){
     }
   }
 }
-
-llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, const Configuration &conf) const {
+llvm::ExecutionEngine *DPORDriver::create_execution_engine(llvm::Module *mod, TraceBuilder &TB, const Configuration &conf) {
   std::string ErrorMsg;
   llvm::ExecutionEngine *EE = 0;
   switch(conf.memory_model){
@@ -114,6 +115,9 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, con
     break;
   case Configuration::ARM: case Configuration::POWER:
     EE = POWERInterpreter::create(mod,static_cast<POWERARMTraceBuilder&>(TB),conf,&ErrorMsg);
+    break;
+  case Configuration::VC:
+    EE = VCInterpreter::create(mod,static_cast<VCTraceBuilder&>(TB),conf,&ErrorMsg);
     break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
@@ -146,6 +150,10 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, con
   (void)EE->getPointerToFunction(EntryFn);
 
   return EE;
+}
+
+llvm::ExecutionEngine *DPORDriver::create_execution_engine(TraceBuilder &TB, const Configuration &conf) const {
+  return DPORDriver::create_execution_engine(mod, TB, conf);
 }
 
 Trace *DPORDriver::run_once(TraceBuilder &TB) const{
@@ -208,6 +216,9 @@ DPORDriver::Result DPORDriver::run(){
   case Configuration::POWER:
     TB = new POWERTraceBuilder(conf);
     break;
+  case Configuration::VC:
+    TB = new VCTraceBuilder(conf, mod, 1);
+    break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
     break;
@@ -224,47 +235,57 @@ DPORDriver::Result DPORDriver::run(){
 
   int computation_count = 0;
   int estimate = 1;
-  do{
-    if(conf.print_progress && (computation_count+1) % 100 == 0){
-      llvm::dbgs() << esc << "[u" // Restore cursor position
-                   << esc << "[s" // Save cursor position
-                   << esc << "[K" // Erase the line
-                   << "Computation #" << computation_count+1;
-      if(conf.print_progress_estimate){
-        llvm::dbgs() << " ("
-                     << int(100.0*float(computation_count+1)/float(estimate))
-                     << "% of total estimate: "
-                     << estimate << ")";
-      }
-    }
-    if((computation_count+1) % 1000 == 0){
-      reparse();
-    }
-    Trace *t = run_once(*TB);
-    bool t_used = false;
-    if(t && conf.debug_collect_all_traces){
-      res.all_traces.push_back(t);
-      t_used = true;
-    }
-    if(TB->sleepset_is_empty()){
-      ++res.trace_count;
-    }else{
-      ++res.sleepset_blocked_trace_count;
-    }
-    ++computation_count;
-    if(t && t->has_errors() && !res.has_errors()){
-      res.error_trace = t;
-      t_used = true;
-    }
-    bool has_errors = t && t->has_errors();
-    if(!t_used){
-      delete t;
-    }
-    if(has_errors && !conf.explore_all_traces) break;
-    if(conf.print_progress_estimate && (computation_count+1) % 100 == 0){
-      estimate = TB->estimate_trace_count();
-    }
-  }while(TB->reset());
+
+  if (conf.memory_model == Configuration::VC) {
+		run_once(*TB);
+		bool has_error = TB->reset();
+		if (has_error) {
+			res.error_trace = TB->error_trace;
+		}
+	} else {
+		do{
+			if(conf.print_progress && (computation_count+1) % 100 == 0){
+				llvm::dbgs() << esc << "[u" // Restore cursor position
+										 << esc << "[s" // Save cursor position
+										 << esc << "[K" // Erase the line
+										 << "Computation #" << computation_count+1;
+				if(conf.print_progress_estimate){
+					llvm::dbgs() << " ("
+											 << int(100.0*float(computation_count+1)/float(estimate))
+											 << "% of total estimate: "
+											 << estimate << ")";
+				}
+			}
+			if((computation_count+1) % 1000 == 0){
+				reparse();
+			}
+			Trace *t = run_once(*TB);
+			bool t_used = false;
+			if(t && conf.debug_collect_all_traces){
+				res.all_traces.push_back(t);
+				t_used = true;
+			}
+			if(TB->sleepset_is_empty()){
+				++res.trace_count;
+			}else{
+				++res.sleepset_blocked_trace_count;
+			}
+			++computation_count;
+			if(t && t->has_errors() && !res.has_errors()){
+				res.error_trace = t;
+				t_used = true;
+			}
+			bool has_errors = t && t->has_errors();
+			if(!t_used){
+				delete t;
+			}
+			if(has_errors && !conf.explore_all_traces) break;
+			if(conf.print_progress_estimate && (computation_count+1) % 100 == 0){
+				estimate = TB->estimate_trace_count();
+			}
+		}while(TB->reset());
+	}
+
 
   if(conf.print_progress){
     llvm::dbgs() << "\n";

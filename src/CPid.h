@@ -71,6 +71,8 @@ public:
    */
   int get_aux_index() const;
 
+	friend struct std::hash<CPid>;
+	
   std::string to_string() const;
 
   /* Comparison implements a total order over CPids. */
@@ -127,7 +129,14 @@ public:
    *
    * Pre: c is in this set.
    */
-  CPid new_aux(const CPid &c);
+  CPid new_aux(const CPid &c);  
+  /* Spawn a new (meaning not in this set) real process child for c,
+   * but DO NOT add it to this set. Only find out what the cpid
+   * would be and return it.
+   *
+   * Pre: c is in this set.
+   */
+  CPid dry_spawn(const CPid &c);
 private:
   /* Each CPid in the set is identified by a natural number: its index
    * in the sequence of CPids in creation order. Each CPid with
@@ -149,5 +158,19 @@ private:
   std::vector<CPid> cpids;
   std::map<CPid,int> identifiers;
 };
+
+namespace std{
+  template <>
+  struct hash<CPid>{
+    std::size_t operator()(const CPid& k) const{
+			using std::size_t;
+      size_t res = k.proc_seq.size();
+			size_t st = k.proc_seq.size() < 4 ? k.proc_seq.size() : 4;
+			for(size_t i = 1; i < st; ++i)
+				res ^= (size_t) k.proc_seq[i] << (4*i);
+			return res;
+    }
+  };
+}
 
 #endif

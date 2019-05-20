@@ -122,6 +122,7 @@ protected:
      * current function record.
      */
     std::vector<ExecutionContext> ECStack;
+    /* Whether this thread is assume-blocked. */
     bool AssumeBlocked;
     /* Contains the IDs (index into Threads) of all other threads
      * which are awaiting the termination of this thread to perform a

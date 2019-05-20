@@ -3074,6 +3074,7 @@ void Interpreter::callAssume(Function *F, const std::vector<GenericValue> &ArgVa
     ECStack()->clear();
     AtExitHandlers.clear();
     Threads[CurrentThread].AssumeBlocked = true;
+    TB.someThreadAssumeBlocked = true;
     /* Do not call terminate. We don't want to explicitly terminate
      * since that would allow other processes to join with this
      * process.
@@ -3361,8 +3362,8 @@ bool Interpreter::checkRefuse(Instruction &I){
     int tid;
     if(isPthreadJoin(I,&tid)){
       if(0 <= tid && tid < int(Threads.size()) && tid != CurrentThread){
-        if(Threads[tid].ECStack.size() || Threads[tid].AssumeBlocked) {
-          /* The awaited thread is still executing. */
+        if(Threads[tid].ECStack.size() || Threads[tid].AssumeBlocked){
+          /* The awaited thread is still executing or assume-blocked. */
           TB.refuse_schedule();
           Threads[tid].AwaitingJoin.push_back(CurrentThread);
           return true;

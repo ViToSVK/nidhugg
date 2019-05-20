@@ -64,6 +64,8 @@ struct SymMBlock {
   std::string to_string(std::function<std::string(int)> pid_str
                         = (std::string(&)(int))std::to_string) const;
 
+	friend struct std::hash<SymMBlock>;
+
 private:
   SymMBlock(int pid, int alloc) : pid(pid), alloc(alloc) {
     assert(0 <= pid && pid <= UINT16_MAX);
@@ -228,5 +230,32 @@ public:
   void *get_block() const { return block.get(); };
   block_type &get_shared_block() { return block; };
 };
+
+namespace std {
+  template <>
+  struct hash<SymMBlock> {
+    std::size_t operator()(const SymMBlock& k) const {
+			return ((k.pid % 64) << 6)
+			     ^ (k.get_no() % 64);
+    }
+  };
+  
+  template <>
+  struct hash<SymAddr> {
+    std::size_t operator()(const SymAddr& k) const {
+			return (std::hash<SymMBlock>()(k.block) << 6)
+			     ^ (k.offset % 64);
+    }
+  };
+
+  template <>
+  struct hash<SymAddrSize> {
+    std::size_t operator()(const SymAddrSize& k) const {
+			return (std::hash<SymAddr>()(k.addr) << 6)
+			     ^ (k.size % 64);
+    }
+  };
+ 
+}
 
 #endif

@@ -109,6 +109,8 @@ public:
    * traces that have been seen.
    */
   virtual int estimate_trace_count() const { return 1; };
+  /* Storage of an error trace */
+  Trace *error_trace = nullptr;
 protected:
   const Configuration &conf;
   std::vector<Error*> errors;
