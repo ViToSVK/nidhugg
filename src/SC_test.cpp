@@ -1195,12 +1195,14 @@ BOOST_AUTO_TEST_CASE(Mutex_trylock_2){
   Configuration conf = DPORDriver_test::get_sc_conf();
   std::string module = StrModule::portasm(R"(
 @lck = global i32 0, align 8
- define i8* @l(i8*) {
+
+define i8* @l(i8*) {
   call i32 @pthread_mutex_lock(i32* @lck)
   call i32 @pthread_mutex_unlock(i32* @lck)
   ret i8* null
 }
- define i8* @tl(i8*) {
+
+define i8* @tl(i8*) {
   %lckret = call i32 @pthread_mutex_trylock(i32* @lck)
   %lcksuc = icmp eq i32 %lckret, 0
   br i1 %lcksuc, label %CS, label %exit
@@ -1210,7 +1212,8 @@ CS:
 exit:
   ret i8* null
 }
- define i32 @main() {
+
+define i32 @main() {
   %il1 = alloca i64, align 8
   %il2 = alloca i64, align 8
   %itl = alloca i64, align 8
@@ -1220,7 +1223,8 @@ exit:
   call i32 @pthread_create(i64* %il2, %attr_t* null, i8* (i8*)* @l, i8* null) #3
   ret i32 0
 }
- %attr_t = type { i64, [48 x i8] }
+
+%attr_t = type { i64, [48 x i8] }
 declare i32 @pthread_create(i64*, %attr_t*, i8* (i8*)*, i8*)
 declare i32 @pthread_mutex_lock(i32*)
 declare i32 @pthread_mutex_unlock(i32*)
@@ -1228,16 +1232,16 @@ declare i32 @pthread_mutex_trylock(i32*)
 declare i32 @pthread_mutex_init(i32*, i32*)
 )");
 
-   DPORDriver *driver = DPORDriver::parseIR(module, conf);
+  DPORDriver *driver = DPORDriver::parseIR(module, conf);
   DPORDriver::Result res = driver->run();
   delete driver;
 
-   conf.dpor_algorithm = Configuration::OPTIMAL;
+  conf.dpor_algorithm = Configuration::OPTIMAL;
   driver = DPORDriver::parseIR(module, conf);
   DPORDriver::Result opt_res = driver->run();
   delete driver;
 
-   CPid P0, PL1 = P0.spawn(0), PTL = P0.spawn(1), PL2 = P0.spawn(2);
+  CPid P0, PL1 = P0.spawn(0), PTL = P0.spawn(1), PL2 = P0.spawn(2);
   IID<CPid> lck1(PL1,1), ulck1(PL1,2), lck2(PL2,1), ulck2(PL2,2),
     tlck(PTL,1), tulck(PTL,4);
   DPORDriver_test::trace_set_spec expected =
@@ -2652,7 +2656,8 @@ BOOST_AUTO_TEST_CASE(Assume_2){
   Configuration conf = DPORDriver_test::get_sc_conf();
   std::string module = StrModule::portasm(R"(
 @var = global i32 0, align 4
- define i8* @t1(i8*) {
+
+define i8* @t1(i8*) {
   %2 = load volatile i32, i32* @var, align 4
   %3 = icmp eq i32 %2, 2
   %4 = zext i1 %3 to i32
@@ -2660,14 +2665,16 @@ BOOST_AUTO_TEST_CASE(Assume_2){
   store volatile i32 1, i32* @var, align 4
   ret i8* null
 }
- define i8* @t2(i8*) {
+
+define i8* @t2(i8*) {
   %2 = bitcast i8* %0 to i64*
   store volatile i32 2, i32* @var, align 4
   %3 = load i64, i64* %2, align 8
   %4 = tail call i32 @pthread_join(i64 %3, i8** null)
   ret i8* null
 }
- define i32 @main() {
+
+define i32 @main() {
   %1 = alloca i64, align 8
   %2 = alloca i64, align 8
   %3 = bitcast i64* %1 to i8*
@@ -2685,7 +2692,8 @@ error:
 exit:
   ret i32 0
 }
- %attr_t = type {i64, [48 x i8]}
+
+%attr_t = type {i64, [48 x i8]}
 declare i32 @pthread_join(i64, i8**) nounwind
 declare i32 @pthread_create(i64*, %attr_t*, i8* (i8*)*, i8*) nounwind
 declare void @__VERIFIER_assume(i32)
@@ -2695,7 +2703,8 @@ declare void @__assert_fail()
   DPORDriver::Result res = driver->run();
   delete driver;
   BOOST_CHECK(!res.has_errors());
-   conf.dpor_algorithm = Configuration::OPTIMAL;
+
+  conf.dpor_algorithm = Configuration::OPTIMAL;
   driver = DPORDriver::parseIR(module,conf);
   DPORDriver::Result opt_res = driver->run();
   delete driver;

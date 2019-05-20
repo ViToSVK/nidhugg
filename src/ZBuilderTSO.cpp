@@ -400,7 +400,6 @@ void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
   curnode().kind = ZEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(-1); // prefix_idx
-  mutexes[ml.addr].value = 31337; // default-unlocked mutex
 }
 
 void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
@@ -431,19 +430,13 @@ void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_access);
   assert(mutex.locked && "Unlocked resource got unlocked again");
-  assert(mutex.value == - 1 - (curnode().iid.get_pid() * 1000000)
-         && "Unlocked by different process than the one that locked");
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::M_UNLOCK;
   mayConflict(&ml);
-  curnode().value = ( curnode().iid.get_pid() * 1000000 )
-                    + curnode().event_order; // WRITE
-                    // mutex unlocked by this event (>=0)
 
   mutex.last_access = prefix_idx;
   mutex.locked = false;
-  mutex.value = curnode().value; // WRITE
 }
 
 void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
@@ -487,16 +480,13 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
   curnode().observed_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
-  curnode().value = mutex.value; // READ
   if (!sch_replay)
     somethingToAnnotate.insert(curnode().iid.get_pid());
   endsWithLockFail.erase(curnode().iid.get_pid());
 
-  assert(!mutex.locked && mutex.value >= 0);
+  assert(!mutex.locked);
   mutex.last_lock = mutex.last_access = prefix_idx;
   mutex.locked = true;
-  mutex.value = - 1 - (curnode().iid.get_pid() * 1000000);
-                // mutex locked by this process (<0)
 }
 
 void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
@@ -510,7 +500,7 @@ void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
   #ifndef NDEBUG
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_lock);
-  assert(mutex.locked && mutex.value < 0);
+  assert(mutex.locked);
   #endif
 
   if (!sch_replay)

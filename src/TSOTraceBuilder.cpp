@@ -103,6 +103,7 @@ bool TSOTraceBuilder::schedule(int *proc, int *aux, int *alt, bool *dryrun){
       if (prefix_idx < int(prefix.len())) {
         /* The event is already in prefix */
         pid = curev().iid.get_pid();
+        curev().happens_after.clear();
       } else {
         /* We are replaying from the wakeup tree */
         pid = prefix.first_child().pid;
@@ -138,10 +139,11 @@ bool TSOTraceBuilder::schedule(int *proc, int *aux, int *alt, bool *dryrun){
     assert(prefix[prefix.len()-1].wakeup.empty());
     assert(curev().sym.empty()); /* Would need to be copied */
     assert(curbranch().sym.empty()); /* Can't happen */
+    unsigned size = curbranch().size;
     prefix.delete_last();
     --prefix_idx;
     Branch b = curbranch();
-    ++b.size;
+    b.size += size;
     prefix.set_last_branch(std::move(b));
     assert(int(threads[curev().iid.get_pid()].event_indices.back()) == prefix_idx + 1);
     threads[curev().iid.get_pid()].event_indices.back() = prefix_idx;
@@ -640,10 +642,15 @@ static bool symev_is_store(const SymEv &e) {
   return e.kind == SymEv::UNOBS_STORE || e.kind == SymEv::STORE;
 }
 
+static bool symev_does_store(const SymEv &e) {
+  return e.kind == SymEv::UNOBS_STORE || e.kind == SymEv::STORE
+    || e.kind == SymEv::CMPXHG;
+}
+
 static SymAddrSize sym_get_last_write(const sym_ty &sym, SymAddr addr){
   for (auto it = sym.end(); it != sym.begin();){
     const SymEv &e = *(--it);
-    if (symev_is_store(e) && e.addr().includes(addr)) return e.addr();
+    if (symev_does_store(e) && e.addr().includes(addr)) return e.addr();
   }
   assert(false && "No write touching addr found");
   abort();
@@ -1307,7 +1314,6 @@ TSOTraceBuilder::obs_wake_res
 TSOTraceBuilder::obs_sleep_wake(struct obs_sleep &sleep,
                                 IPid p, const sym_ty &sym) const{
 
-
   if (conf.observers) {
     for (const SymEv &e : sym) {
       /* Now check for readers */
@@ -1842,7 +1848,7 @@ bool TSOTraceBuilder::is_observed_conflict
   assert(snd.kind == SymEv::STORE);
   assert(fst.addr().overlaps(snd.addr()));
   if (thd.kind == SymEv::FULLMEM) return true;
-  return thd.kind == SymEv::LOAD && thd.addr().overlaps(snd.addr());
+  return symev_does_load(thd) && thd.addr().overlaps(snd.addr());
 }
 
 void TSOTraceBuilder::do_race_detect() {
