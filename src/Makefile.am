@@ -43,7 +43,7 @@ libnidhugg_a_SOURCES = \
   ZAnnotation.h \
   ZAnnotationNeg.h \
   ZTrace.h \
-  ZBasis.h \
+  ZBasis.cpp ZBasis.h \
   ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \

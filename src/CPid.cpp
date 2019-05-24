@@ -121,6 +121,10 @@ int CPid::get_aux_index() const{
   return aux_idx;
 }
 
+std::vector<int> CPid::get_proc_seq() const{
+  return std::vector<int>(proc_seq);
+}
+
 CPidSystem::CPidSystem(){
   real_children.push_back({});
   aux_children.push_back({});

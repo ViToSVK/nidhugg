@@ -71,8 +71,12 @@ public:
    */
   int get_aux_index() const;
 
+  /* Returns p0.....pn where this CPid is <p0.....pn/i>.
+   */
+  std::vector<int> get_proc_seq() const;
+
 	friend struct std::hash<CPid>;
-	
+
   std::string to_string() const;
 
   /* Comparison implements a total order over CPids. */
@@ -129,7 +133,7 @@ public:
    *
    * Pre: c is in this set.
    */
-  CPid new_aux(const CPid &c);  
+  CPid new_aux(const CPid &c);
   /* Spawn a new (meaning not in this set) real process child for c,
    * but DO NOT add it to this set. Only find out what the cpid
    * would be and return it.
@@ -161,13 +165,22 @@ private:
 
 namespace std{
   template <>
+  struct hash<std::vector<int>>{
+    std::size_t operator()(const std::vector<int>& vec) const{
+			using std::size_t;
+      size_t res = vec.size();
+			size_t st = vec.size() < 4 ? vec.size() : 4;
+			for(size_t i = 1; i < st; ++i)
+				res ^= (size_t) vec[i] << (4*i);
+      return res;
+    }
+  };
+
+  template <>
   struct hash<CPid>{
     std::size_t operator()(const CPid& k) const{
-			using std::size_t;
-      size_t res = k.proc_seq.size();
-			size_t st = k.proc_seq.size() < 4 ? k.proc_seq.size() : 4;
-			for(size_t i = 1; i < st; ++i)
-				res ^= (size_t) k.proc_seq[i] << (4*i);
+      size_t res = hash<std::vector<int>>(k.proc_seq);
+      res += 1 + k.aux_idx;
 			return res;
     }
   };

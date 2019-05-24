@@ -9,6 +9,7 @@
 #include "ZAnnotation.h"
 #include "ZGraph.h"
 
+
 void removeSubstrings(std::string& s, std::string&& p) {
   std::string::size_type n = p.length();
   for (std::string::size_type i = s.find(p);
@@ -17,57 +18,51 @@ void removeSubstrings(std::string& s, std::string&& p) {
     s.erase(i, n);
 }
 
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev)
 {
+  out << "[" << ev.threadID() << "," << ev.auxID() << "," << ev.eventID() << "]__";
+  out << ev.trace_id << "__";
   switch(ev.kind) {
    case ZEvent::Kind::DUMMY :
-     out << ev.id << "_<size: " << ev.size << ">";
+     "<size: " << ev.size << ">";
      break;
-   case ZEvent::Kind::LOAD :
-     out << ev.id << "_read " << ev.ml.addr.to_string() << " <- " << ev.value;
+   case ZEvent::Kind::READ :
+     out << "read <- " << ev.ml.addr.to_string() << "_<observed: " << ev.observed_trace_id << ">";
      break;
-   case ZEvent::Kind::STORE :
-     out << ev.id << "_write " << ev.value << " -> " << ev.ml.addr.to_string();
+   case ZEvent::Kind::WRITEB :
+     out << "writeBuf -> " << ev.ml.addr.to_string();
+     break;
+   case ZEvent::Kind::WRITEM :
+     out << "writeMem -> " << ev.ml.addr.to_string();
      break;
    case ZEvent::Kind::SPAWN :
-     out << ev.id << "_spawn " << ev.childs_cpid;
+     out << "spawn " << ev.childs_cpid;
      break;
    case ZEvent::Kind::JOIN :
-     out << ev.id << "_join " << ev.childs_cpid << "_<size: " << ev.size << ">";
+     out << "join " << ev.childs_cpid << "_<size: " << ev.size << ">";
      break;
    case ZEvent::Kind::M_INIT :
-     out << ev.id << "_mutexinit " << ev.ml.addr.to_string();
+     out << "mutexinit " << ev.ml.addr.to_string();
      break;
    case ZEvent::Kind::M_DESTROY :
-     out << ev.id << "_mutexdestroy " << ev.ml.addr.to_string();
+     out << "mutexdestroy " << ev.ml.addr.to_string();
      break;
    case ZEvent::Kind::M_LOCK :
-     out << ev.id << "_lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
+     out << "lock " << ev.ml.addr.to_string() << "_<size: " << ev.size << ">";
      break;
    case ZEvent::Kind::M_UNLOCK :
-     out << ev.id << "_unlock " << ev.ml.addr.to_string();
+     out << "unlock " << ev.ml.addr.to_string();
      break;
    default :
-     out << "_unknown";
+     out << "unknown";
   }
   return out;
 }
-
 void ZEvent::dump() const {
   llvm::errs() << *this << "\n";
 }
 
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const Node& nd)
-{
-  out << "[" << nd.getProcessID() << "][" << nd.getEventID() << "]";
-  if (nd.getEvent())
-    out << "__" << *(nd.getEvent());
-  return out;
-}
-
-void Node::dump() const {
-  llvm::errs() << *this << "\n";
-}
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Loc& loc) {
   char c = (loc == ZAnnotation::Loc::LOCAL)?'L':
@@ -75,7 +70,6 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Loc& lo
   out << c;
   return out;
 }
-
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Ann& ann) {
   out << ann.value << "-" << ann.loc << "_";
   if (ann.loc != ZAnnotation::Loc::LOCAL) {
@@ -93,11 +87,9 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Ann& an
   }
   return out;
 }
-
 void ZAnnotation::Ann::dump() const {
   llvm::errs() << *this << "\n";
 }
-
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) {
   out << "Annotation+ {\n";
   for (auto& pr : annot) {
@@ -109,10 +101,10 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) 
   out << "}\n";
   return out;
 }
-
 void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
+
 
 void ZGraph::dump_po(const PartialOrder& po) const {
   ThreadPairsVclocks& succ = *(po.first);

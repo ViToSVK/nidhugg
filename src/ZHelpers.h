@@ -5,7 +5,6 @@
 #include <llvm/IR/Function.h>
 
 #include "ZEvent.h"
-#include "ZBasis.h"
 
 /* helper functions */
 inline bool sameMl(const ZEvent *ev1, const ZEvent *ev2) {
@@ -15,38 +14,38 @@ inline bool sameMl(const ZEvent *ev1, const ZEvent *ev2) {
 inline bool sameMl(const ZEvent& ev1, const ZEvent& ev2) {
   return ev1.ml == ev2.ml;
 }
-inline bool sameMl(const Node *nd1, const Node *nd2) {
-  assert(nd1 && nd2);
-  return sameMl(nd1->getEvent(), nd2->getEvent());
+
+//
+
+inline bool isRead(const ZEvent *ev) {
+  assert(ev);
+  return ev->kind == ZEvent::Kind::READ;
+}
+inline bool isRead(const ZEvent& ev) {
+  return ev.kind == ZEvent::Kind::READ;
 }
 
 //
 
-inline bool isLoad(const ZEvent *ev) {
+inline bool isWriteBuf(const ZEvent *ev) {
   assert(ev);
-  return ev->kind == ZEvent::Kind::LOAD;
+  return ev->kind == ZEvent::Kind::WRITEB;
 }
-inline bool isLoad(const ZEvent& ev) {
-  return ev.kind == ZEvent::Kind::LOAD;
+inline bool isWriteBuf(const ZEvent& ev) {
+  return ev.kind == ZEvent::Kind::WRITEB;
 }
-inline bool isLoad(const Node *nd) {
-  assert(nd);
-  return isLoad(nd->getEvent());
-}
+
 
 //
 
-inline bool isStore(const ZEvent *ev) {
+inline bool isWriteMem(const ZEvent *ev) {
   assert(ev);
-  return ev->kind == ZEvent::Kind::STORE;
+  return ev->kind == ZEvent::Kind::WRITEM;
 }
-inline bool isStore(const ZEvent& ev) {
-  return ev.kind == ZEvent::Kind::STORE;
+inline bool isWriteMem(const ZEvent& ev) {
+  return ev.kind == ZEvent::Kind::WRITEM;
 }
-inline bool isStore(const Node *nd) {
-  assert(nd);
-  return isStore(nd->getEvent());
-}
+
 
 //
 
@@ -56,10 +55,6 @@ inline bool isSpawn(const ZEvent *ev) {
 }
 inline bool isSpawn(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::SPAWN;
-}
-inline bool isSpawn(const Node *nd) {
-  assert(nd);
-  return isSpawn(nd->getEvent());
 }
 
 //
@@ -71,10 +66,6 @@ inline bool isJoin(const ZEvent *ev) {
 inline bool isJoin(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::JOIN;
 }
-inline bool isJoin(const Node *nd) {
-  assert(nd);
-  return isJoin(nd->getEvent());
-}
 
 //
 
@@ -84,10 +75,6 @@ inline bool isMutexInit(const ZEvent *ev) {
 }
 inline bool isMutexInit(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_INIT;
-}
-inline bool isMutexInit(const Node *nd) {
-  assert(nd);
-  return isMutexInit(nd->getEvent());
 }
 
 //
@@ -99,10 +86,6 @@ inline bool isMutexDestroy(const ZEvent *ev) {
 inline bool isMutexDestroy(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_DESTROY;
 }
-inline bool isMutexDestroy(const Node *nd) {
-  assert(nd);
-  return isMutexDestroy(nd->getEvent());
-}
 
 //
 
@@ -112,10 +95,6 @@ inline bool isLock(const ZEvent *ev) {
 }
 inline bool isLock(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_LOCK;
-}
-inline bool isLock(const Node *nd) {
-  assert(nd);
-  return isLock(nd->getEvent());
 }
 
 //
@@ -127,38 +106,8 @@ inline bool isUnlock(const ZEvent *ev) {
 inline bool isUnlock(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_UNLOCK;
 }
-inline bool isUnlock(const Node *nd) {
-  assert(nd);
-  return isUnlock(nd->getEvent());
-}
 
 //
-
-inline bool isRead(const ZEvent *ev) {
-  assert(ev);
-  return isLoad(ev); // || isLock(ev) - treat them separately
-}
-inline bool isRead(const ZEvent& ev) {
-  return isLoad(ev); // || isLock(ev) - treat them separately
-}
-inline bool isRead(const Node *nd) {
-  assert(nd);
-  return isRead(nd->getEvent());
-}
-
-//
-
-inline bool isWrite(const ZEvent *ev) {
-  assert(ev);
-  return isStore(ev); //  || isUnlock(ev) - treat them separately
-}
-inline bool isWrite(const ZEvent& ev) {
-  return isStore(ev); //  || isUnlock(ev) - treat them separately
-}
-inline bool isWrite(const Node *nd) {
-  assert(nd);
-  return isWrite(nd->getEvent());
-}
 
 /* llvm instruction helpers */
 inline bool is_function_call(const llvm::Instruction *I, const char *name) {
