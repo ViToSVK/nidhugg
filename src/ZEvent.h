@@ -33,6 +33,7 @@
 
 #include <tuple>
 
+
 /* Information about a (short) sequence of consecutive events by the
  * same thread. At most one event in the sequence may have conflicts
  * with other events, and if the sequence has a conflicting event,
@@ -41,6 +42,7 @@
 class ZEvent {
 
  public:
+  ZEvent() = delete;
   ZEvent(const IID<int> &iid, const CPid& cpid,
          unsigned instruction_order, unsigned event_order, unsigned trace_id)
    : kind(Kind::DUMMY),
@@ -62,6 +64,19 @@ class ZEvent {
     event_order(event_order)
     {
       assert(iid.get_pid() >= 0);
+    }
+
+  ZEvent(bool initial)
+    : kind(KIND:INITIAL),
+    ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
+    _thread_id(1000), /*set at PObuild time*/
+    _aux_id(-1),
+    _event_id(1000), /*set at PObuild time*/
+    _trace_id(1000),
+    observed_trace_id(-1),
+    writeOther(nullptr)
+    {
+      assert(initial);
     }
 
  private:

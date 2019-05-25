@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -27,6 +27,7 @@
 #include <unordered_set>
 #include <vector>
 
+
 namespace std {
   template <typename A, typename B>
   struct hash<std::pair<A, B>> {
@@ -37,9 +38,12 @@ namespace std {
   };
 }
 
+
 class ZGraph;
 
+
 class ZBasis {
+  friend class ZPartialOrder;
  public:
   // ZGRAPH REFERENCE (given at constructor-time)
   const ZGraph& graph;  ////
@@ -57,23 +61,28 @@ class ZBasis {
 
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:
+  const ZEvent init;
   LinesT lines; ////
  public:
+  const ZEvent *initial() const { return &init; }
   const LineT& operator[](std::pair<unsigned, int> ids) const;
   const LineT& operator[](unsigned thread_id, int aux_id) const;
   //
   const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
-  void addLine(const ZEvent * ev);
-  void addEvent(const ZEvent * ev);
+  void addLine(const ZEvent *ev);
+  void addEvent(const ZEvent *ev);
   void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);
 
 
   // THREAD_AUX->LINE_ID (retained accross recursion children)
  private:
   std::unordered_map<std::pair<unsigned, int>, unsigned> thread_aux_to_line_id; ////
+  unsigned lineID(unsigned thread_id, int aux_id) const;
+  unsigned lineID(const ZEvent *ev) const;
  public:
   bool hasThreadAux(std::pair<unsigned, int> ids) const;
   bool hasThreadAux(unsigned thread_id, int aux_id) const;
+
   std::unordered_map<std::pair<unsigned, int>, unsigned> line_sizes() const;
 
 
@@ -81,7 +90,7 @@ class ZBasis {
  private:
   std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
  public:
-  // <id, newly_added?>
+  // <threadID, added_with_this_call?>
   std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
 
 
@@ -93,10 +102,12 @@ class ZBasis {
 
 
  public:
-  // Basis is not responsible for any resources
+  // ZBasis is not responsible for any resources
+  ZBasis() = delete;
   ZBasis(const ZGraph& graph, int root_thread_id)
     : graph(graph),
     root_thread_id(root_thread_id),
+    init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
     proc_seq_to_thread_id(),
@@ -106,6 +117,7 @@ class ZBasis {
   ZBasis(const ZBasis& oth, const ZGraph& gr)
     : graph(gr),
     root_thread_id(oth.root_thread_id),
+    init(ZEvent(true)),
     lines(oth.lines),
     thread_aux_to_line_id(oth.thread_aux_to_line_id),
     proc_seq_to_thread_id(oth.proc_seq_to_thread_id),

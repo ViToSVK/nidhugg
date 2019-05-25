@@ -45,7 +45,7 @@ const ZEvent * ZBasis::getEvent(unsigned thread_id, int aux_id, unsigned event_i
 }
 
 
-void ZBasis::addLine(const ZEvent * ev)
+void ZBasis::addLine(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
   assert(ev->thread_id < 20 && "Thread ID not set up yet");
@@ -57,7 +57,7 @@ void ZBasis::addLine(const ZEvent * ev)
 }
 
 
-void ZBasis::addEvent(const ZEvent * ev)
+void ZBasis::addEvent(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
   assert(ev->thread_id < 20 && "Thread ID not set up yet");
@@ -70,6 +70,7 @@ void ZBasis::addEvent(const ZEvent * ev)
   event_id = line.size();
   event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
   line.push_back(ev);
+  assert(hasEvent(ev));
 }
 
 
@@ -90,6 +91,20 @@ void ZBasis::replaceEvent(const ZEvent *oldEv, const ZEvent *newEv)
          line_event.second < lines[line_event.first].size() &&
          lines[line_event.first][line_event.second] == oldEv);
   lines[line_event.first][line_event.second] = newEv;
+  assert(!hasEvent(oldEv) && hasEvent(newEv));
+}
+
+
+unsigned lineID(unsigned thread_id, int aux_id) const
+{
+  assert(hasThreadAux(thread_id, int aux_id));
+  return thread_aux_to_line_id[std::pair<unsigned,int>(thread_id, aux_id)];
+}
+
+
+unsigned lineID(const ZEvent *ev) const
+{
+  return lineID(ev->threadID(), ev->auxID());
 }
 
 
@@ -117,8 +132,8 @@ std::unordered_map<std::pair<unsigned, int>, unsigned> ZBasis::line_sizes() cons
 }
 
 
-// <threadID, newly_added?>
-std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent * ev)
+// <threadID, added_with_this_call?>
+std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
 {
   auto proc_seq = ev->cpid.get_proc_seq();
   auto it = proc_seq_to_thread_id.find(proc_seq);
@@ -133,5 +148,13 @@ std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent * ev)
 
 bool ZBasis::hasEvent(const ZEvent *ev) const
 {
-  return event_to_position.find(ev) != event_to_position.end();
+  if (ev == initial())
+    return true;
+  auto it = event_to_position.find(ev);
+  if (it == event_to_position.end())
+    return false;
+  assert(lines[it->second.first][it->second.second] == ev);
+  assert(lineID(ev) == it->second.first);
+  assert(ev->eventID() == it->second.second);
+  return true;
 }

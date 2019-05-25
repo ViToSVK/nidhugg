@@ -17,6 +17,16 @@ inline bool sameMl(const ZEvent& ev1, const ZEvent& ev2) {
 
 //
 
+inline bool isInitial(const ZEvent *ev) {
+  assert(ev);
+  return ev->kind == ZEvent::Kind::INITIAL;
+}
+inline bool isInitial(const ZEvent& ev) {
+  return ev.kind == ZEvent::Kind::INITIAL;
+}
+
+//
+
 inline bool isRead(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::READ;

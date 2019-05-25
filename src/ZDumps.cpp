@@ -6,8 +6,12 @@
 #include <llvm/IR/Instructions.h>
 
 #include "ZEvent.h"
+#include "ZPartialOrder.h"
 #include "ZAnnotation.h"
 #include "ZGraph.h"
+
+#include <sstream>
+#include <set>
 
 
 void removeSubstrings(std::string& s, std::string&& p) {
@@ -28,13 +32,15 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev)
      "<size: " << ev.size << ">";
      break;
    case ZEvent::Kind::READ :
-     out << "read <- " << ev.ml.addr.to_string() << "_<observed: " << ev.observed_trace_id << ">";
+     out << "read <- " << ev.ml.addr.to_string() << "_<observes: " << ev.observed_trace_id << ">";
      break;
    case ZEvent::Kind::WRITEB :
      out << "writeBuf -> " << ev.ml.addr.to_string();
      break;
    case ZEvent::Kind::WRITEM :
-     out << "writeMem -> " << ev.ml.addr.to_string();
+     assert(ev.writeOther);
+     out << "writeMem -> " << ev.ml.addr.to_string() << "_<Buf [" << ev.writeOther->threadID()
+         << "," << ev.writeOther->auxID() << "," << ev.writeOther->eventID() << "]>";
      break;
    case ZEvent::Kind::SPAWN :
      out << "spawn " << ev.childs_cpid;
@@ -64,6 +70,82 @@ void ZEvent::dump() const {
 }
 
 
+void ZPartialOrder::dump() const {
+  std::stringstream res;
+
+  res << "\ndigraph {\n";
+
+  int max_thread = -1;
+  int max_aux = -2;
+  for (const auto& taux_line : basis.thread_aux_to_line_id) {
+    if (taux.first.first > max_thread)
+      max_thread = taux.first.first;
+    if (taux.first.second > max_aux)
+      max_aux = taux.first.second;
+  }
+
+  assert(max_thread >= 0);
+  assert(max_aux >= -1);
+  std::vector<std::set<int>> th_aux;
+  for (unsigned i = 0; i < max_thread+1; ++i)
+    th_aux.push_back(std::set<int>());
+
+  for (const auto& taux_line : basis.thread_aux_to_line_id)
+    th_aux.at(taux.first.first).emplace(taux.first.second);
+
+  // NODES
+  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
+    res << "subgraph cluster_" << tid << "{\n";
+    res << "label = \"Th" << tid
+        << " " << basis[tid, -1][0]->cpid;
+    if (basis.isRoot(tid))
+      res << " ROOT";
+    res << "\"\n";
+    for (const auto& aux : th_aux[tid]) {
+      unsigned line =  basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
+      for (unsigned evid = 0; evid < basis[tid, aux].size(); ++evid) {
+        const ZEvent *ev = basis[tid, aux][evid];
+        res << "NODE" << line * 100000 + evid
+            << " [label=\"" << *ev << "\"]\n";
+      }
+    }
+
+    res << "}\n";
+  }
+  res << "\n";
+
+
+  // THREAD ORDER
+  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
+    for (const auto& aux : th_aux[tid]) {
+      unsigned line =  basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
+      for (unsigned evid = 0; evid < basis[tid, aux].size() - 1; ++evid) {
+        res << "NODE" << line * 100000 + evid
+            << " -> NODE" << line * 100000 + evid + 1 << "[style=bold]\n";
+      }
+    }
+  }
+
+  // REST ORDER
+  for (unsigned li=0; ti<_succ.size(); ++li)
+    for (unsigned lj=0; tj<_succ[li].size(); ++lj) {
+      int curval = INT_MAX;
+      for (int liev = _succ[li][lj].size() - 1; liev >= 0; --liev) {
+        if (_succ[li][lj][liev] < curval) {
+          curval = _succ[li][lj][liev];
+            res << "NODE" << li * 100000 + liev
+                << " -> NODE" << lj * 100000 + curval << "\n";
+        }
+      }
+    }
+
+  res << "}\n\n";
+
+  llvm::errs() << res.to_string() << "\n";
+}
+
+
+/*
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Loc& loc) {
   char c = (loc == ZAnnotation::Loc::LOCAL)?'L':
     ((loc == ZAnnotation::Loc::REMOTE)?'R':'A');
@@ -104,88 +186,4 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) 
 void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
-
-
-void ZGraph::dump_po(const PartialOrder& po) const {
-  ThreadPairsVclocks& succ = *(po.first);
-  ThreadPairsVclocks& pred = *(po.second);
-
-  llvm::errs() << "\n";
-  for (unsigned ti=0; ti<succ.size(); ++ti)
-    for (unsigned tj=0; tj<succ[ti].size(); ++tj) {
-      llvm::errs() << "succ " << ti << "->" << tj << " size: " << succ[ti][tj].size() << "   content:";
-      for (unsigned tiev=0; tiev<succ[ti][tj].size(); ++tiev)
-        llvm::errs() << " " << succ[ti][tj][tiev];
-      llvm::errs() << "\n";
-    }
-  for (unsigned ti=0; ti<pred.size(); ++ti)
-    for (unsigned tj=0; tj<pred[ti].size(); ++tj) {
-      llvm::errs() << "pred " << ti << "->" << tj << " size: " << pred[ti][tj].size() << "   content:";
-      for (unsigned tiev=0; tiev<pred[ti][tj].size(); ++tiev)
-        llvm::errs() << " " << pred[ti][tj][tiev];
-      llvm::errs() << "\n";
-    }
-  llvm::errs() << "\n";
-}
-
-void ZGraph::to_dot(const PartialOrder& po, const char *edge_params) const {
-  ThreadPairsVclocks& succ = *(po.first);
-
-  llvm::errs() << "\ndigraph {\n";
-
-  for (unsigned tid = 0; tid < processes.size(); ++tid) {
-    assert((int) tid == processes[tid][0]->getEvent()->iid.get_pid() / 2);
-    llvm::errs() << "subgraph cluster_" << tid << "{\n";
-    llvm::errs() << "label = \"Pr" << tid
-                 << " " << processes[tid][0]->getEvent()->cpid;
-    if (tid == this->starRoot())
-      llvm::errs() << " ROOT";
-    llvm::errs() << "\"\n";
-    for (unsigned evid = 0; evid < processes[tid].size(); ++evid) {
-      const Node *nd = processes[tid][evid];
-      llvm::errs() << "NODE"
-                   << tid * 100000 + evid
-                   << " [label=\"";
-      if (!nd->getEvent())
-        llvm::errs() << "init";
-      else
-        llvm::errs() << *nd->getEvent();
-      llvm::errs() << "\"]\n";
-    }
-    llvm::errs() << "}\n";
-  }
-  llvm::errs() << "\n";
-
-  assert(succ.size() == processes.size());
-
-  for (unsigned ti=0; ti<succ.size(); ++ti)
-    for (unsigned tiev = 0; tiev < processes[ti].size() - 1; ++tiev) {
-      llvm::errs() << "NODE"
-                   << ti * 100000 + tiev
-                   << " -> NODE"
-                   << ti * 100000 + tiev + 1 << "[style=bold]\n";
-    }
-
-  for (unsigned ti=0; ti<succ.size(); ++ti)
-    for (unsigned tj=0; tj<succ[ti].size(); ++tj) {
-      int curval = INT_MAX;
-      for (int tiev = succ[ti][tj].size() - 1; tiev >= 0; --tiev) {
-
-        if (succ[ti][tj][tiev] < curval) {
-          curval = succ[ti][tj][tiev];
-            llvm::errs() << "NODE"
-                         << ti * 100000 + tiev
-                         << " -> NODE"
-                         << tj * 100000 + curval;
-          if (edge_params) {
-            llvm::errs() << "[" << edge_params << "]\n";
-          } else {
-            llvm::errs() << "\n";
-          }
-        }
-
-      }
-    }
-
-  llvm::errs() << "}\n\n";
-}
+*/

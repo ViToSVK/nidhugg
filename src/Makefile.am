@@ -44,6 +44,7 @@ libnidhugg_a_SOURCES = \
   ZAnnotationNeg.h \
   ZTrace.h \
   ZBasis.cpp ZBasis.h \
+  ZPartialOrder.cpp ZPartialOrder.h \
   ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \
