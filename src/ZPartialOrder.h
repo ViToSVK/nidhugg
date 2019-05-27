@@ -48,6 +48,8 @@ class ZPartialOrder {
  private:
   ClockT _succ;
   ClockT _pred;
+  std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_line) const;
+  std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_line) const;
  public:
   std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_thread, int to_aux) const;
   std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_thread, int to_aux) const;
@@ -55,7 +57,7 @@ class ZPartialOrder {
   bool areOrdered(const ZEvent *ev1, const ZEvent *ev2) const;
   void addEdge(const ZEvent *from, const ZEvent *to);
  private:
-  void addEdgeHelp(unsigned li, unsigned li_evx, unsigned lj, unsigned lj_evx);
+  void addEdgeHelp(const ZEvent *from, const ZEvent *to);
  public:
   // When creating PO from trace
   void addLine(const ZEvent * ev);
