@@ -54,8 +54,6 @@ class ZBuilderTSO : public TSOTraceBuilder {
   /* SCHEDULING                  */
   /* *************************** */
 
-  // We want to get some initial trace
-  bool sch_initial;
   // We want to replay 'replay_trace'
   bool sch_replay;
   // We want to get an extension of our trace
@@ -114,8 +112,6 @@ class ZBuilderTSO : public TSOTraceBuilder {
   /* PARAMETER PASSING           */
   /* *************************** */
   unsigned star_root_index = 1;
-  bool previous_mutation_process_first = true;
-  bool root_before_nonroots = true;
 
  public:
 
@@ -127,10 +123,8 @@ class ZBuilderTSO : public TSOTraceBuilder {
   ZBuilderTSO(const Configuration &conf, llvm::Module *m,
                  unsigned s_r_i, bool p_m_p_f, bool r_b_n)
   : TSOTraceBuilder(conf), config(conf), M(m),
-    sch_initial(true), sch_replay(false), sch_extend(false),
-    star_root_index(s_r_i),
-    previous_mutation_process_first(p_m_p_f),
-    root_before_nonroots(r_b_n)
+    sch_replay(false), sch_extend(true),
+    star_root_index(s_r_i)
     {
       prefix.reserve(64);
     }
@@ -141,7 +135,7 @@ class ZBuilderTSO : public TSOTraceBuilder {
   ZBuilderTSO(const Configuration &conf,
                  llvm::Module *m, std::vector<ZEvent>&& tr)
   : TSOTraceBuilder(conf), config(conf), M(m),
-    sch_initial(false), sch_replay(true), sch_extend(false),
+    sch_replay(true), sch_extend(false),
     replay_trace(std::move(tr))
     {
       prefix.reserve(replay_trace.size() + 64);
@@ -164,22 +158,54 @@ class ZBuilderTSO : public TSOTraceBuilder {
   virtual void refuse_schedule();  // called when scheduling got refused
   virtual void metadata(const llvm::MDNode *md);
   virtual IID<CPid> get_iid() const; // called from Interpreter::callFree
+  //
   virtual void spawn();
   virtual void join(int tgt_proc);
-  virtual void atomic_store(const SymData &sd, int val); // WRITE (val)
-  virtual void load(const SymAddrSize &ml, int val); // READ (val)
+  virtual void store(const SymData &ml, int val); // val
+  virtual void atomic_store(const SymData &ml, int val); // val
+  virtual void load(const SymAddrSize &ml, int val); // val
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);
-  virtual void mutex_unlock(const SymAddrSize &ml);
   virtual void mutex_lock(const SymAddrSize &ml);
   virtual void mutex_lock_fail(const SymAddrSize &ml);
+  virtual void mutex_unlock(const SymAddrSize &ml);
+  //
   virtual void mutex_trylock(const SymAddrSize &ml) {
-    llvm::errs() << "No support for pthread_mutex_trylock\n";
+    llvm::errs() << "Builder: No support for pthread_mutex_trylock\n";
+    abort();
+  }
+  virtual bool cond_init(const SymAddrSize &ml) {
+    llvm::errs() << "Builder: No support for cond_init\n";
+    abort();
+  }
+  virtual bool cond_signal(const SymAddrSize &ml) {
+    llvm::errs() << "Builder: No support for cond_signal\n";
+    abort();
+  }
+  virtual bool cond_broadcast(const SymAddrSize &ml) {
+    llvm::errs() << "Builder: No support for cond_broadcast\n";
+    abort();
+  }
+  virtual bool cond_wait(const SymAddrSize &cond_ml, const SymAddrSize &mutex_ml) {
+    llvm::errs() << "Builder: No support for cond_wait\n";
+    abort();
+  }
+  virtual bool cond_awake(const SymAddrSize &cond_ml, const SymAddrSize &mutex_ml) {
+    llvm::errs() << "Builder: No support for cond_awake\n";
+    abort();
+  }
+  virtual int cond_destroy(const SymAddrSize &ml) {
+    llvm::errs() << "Builder: No support for cond_destroy\n";
+    abort();
+  }
+  virtual void compare_exchange
+  (const SymData &sd, const SymData::block_type expected, bool success) {
+    llvm::errs() << "Builder: No support for compare_exchange\n";
     abort();
   }
   virtual void full_memory_conflict() {
-    llvm::errs() << "No support for full memory conflict\n";
+    llvm::errs() << "Builder: No support for full memory conflict\n";
     abort();
   }
 

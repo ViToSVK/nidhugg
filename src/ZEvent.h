@@ -49,6 +49,7 @@ class ZEvent {
     cpid(cpid),
     childs_cpid(),
     ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
+    value(-47),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id(cpid.get_aux_index()),
     _event_id(1337), /*set at PObuild time*/
@@ -69,6 +70,7 @@ class ZEvent {
   ZEvent(bool initial)
     : kind(KIND:INITIAL),
     ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
+    value(-47),
     _thread_id(1000), /*set at PObuild time*/
     _aux_id(-1),
     _event_id(1000), /*set at PObuild time*/
@@ -88,6 +90,7 @@ class ZEvent {
     cpid(oth.cpid),
     childs_cpid(oth.childs_cpid),
     ml(oth.ml),
+    value(oth.value),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id(oth.cpid.get_aux_index()),
     _event_id(1337), /*set at PObuild time*/
@@ -126,6 +129,8 @@ class ZEvent {
   CPid childs_cpid;
   /* Memory location (if any) modified/read by this event */
   SymAddrSize ml;
+  /* The value read/written by this event */
+  int value;
   /* Thread ID in our partial order */
   unsigned _thread_id;
   unsigned threadID() const { return _thread_id; }

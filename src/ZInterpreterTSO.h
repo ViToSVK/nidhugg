@@ -37,7 +37,7 @@ class ZInterpreterTSO : public TSOInterpreter {
  public:
   explicit ZInterpreterTSO(llvm::Module *M, ZBuilderTSO &TB,
                           const Configuration &conf = Configuration::default_conf);
-  virtual ~ZInterpreterTSO() = default;
+  virtual ~ZInterpreterTSO();
 
   static llvm::ExecutionEngine *create(llvm::Module *M, ZBuilderTSO &TB,
                                  const Configuration &conf = Configuration::default_conf,
@@ -45,21 +45,24 @@ class ZInterpreterTSO : public TSOInterpreter {
 
   virtual void visitLoadInst(llvm::LoadInst &I);
   virtual void visitStoreInst(llvm::StoreInst &I);
-  virtual bool checkRefuse(llvm::Instruction &I);
-  /*
-  virtual void visitCallSite(llvm::CallSite CS);
   virtual void visitFenceInst(llvm::FenceInst &I);
-  virtual void visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst &I);
-  virtual void visitAtomicRMWInst(llvm::AtomicRMWInst &I);
+  virtual void visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst &I) {
+    llvm::errs() << "Interpreter: No support for AtomicCmpXchg\n";
+    abort();
+  }
+  virtual void visitAtomicRMWInst(llvm::AtomicRMWInst &I) {
+    llvm::errs() << "Interpreter: No support for AtomicRMW\n";
+    abort();
+  }
   virtual void visitInlineAsm(llvm::CallSite &CS, const std::string &asmstr);
-
  protected:
   virtual void runAux(int proc, int aux);
+  virtual bool checkRefuse(llvm::Instruction &I);
+  /*
   virtual int newThread(const CPid &cpid);
   virtual bool isFence(llvm::Instruction &I);
   virtual void terminate(llvm::Type *RetTy, llvm::GenericValue Result);
   */
-
 };
 
 
