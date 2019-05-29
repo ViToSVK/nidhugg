@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -18,17 +18,14 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <unordered_map>
-#include <map>
-#include <stack>
-
 #include "ZHelpers.h"
 #include "ZGraph.h"
+
 
 /* *************************** */
 /* GRAPH EXTENSION             */
 /* *************************** */
-
+/*
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
 void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
@@ -484,141 +481,12 @@ void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
   }
 }
 
-/* *************************** */
-/* EDGE ADDITION               */
-/* *************************** */
-
-// Adds an edge between two unordered nodes
-// This method maintains:
-// 1) thread-pair-wise transitivity
-// 2) complete transitivity
-void ZGraph::addEdge(const Node *n1, const Node *n2, const PartialOrder& po) const
-{
-  assert(n1 && n2 && "Do not have such node");
-  assert(!areOrdered(n1, n2, po));
-  unsigned ti = n1->getProcessID();
-  unsigned tj = n2->getProcessID();
-  unsigned ti_evx = n1->getEventID();
-  unsigned tj_evx = n2->getEventID();
-
-  addEdgeHelp(ti, ti_evx, tj, tj_evx, po);
-
-  // Maintenance of the complete transitivity
-  // Collect nodes from different threads with edges:
-  // 1) to   ti[ti_evx]
-  // 2) from tj[tj_evx]
-
-  ThreadPairsVclocks& succ = *(po.first);
-  ThreadPairsVclocks& pred = *(po.second);
-
-  std::set< std::pair<unsigned, unsigned>> before_tiEvent, after_tjEvent;
-  for (unsigned k = 0; k<processes.size(); ++k) {
-    if (k != ti && k != tj) {
-      int maxbefore = pred[ti][k][ti_evx];
-      if (maxbefore >= 0)
-        before_tiEvent.emplace(k, maxbefore);
-
-      int minafter = succ[tj][k][tj_evx];
-      assert(minafter >= 0);
-      if ((unsigned) minafter < processes[k].size())
-        after_tjEvent.emplace(k, minafter);
-    }
-  }
-
-  // TryAdd edges between each of 1) (n3) and tj[tj_evx] (n2)
-  for (auto& bef : before_tiEvent) {
-    const Node *n3 = processes[bef.first][bef.second];
-    assert(!hasEdge(n2, n3, po) && "Cycle");
-    if (!hasEdge(n3, n2, po))
-      addEdgeHelp(bef.first, bef.second,
-                  tj, tj_evx, po);
-  }
-
-  // TryAdd edges between ti[ti_evx] (n1) and each of 2) (n3)
-  for (auto& aft : after_tjEvent) {
-    const Node *n3 = processes[aft.first][aft.second];
-    assert(!hasEdge(n3, n1, po) && "Cycle");
-    if (!hasEdge(n1, n3, po))
-      addEdgeHelp(ti, ti_evx,
-                  aft.first, aft.second, po);
-  }
-
-  // TryAdd edges between each of 1) (n3) and each of 2) (n4)
-  // (if they belong to different threads)
-  for (auto& bef : before_tiEvent)
-    for (auto& aft : after_tjEvent)
-      if (bef.first != aft.first) {
-        const Node *n3 = processes[bef.first][bef.second];
-        const Node *n4 = processes[aft.first][aft.second];
-        assert(!hasEdge(n4, n3, po) && "Cycle");
-        if (!hasEdge(n3, n4, po))
-          addEdgeHelp(bef.first, bef.second,
-                      aft.first, aft.second, po);
-      }
-
-}
-
-// Helper method for addEdge,
-// maintains thread-pair-wise transitivity
-void ZGraph::addEdgeHelp(unsigned ti, unsigned ti_evx,
-                                unsigned tj, unsigned tj_evx,
-                                const PartialOrder& po) const
-{
-  ThreadPairsVclocks& succ = *(po.first);
-  ThreadPairsVclocks& pred = *(po.second);
-  assert( succ[ti][tj][ti_evx] > (int) tj_evx && // ! ti[ti_evx] HB tj[tj_evx]
-          succ[tj][ti][tj_evx] > (int) ti_evx && // ! tj[tj_evx] HB ti[ti_evx]
-          "Tried to add an edge between ordered nodes");
-  assert( pred[tj][ti][tj_evx] < (int) ti_evx && // ! ti[ti_evx] HB tj[tj_evx]
-          pred[ti][tj][ti_evx] < (int) tj_evx && // ! tj[tj_evx] HB ti[ti_evx]
-          "Inconsistent succ/pred vector clocks");
-
-  // CLOSURE SAFE UNTIL EVENT ID - update before updating succ+pred
-  // Must be done here because also edges added to maintain
-  // transitivity can affect closure safety
-  for (unsigned i=0; i<succ.size(); i++)
-    if (i != tj) {
-      // Events in thread i up until 'newbound' already happened
-      // before [tj][tj_evx]
-      int newbound = pred[tj][i][tj_evx];
-      if (closureSafeUntil[i] > newbound)
-        closureSafeUntil[i] = newbound;
-    } else {
-      if (closureSafeUntil[tj] > (int) tj_evx - 1)
-        closureSafeUntil[tj] = (int) tj_evx - 1;
-    }
-
-  succ[ti][tj][ti_evx] = (int) tj_evx;
-  pred[tj][ti][tj_evx] = (int) ti_evx;
-
-  // Maintenance of thread-pair-wise transitivity of succ[ti][tj]
-  // Everything in ti before ti_evx also happens-before tj[tj_evx]
-
-  for (int ti_before_evx = ti_evx - 1;
-       ti_before_evx >= 0;
-       --ti_before_evx) {
-    if (succ[ti][tj][ti_before_evx] <= (int) tj_evx)
-      break; // since for smaller indices also <= tj_evx
-    succ[ti][tj][ti_before_evx] = (int) tj_evx;
-  }
-
-  // Maintenance of thread-pair-wise transitivity of pred[tj][ti]
-  // Everything in tj after tj_evx also happens-after ti[ti_evx]
-
-  for (unsigned tj_after_evx = tj_evx + 1;
-       tj_after_evx < processes[tj].size();
-       ++tj_after_evx) {
-    if (pred[tj][ti][tj_after_evx] >= (int) ti_evx)
-      break; // since for bigger indices also >= ti_evx
-    pred[tj][ti][tj_after_evx] = (int) ti_evx;
-  }
-
-}
 
 /* *************************** */
 /* MAIN ALGORITHM              */
 /* *************************** */
 
+/*
 const Node * ZGraph::getTailWcandidate(const Node *nd, unsigned thr_id,
                                               const PartialOrder& po) const
 {
@@ -1274,3 +1142,4 @@ std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
 
   return result;
 }
+*/

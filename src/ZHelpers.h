@@ -6,6 +6,7 @@
 
 #include "ZEvent.h"
 
+
 /* helper functions */
 inline bool sameMl(const ZEvent *ev1, const ZEvent *ev2) {
   assert(ev1 && ev2);
@@ -37,22 +38,22 @@ inline bool isRead(const ZEvent& ev) {
 
 //
 
-inline bool isWriteBuf(const ZEvent *ev) {
+inline bool isWriteB(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::WRITEB;
 }
-inline bool isWriteBuf(const ZEvent& ev) {
+inline bool isWriteB(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::WRITEB;
 }
 
 
 //
 
-inline bool isWriteMem(const ZEvent *ev) {
+inline bool isWriteM(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::WRITEM;
 }
-inline bool isWriteMem(const ZEvent& ev) {
+inline bool isWriteM(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::WRITEM;
 }
 

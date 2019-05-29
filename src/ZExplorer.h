@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -29,16 +29,14 @@
 #include "ZTrace.h"
 #include "ZClosure.h"
 
+
 class ZExplorer {
 
   ZBuilderTSO& originalTB;
 
-  std::list<std::unique_ptr<ZTrace>> worklist;
+  ZTrace *initial;
 
-  std::unique_ptr<ZTrace> current;
-
-  std::unordered_map<int, std::unordered_set<VCIID>>
-    mutationProducesMaxTrace;
+  //DO WITH VALUES std::unordered_map<int, std::unordered_set<VCIID>> mutationProducesMaxTrace;
 
   class TraceExtension {
    public:
@@ -108,38 +106,35 @@ class ZExplorer {
   /* ALGORITHM                   */
   /* *************************** */
 
-  std::list<PartialOrder> orderingsAfterExtension();
+  //std::list<PartialOrder> orderingsAfterExtension();
 
-  std::list<PartialOrder> orderingsReadToBeMutated(const PartialOrder& po, const Node * nd);
+  //std::list<PartialOrder> orderingsReadToBeMutated(const PartialOrder& po, const Node * nd);
 
-  std::list<PartialOrder> orderingsAfterMutationChoice
-    (const PartialOrder& po, const std::vector<const Node *> newEverGood);
+  //std::list<PartialOrder> orderingsAfterMutationChoice(const PartialOrder& po, const std::vector<const Node *> newEverGood);
 
-  bool mutateRead(const PartialOrder& po, const ZClosure& withoutMutation,
-                  const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
+  //bool mutateRead(const PartialOrder& po, const ZClosure& withoutMutation, const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
-  bool mutateLock(const PartialOrder& po, const ZClosure& withoutMutation,
-                  const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
+  //bool mutateLock(const PartialOrder& po, const ZClosure& withoutMutation, const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd);
 
+  /*
   std::pair<bool, bool> // <error?, added_into_worklist?>
     extendAndAdd(PartialOrder&& mutatedPo,
                  const ZAnnotation& mutatedAnnotation,
                  const ZAnnotationNeg& negativeWriteMazBranch,
                  unsigned processMutationPreference,
                  bool mutationFollowsCurrentTrace);
+  */
+  //TraceExtension reuseTrace(const ZAnnotation& mutatedAnnotation);
 
-  TraceExtension reuseTrace(const ZAnnotation& mutatedAnnotation);
+  //TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
-  TraceExtension extendTrace(std::vector<ZEvent>&& tr);
-
-  bool traceRespectsAnnotation() const;
-
-  bool previous_mutation_process_first = true;
-  bool root_before_nonroots = true;
+  //bool traceRespectsAnnotation() const;
 
  public:
 
   bool explore();
+
+  bool exploreRec(ZTrace& trace);
 
   void print_stats();
 
@@ -147,21 +142,26 @@ class ZExplorer {
   /* CONSTRUCTOR                 */
   /* *************************** */
 
+  ~ZExplorer()
+    {
+      delete initial;
+      initial = nullptr;
+    };
+
   ZExplorer(std::vector<ZEvent>&& initial_trace,
              bool somethingToAnnotate,
              ZBuilderTSO& tb,
-             int star_root_index, bool p_m_p_f, bool r_b_n)
-    : originalTB(tb),
-    previous_mutation_process_first(p_m_p_f),
-    root_before_nonroots(r_b_n)
+             int star_root_index)
+    : originalTB(tb)
     {
+      if (tb.someThreadAssumeBlocked)
+        interpreter_assume_blocked_thread = 1;
+
       if (!somethingToAnnotate)
         executed_traces_full = 1;
       else
-        worklist.push_back(std::unique_ptr<ZTrace>(new ZTrace(std::move(initial_trace),
-                                                                star_root_index)));
-      if (tb.someThreadAssumeBlocked)
-        interpreter_assume_blocked_thread = 1;
+        initial = new ZTrace(std::move(initial_trace), star_root_index);
+
     }
 
 };

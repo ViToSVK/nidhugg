@@ -29,7 +29,7 @@ const LineT& ZBasis::operator[](std::pair<unsigned, int> ids) const
 }
 
 
-const LineT& ZBasis::operator[](unsigned thread_id, int aux_id) const
+const LineT& ZBasis::operator()(unsigned thread_id, int aux_id) const
 {
   return operator[](std::pair<unsigned, int>(thread_id, aux_id));
 }
@@ -38,7 +38,7 @@ const LineT& ZBasis::operator[](unsigned thread_id, int aux_id) const
 const ZEvent * ZBasis::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
 {
   assert(hasThreadAux(thread_id, aux_id));
-  const LinesT& line = lines[thread_id, aux_id];
+  const LineT& line = this->operator()(thread_id, aux_id);
   assert(event_id < line.size());
   assert(hasEvent(line[event_id]));
   return line[event_id];
@@ -48,10 +48,11 @@ const ZEvent * ZBasis::getEvent(unsigned thread_id, int aux_id, unsigned event_i
 void ZBasis::addLine(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
-  assert(ev->thread_id < 20 && "Thread ID not set up yet");
+  assert(ev->threadID() < 20 && "Thread ID not set up yet");
   assert(!hasThreadAux(ev->threadID(), ev->auxID()));
 
-  thread_aux_to_line_id.emplace(std::pair<ev->threadID(), ev->auxID()>, lines.size());
+  auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
+  thread_aux_to_line_id.emplace(key, lines.size());
   lines.push_back(LineT());
   lines.back().reserve(8);
 }
@@ -60,14 +61,16 @@ void ZBasis::addLine(const ZEvent *ev)
 void ZBasis::addEvent(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
-  assert(ev->thread_id < 20 && "Thread ID not set up yet");
+  assert(ev->threadID() < 20 && "Thread ID not set up yet");
   assert(hasThreadAux(ev->threadID(), ev->auxID()));
 
-  auto it = thread_aux_to_line_id.find(ev->threadID(), ev->auxID());
+  auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
+  auto it = thread_aux_to_line_id.find(key);
   assert(it != thread_aux_to_line_id.end());
   LineT& line = lines[it->second];
 
-  event_id = line.size();
+  unsigned event_id = line.size();
+  assert(event_id == ev->eventID());
   event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
   line.push_back(ev);
   assert(hasEvent(ev));
@@ -95,14 +98,17 @@ void ZBasis::replaceEvent(const ZEvent *oldEv, const ZEvent *newEv)
 }
 
 
-unsigned lineID(unsigned thread_id, int aux_id) const
+unsigned ZBasis::lineID(unsigned thread_id, int aux_id) const
 {
-  assert(hasThreadAux(thread_id, int aux_id));
-  return thread_aux_to_line_id[std::pair<unsigned,int>(thread_id, aux_id)];
+  assert(hasThreadAux(thread_id, aux_id));
+  auto key = std::pair<unsigned,int>(thread_id, aux_id);
+  auto it = thread_aux_to_line_id.find(key);
+  assert(it != thread_aux_to_line_id.end());
+  return it->second;
 }
 
 
-unsigned lineID(const ZEvent *ev) const
+unsigned ZBasis::lineID(const ZEvent *ev) const
 {
   return lineID(ev->threadID(), ev->auxID());
 }

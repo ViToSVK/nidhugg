@@ -33,9 +33,10 @@ std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned 
   int succ_evid = _succ[from_line][to_line][from->eventID()];
   assert(succ_evid >= 0);
 
-  if ((unsigned) succ_evid >= basis[to_thread, to_aux].size())
+  assert(to_line < basis.lines.size());
+  if ((unsigned) succ_evid >= basis.lines[to_line].size())
     return {nullptr, succ_evid};
-  return {basis[to_thread, to_aux][succ_evid], succ_evid};
+  return {basis.lines[to_line][succ_evid], succ_evid};
 }
 
 
@@ -62,11 +63,12 @@ std::pair<const ZEvent *, int> ZPartialOrder::pred(const ZEvent *to, unsigned fr
   assert(from_line != to_line);
   assert(to->eventID() < _pred.at(to_line).at(from_line).size());
   int pred_evid = _pred[to_line][from_line][to->eventID()];
-  assert(pred_evid < (int) basis[from_thread, from_aux].size());
+  assert(from_line < basis.lines.size());
+  assert(pred_evid < (int) basis.lines[from_line].size());
 
   if (pred_evid < 0)
     return {nullptr, pred_evid};
-  return {basis[from_thread, from_aux][pred_evid], pred_evid};
+  return {basis.lines[from_line][pred_evid], pred_evid};
 }
 
 
@@ -116,7 +118,7 @@ bool ZPartialOrder::areOrdered(const ZEvent *ev1, const ZEvent *ev2) const
 void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
 {
   assert(from && to && "Null pointer event");
-  assert(!areOrdered(n1, n2, po));
+  assert(!areOrdered(from, to));
 
   // Maintenance of the complete transitivity
   // Collect nodes from different lines with edges:
@@ -131,17 +133,17 @@ void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
   for (unsigned lk = 0; lk<basis.size(); ++lk) {
     if (lk != li && lk != lj) {
       auto maxbefore = pred(from, lk);
-      assert(maxbefore.second < basis.lines[lk].size());
+      assert(maxbefore.second < (int) basis.lines[lk].size());
       if (maxbefore.first)
         before_from.emplace(maxbefore.first);
       else assert(maxbefore.second == -1);
 
       auto minafter = succ(to, lk);
-      if
       assert(minafter.second >= 0);
       if (minafter.first)
         after_to.emplace(minafter.first);
-      else assert(minafter.second >= basis.lines[k].size());
+      else
+        assert(minafter.second >= (int) basis.lines[lk].size());
     }
   }
 
@@ -158,7 +160,7 @@ void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
   for (const auto& aft : after_to) {
     assert(!hasEdge(aft, from) && "Cycle");
     if (!hasEdge(from, aft))
-      addEdgeHelp(from, after);
+      addEdgeHelp(from, aft);
   }
 
   // TryAdd edges between each of *before_from* and each of *after_to*
@@ -220,11 +222,10 @@ void ZPartialOrder::addLine(const ZEvent * ev)
   // This should be called right after line is added to basis
   assert(ev && "Null pointer event");
   assert(basis.hasEvent(ev));
-  unsigned lID = basis.lineID(ev);
   assert(ev->eventID() == 0);
   assert(basis.size() == _succ.size() -1 &&
          basis.size() == _pred.size() -1);
-  assert(lID == _succ.size());
+  assert(basis.lineID(ev) == _succ.size());
 
   // Clocks from original lines to new one
   for (unsigned li=0; li<_succ.size(); li++) {
@@ -245,8 +246,8 @@ void ZPartialOrder::addLine(const ZEvent * ev)
   assert(basis.size() == _succ.size() && basis.size() == _pred.size());
   assert(basis.lines.at(lnew).size() == 0);
   for (unsigned lold=0; lold<basis.size(); lold++) {
-    _succ[i].push_back(std::vector<int>());
-    _pred[i].push_back(std::vector<int>());
+    _succ[lnew].push_back(std::vector<int>());
+    _pred[lnew].push_back(std::vector<int>());
   }
 }
 
@@ -261,7 +262,7 @@ void ZPartialOrder::addEvent(const ZEvent * ev)
   // This should be called right after ev is added to basis
   assert(basis.size() == _succ.size() && basis.size() == _pred.size());
   assert(evID == basis.lines[lID].size() - 1);
-  for (unsigned li=0; li<basis.size(); i++) {
+  for (unsigned li=0; li<basis.size(); li++) {
     assert(evID == _succ[lID][li].size());
     assert(evID == _pred[lID][li].size());
     // New _succ slot should have INT_MAX,

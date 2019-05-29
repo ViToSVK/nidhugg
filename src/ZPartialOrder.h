@@ -75,8 +75,8 @@ class ZPartialOrder {
 
   ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis)
     : basis(basis),
-    _succ(oth.succ),
-    _pred(oth.pred)
+    _succ(oth._succ),
+    _pred(oth._pred)
       {}
 
   ZPartialOrder(ZPartialOrder&& oth) = default;

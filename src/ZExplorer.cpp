@@ -25,6 +25,7 @@
 #include "ZHelpers.h"
 #include "ZDumps.cpp"
 
+
 void ZExplorer::print_stats()
 {
   std::setprecision(4);
@@ -53,10 +54,27 @@ void ZExplorer::print_stats()
   assert(true && "RUN ON RELEASE");
 }
 
+
 /* *************************** */
 /* EXPLORE                     */
 /* *************************** */
 
+bool ZExplorer::explore()
+{
+  if (initial)
+    return exploreRec(*initial);
+  return false;
+}
+
+
+bool ZExplorer::exploreRec(ZTrace& annTrace)
+{
+  ZBuilderTSO::dump(annTrace.trace);
+  std::cout << "here\n";
+  return false;
+}
+
+/*
 bool ZExplorer::explore()
 {
   while (!worklist.empty()) {
@@ -205,10 +223,11 @@ bool ZExplorer::explore()
   return false;
 }
 
+
 /* *************************** */
 /* EXTENSION EVENTS ORDERINGS  */
 /* *************************** */
-
+/*
 std::list<PartialOrder> ZExplorer::orderingsAfterExtension()
 {
   assert(current.get());
@@ -277,10 +296,11 @@ std::list<PartialOrder> ZExplorer::orderingsAfterMutationChoice
   return current->graph.dumpDoneWorklist();
 }
 
+
 /* *************************** */
 /* MUTATE READ                 */
 /* *************************** */
-
+/*
 bool ZExplorer::mutateRead(const PartialOrder& po, const ZClosure& withoutMutation,
                             const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
@@ -388,12 +408,12 @@ bool ZExplorer::mutateRead(const PartialOrder& po, const ZClosure& withoutMutati
         assert(mutatedAnnotation.size() == current->annotation.size() + 1);
         bool mutationFollowsCurrentTrace =
           (nd->getEvent()->value == vciid_ann.second.value);
-        /* DC version below
+        /////DC version below
           (vciid_ann.first.first == INT_MAX && nd->getEvent()->observed_id == -1) ||
           (vciid_ann.first.first != INT_MAX &&
            nd->getEvent()->observed_id ==
            (int) current->graph.getNode(vciid_ann.first)->getEvent()->id);
-        */
+
         auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                             negativeWriteMazBranch, nd->getProcessID(),
                                             mutationFollowsCurrentTrace);
@@ -426,10 +446,11 @@ bool ZExplorer::mutateRead(const PartialOrder& po, const ZClosure& withoutMutati
   return false;
 }
 
+
 /* *************************** */
 /* MUTATE LOCK                 */
 /* *************************** */
-
+/*
 bool ZExplorer::mutateLock(const PartialOrder& po, const ZClosure& withoutMutation,
                             const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
 {
@@ -529,10 +550,11 @@ bool ZExplorer::mutateLock(const PartialOrder& po, const ZClosure& withoutMutati
   return error_addedToWL.first;
 }
 
+
 /* *************************** */
 /* EXTEND AND ADD              */
 /* *************************** */
-
+/*
 std::pair<bool, bool>
 ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
                          const ZAnnotation& mutatedAnnotation,
@@ -584,10 +606,11 @@ ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
   return {false, true};
 }
 
+
 /* *************************** */
 /* REUSE TRACE                 */
 /* *************************** */
-
+/*
 ZExplorer::TraceExtension
 ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
 {
@@ -616,10 +639,11 @@ ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
   return TraceExtension(std::move(tr), somethingToAnnotate);
 }
 
+
 /* *************************** */
 /* EXTEND TRACE                */
 /* *************************** */
-
+/*
 ZExplorer::TraceExtension
 ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 {
@@ -641,10 +665,11 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
   return traceExtension;
 }
 
+
 /* *************************** */
 /* TRACE RESPECTS ANNOTATION   */
 /* *************************** */
-
+/*
 bool ZExplorer::traceRespectsAnnotation() const {
   for (unsigned i=0; i < current->trace.size(); ++i) {
     const ZEvent& ev = current->trace[i];
@@ -663,3 +688,4 @@ bool ZExplorer::traceRespectsAnnotation() const {
 
   return true;
 }
+*/

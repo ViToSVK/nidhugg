@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,9 +21,10 @@
 #ifndef _Z_ANNOTATIONNEG_H_
 #define _Z_ANNOTATIONNEG_H_
 
+#include <vector>
+
 #include "ZAnnotation.h"
 
-#include <vector>
 
 class ZAnnotationNeg {
  public:
@@ -33,31 +34,31 @@ class ZAnnotationNeg {
   ZAnnotationNeg(const ZAnnotationNeg& oth) = default;
   ZAnnotationNeg(ZAnnotationNeg&& oth) = default;
 
-  bool forbidsInitialEvent(const Node * readnd) const {
-    assert(isRead(readnd) || isLock(readnd));
-    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+  bool forbidsInitialEvent(const ZEvent *readev) const {
+    assert(isRead(readev) || isLock(readev));
+    auto key = VCIID(readev->threadID(), readev->eventID());
     return forbids_init.count(key);
   }
 
-  bool forbids(const Node * readnd, const Node * writend) const {
-    assert(writend->getEvent() &&
-           "should call the special function for init event");
-    assert((isRead(readnd) && isWrite(writend)) ||
-           (isLock(readnd) && isUnlock(writend)));
-    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+  bool forbids(const ZEvent *readev, const ZEvent *writeev) const {
+    assert(writeev && writeev->kind != ZEvent::Kind::INITIAL &&
+           "Should call the special function for init event");
+    assert((isRead(readev) && isWriteB(writeev)) ||
+           (isLock(readev) && isUnlock(writeev)));
+    auto key = VCIID(readev->threadID(), readev->eventID());
     auto it = mapping.find(key);
     if (it == mapping.end())
       return false;
-    if (writend->getProcessID() >= it->second.size())
+    if (writeev->threadID() >= it->second.size())
       return false;
 
-    return (it->second[writend->getProcessID()]
-            >= writend->getEventID());
+    return (it->second[writeev->threadID()]
+            >= writeev->eventID());
   }
 
-  void update(const Node * readnd, const std::vector<unsigned>& newneg) {
-    assert(isRead(readnd) || isLock(readnd));
-    auto key = VCIID(readnd->getProcessID(), readnd->getEventID());
+  void update(const ZEvent *readev, const std::vector<unsigned>& newneg) {
+    assert(isRead(readev) || isLock(readev));
+    auto key = VCIID(readev->threadID(), readev->eventID());
     forbids_init.insert(key);
     auto it = mapping.find(key);
     if (it == mapping.end())

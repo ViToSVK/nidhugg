@@ -37,6 +37,7 @@
 #include "Trace.h"
 #include "ZEvent.h"
 
+
 class ZBuilderTSO : public TSOTraceBuilder {
 
  public:
@@ -59,9 +60,9 @@ class ZBuilderTSO : public TSOTraceBuilder {
   // We want to get an extension of our trace
   bool sch_extend;
 
-  bool schedule_thread(int *proc, unsigned p);
-  bool schedule_arbitrarily(int *proc);
-  bool schedule_replay_trace(int *proc);
+  bool schedule_thread(int *proc, int *aux, unsigned p);
+  bool schedule_arbitrarily(int *proc, int *aux);
+  bool schedule_replay_trace(int *proc, int *aux);
   void update_prefix(unsigned p);
 
   void mayConflict(const SymAddrSize *ml = nullptr);
@@ -95,7 +96,7 @@ class ZBuilderTSO : public TSOTraceBuilder {
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
   // Ipid -> Trace indices of writes in store queue of thread Ipid
-  std::unordered_map<int, std::vector<int>> storeQueues;
+  std::unordered_map<int, std::vector<int>> visibleStoreQueue;
 
 
   ZEvent& curnode() {
@@ -163,9 +164,17 @@ class ZBuilderTSO : public TSOTraceBuilder {
   //
   virtual void spawn();
   virtual void join(int tgt_proc);
-  virtual void store(const SymData &ml, int val); // val
-  virtual void atomic_store(const SymData &ml, int val); // val
+  virtual void store(const SymData &sd, int val); // val
+  virtual void store(const SymData &sd) {
+    llvm::errs() << "Builder: Store should be reported along with the captured value\n";
+    abort();
+  }
+  virtual void atomic_store(const SymData &sd);
   virtual void load(const SymAddrSize &ml, int val); // val
+  virtual void load(const SymAddrSize &ml) {
+    llvm::errs() << "Builder: Load should be reported along with the captured value\n";
+    abort();
+  }
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);
@@ -224,6 +233,8 @@ class ZBuilderTSO : public TSOTraceBuilder {
   virtual Trace *get_trace() const;
   virtual bool has_error() const { return (error_trace != nullptr)
                                             || (errors.size() > 0); };
+
+  static void dump(const std::vector<ZEvent>& trace);
 
 };
 

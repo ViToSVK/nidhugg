@@ -23,8 +23,10 @@
 #define __Z_INTERPRETER_TSO_H__
 
 #include <config.h>
+
 #include "TSOInterpreter.h"
 #include "ZBuilderTSO.h"
+
 
 /* A ZInterpreterTSO is an interpreter running under the TSO
  * semantics. The execution should be guided by scheduling from a

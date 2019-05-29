@@ -34,6 +34,8 @@ bool ZBuilderTSO::reset()
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
 
+  dump(prefix);
+
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
   ZExplorer explorer = ZExplorer(std::move(prefix),
@@ -95,7 +97,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
       // event in prefix - it will increase the prefix
       // again if needed
       --prefix_idx;
-      return schedule_arbitrarily(proc);
+      return schedule_arbitrarily(proc, aux);
     }
     // Next instruction is the beginning of a new event
     assert(replay_trace.size() > prefix.size());
@@ -121,7 +123,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     ++threads[p].executed_instructions;
-    assert(prefix.back().traceID() == prefix.size() - 1);
+    assert(prefix.back().traceID() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
@@ -250,7 +252,7 @@ void ZBuilderTSO::update_prefix(unsigned p)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == prefix.size() - 1);
+    assert(prefix.back().traceID() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 }
@@ -263,7 +265,7 @@ void ZBuilderTSO::update_prefix(unsigned p)
 
 void ZBuilderTSO::refuse_schedule()
 {
-  // llvm::errs() << " REFUSESCH";
+  //llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
   assert(!prefix.back().may_conflict);
 
@@ -370,7 +372,7 @@ void ZBuilderTSO::join(int tgt_proc)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().id == prefix.size() - 1);
+    assert(prefix.back().traceID() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -385,23 +387,30 @@ void ZBuilderTSO::store(const SymData &sd, int val)
 {
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
+
+  unsigned p = curnode().iid.get_pid();
+  assert(p % 2 == 0);
+
+  // Put the store to buffer
+  threads[p].store_buffer.push_back(PendingStore(sd.get_ref(),prefix_idx,last_md));
+  threads[p+1].available = true;
+
+  const SymAddrSize& ml = sd.get_ref();
+  // Stores to local memory on stack may not conflict
   // Global stores happening with just one thread existing may not conflict
   // but we have to record them as such anyway to keep track of them
-  const SymAddrSize& ml = sd.get_ref();
-  assert(ml.addr.block.is_global() || ml.addr.block.is_heap()
-         && "Stores to local memory should be invisible");
+  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
+    //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    curnode().kind = ZEvent::Kind::WRITEB;
+    mayConflict(&ml);
+    curnode().value = val;
 
-  //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
-  assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::WRITEB;
-  mayConflict(&ml);
-  curnode().value = val;
-
-  // Enqueue the update into store queue
-  unsigned p = curnode().iid.get_pid();
-  if (!storeQueues.count(p))
-    storeQueues.emplace(p, std::vector<int>());
-  storeQueues[p].push_back(prefix_idx);
+    // Enqueue the update into visible store queue
+    if (!visibleStoreQueue.count(p))
+      visibleStoreQueue.emplace(p, std::vector<int>());
+    visibleStoreQueue[p].push_back(prefix_idx);
+  }
 }
 
 
@@ -410,38 +419,48 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 1 &&
          "Only auxiliary threads can perform memory-writes");
-  const SymAddrSize& ml = sd.get_ref();
-  assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
-         "Stores to local memory should be invisible");
-  //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
-
-  assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::WRITEM;
-  mayConflict(&ml);
 
   unsigned auxp = curnode().iid.get_pid();
   assert(auxp % 2 == 1);
   unsigned realp = auxp - 1;
   assert(auxp > realp);
-  // Locate corresponding buffer-write
-  assert(storeQueues.count(realp) && !storeQueues[realp].empty());
-  curnode().write_other_id = storeQueues[realp].front();
-  assert(curnode().write_other_id >= 0 &&
-         curnode().write_other_id <= prefix.size() - 2);
-  assert(prefix[curnode().write_other_id].kind == ZEvent::Kind::WRITEB);
-  assert(prefix[curnode().write_other_id].ml == ml &&
-         "Inconsistent memory locations");
-  curnode().value = prefix[curnode().write_other_id].value;
-  assert(prefix[curnode().write_other_id].write_other_id == -1);
-  prefix[curnode().write_other_id].write_other_id = prefix_idx;
 
-  // Dequeue oldest update from queue
-  for(unsigned i=0; i<storeQueues[realp].size()-1; ++i){
-    storeQueues[realp][i] = storeQueues[realp][i+1];
+  // Remove pending store from buffer
+  for(unsigned i=0; i<threads[realp].store_buffer.size()-1; ++i) {
+    threads[realp].store_buffer[i] = threads[realp].store_buffer[i+1];
   }
-  storeQueues[realp].pop_back();
+  threads[realp].store_buffer.pop_back();
+  if(threads[realp].store_buffer.empty()) {
+    threads[auxp].available = false;
+  }
 
-  lastWrite[ml] = prefix_idx;
+  const SymAddrSize& ml = sd.get_ref();
+  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
+    //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    curnode().kind = ZEvent::Kind::WRITEM;
+    mayConflict(&ml);
+
+    // Locate corresponding buffer-write
+    assert(visibleStoreQueue.count(realp) && !visibleStoreQueue[realp].empty());
+    curnode().write_other_trace_id = visibleStoreQueue[realp].front();
+    assert(curnode().write_other_trace_id >= 0 &&
+           curnode().write_other_trace_id <= (int) prefix.size() - 2);
+    assert(prefix[curnode().write_other_trace_id].kind == ZEvent::Kind::WRITEB);
+    assert(prefix[curnode().write_other_trace_id].ml == ml &&
+           "Inconsistent memory locations");
+    curnode().value = prefix[curnode().write_other_trace_id].value;
+    assert(prefix[curnode().write_other_trace_id].write_other_trace_id == -1);
+    prefix[curnode().write_other_trace_id].write_other_trace_id = prefix_idx;
+
+    // Dequeue oldest update from queue
+    for(unsigned i=0; i<visibleStoreQueue[realp].size()-1; ++i){
+      visibleStoreQueue[realp][i] = visibleStoreQueue[realp][i+1];
+    }
+    visibleStoreQueue[realp].pop_back();
+
+    lastWrite[ml] = prefix_idx;
+  }
 }
 
 
@@ -464,18 +483,18 @@ void ZBuilderTSO::load(const SymAddrSize &ml, int val)
     int obs_idx = (lastWrite.count(ml)) ? lastWrite[ml] : -1;
     // check for buffer-writes present in queue
     unsigned p = curnode().iid.get_pid();
-    if (!storeQueues.count(p))
-      storeQueues.emplace(p, std::vector<int>());
+    if (!visibleStoreQueue.count(p))
+      visibleStoreQueue.emplace(p, std::vector<int>());
     else {
-      for(unsigned i=storeQueues[p].size()-1; i>=0; --i) {
-        int idx = storeQueues[p][i];
+      for(int i=visibleStoreQueue[p].size()-1; i>=0; --i) {
+        int idx = visibleStoreQueue[p][i];
         if (prefix[idx].ml == ml) {
           obs_idx = idx;
           break;
         }
       }
     }
-    curnode().observed_id = obs_idx;
+    curnode().observed_trace_id = obs_idx;
 
     if (!sch_replay)
       somethingToAnnotate.insert(curnode().iid.get_pid());
@@ -487,7 +506,9 @@ void ZBuilderTSO::fence()
 {
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
-  assert(threads[ipid].store_buffer.empty());
+  assert(!visibleStoreQueue.count(curnode().iid.get_pid()) ||
+         visibleStoreQueue[curnode().iid.get_pid()].empty());
+  assert(threads[curnode().iid.get_pid()].store_buffer.empty());
   curnode().fence = true;
 }
 
@@ -582,14 +603,14 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().id == prefix.size() - 1);
+    assert(prefix.back().traceID() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
   assert(curnode().size == 1);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::M_LOCK;
-  curnode().observed_id = mutex.last_access; // initialized with -1
+  curnode().observed_trace_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
   if (!sch_replay)
@@ -656,7 +677,7 @@ void ZBuilderTSO::add_failed_lock_attempts() {
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().id == prefix.size() - 1);
+    assert(prefix.back().traceID() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
     assert(curnode().size == 1);
     assert(curnode().kind == ZEvent::Kind::DUMMY);

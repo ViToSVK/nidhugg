@@ -42,13 +42,15 @@ namespace std {
 class ZGraph;
 
 
+typedef std::vector<const ZEvent *> LineT;
+typedef std::vector<LineT> LinesT;
+
+
 class ZBasis {
   friend class ZPartialOrder;
  public:
   // ZGRAPH REFERENCE (given at constructor-time)
   const ZGraph& graph;  ////
-  typedef std::vector<ZEvent *> LineT;
-  typedef std::vector<LineT> LinesT;
 
 
   // ROOT (retained accross recursion children)
@@ -66,7 +68,7 @@ class ZBasis {
  public:
   const ZEvent *initial() const { return &init; }
   const LineT& operator[](std::pair<unsigned, int> ids) const;
-  const LineT& operator[](unsigned thread_id, int aux_id) const;
+  const LineT& operator()(unsigned thread_id, int aux_id) const;
   //
   const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
   void addLine(const ZEvent *ev);
@@ -140,10 +142,10 @@ class ZBasis {
 
   // typename clarifies that (const_)iterator
   // is a class and not a static member
-  typename LinesT::iterator begin() { return processes.begin(); }
-  typename LinesT::iterator end() { return processes.end(); }
-  typename LinesT::const_iterator begin() const { return processes.begin(); }
-  typename LinesT::const_iterator end() const { return processes.end(); }
+  typename LinesT::iterator begin() { return lines.begin(); }
+  typename LinesT::iterator end() { return lines.end(); }
+  typename LinesT::const_iterator begin() const { return lines.begin(); }
+  typename LinesT::const_iterator end() const { return lines.end(); }
 
 };
 

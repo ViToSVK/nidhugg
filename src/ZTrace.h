@@ -26,17 +26,16 @@
 #include "ZAnnotationNeg.h"
 #include "ZGraph.h"
 
+
 class ZTrace {
  public:
 
-  std::vector<ZEvent> trace;
+  const std::vector<ZEvent> trace;
 
-  ZAnnotation annotation;
-  ZAnnotationNeg negative;
+  const ZAnnotation annotation;
+  const ZAnnotationNeg negative;
 
   ZGraph graph;
-
-  unsigned processMutationPreference;
 
   /* *************************** */
   /* CONSTRUCTORS                */
@@ -45,24 +44,23 @@ class ZTrace {
   ZTrace() = delete;
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-          int star_root_index)
+         int star_root_index)
   : trace(std::move(initial_trace)),
     annotation(),
     negative(),
-    graph(this->trace, star_root_index),
-    processMutationPreference(0)
+    graph(this->trace, star_root_index)
       {};
 
-  ZTrace(std::vector<ZEvent>&& trace,
-          const ZAnnotation& annotation,
-          const ZAnnotationNeg& negative,
-          ZGraph&& graph,
-          unsigned pref)
-  : trace(std::move(trace)),
-    annotation(annotation),
-    negative(negative),
-    graph(std::move(graph)),
-    processMutationPreference(pref)
+  ZTrace(std::vector<ZEvent>&& new_trace,
+         const ZAnnotation& new_annotation,
+         const ZAnnotationNeg& new_negative,
+         const ZGraph& old_graph,
+         ZPartialOrder&& new_po)
+  : trace(std::move(new_trace)),
+    annotation(new_annotation),
+    negative(new_negative),
+    graph(old_graph, std::move(new_po),
+          this->trace, this->annotation)
       {};
 
   ZTrace(ZTrace&& tr) = default;

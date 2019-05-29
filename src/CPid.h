@@ -179,7 +179,7 @@ namespace std{
   template <>
   struct hash<CPid>{
     std::size_t operator()(const CPid& k) const{
-      size_t res = hash<std::vector<int>>(k.proc_seq);
+      size_t res = hash<std::vector<int>>()(k.proc_seq);
       res += 1 + k.aux_idx;
 			return res;
     }

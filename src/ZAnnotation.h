@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,12 +21,12 @@
 #ifndef _Z_ANNOTATION_H_
 #define _Z_ANNOTATION_H_
 
-#include "ZBasis.h"
-#include "ZHelpers.h"
-#include "Debug.h"
-
 #include <unordered_map>
 #include <unordered_set>
+
+#include "ZEvent.h"
+#include "ZHelpers.h"
+
 
 typedef std::pair<unsigned, unsigned> VCIID;
 
@@ -117,9 +117,9 @@ class ZAnnotation {
  public:
 
   // Retuns VCIIDs of newly everGood writes in ann
-  std::unordered_set<VCIID> add(const Node * nd, const Ann& ann) {
-    assert(isRead(nd));
-    auto key = VCIID(nd->getProcessID(), nd->getEventID());
+  std::unordered_set<VCIID> add(const ZEvent *ev, const Ann& ann) {
+    assert(isRead(ev));
+    auto key = VCIID(ev->threadID(), ev->eventID());
     auto it = mapping.find(key);
     assert(it == mapping.end());
     assert((ann.goodRemote.size() == 1 && !ann.goodLocal) ||
@@ -129,9 +129,9 @@ class ZAnnotation {
     // Maintain the set of everGood writes
     // Collect and return newly everGood writes
     auto result = std::unordered_set<VCIID>();
-    auto mlit = everGood.find(nd->getEvent()->ml);
+    auto mlit = everGood.find(ev->ml);
     if (mlit == everGood.end())
-      mlit = everGood.emplace_hint(mlit, nd->getEvent()->ml,
+      mlit = everGood.emplace_hint(mlit, ev->ml,
                                    std::unordered_set<VCIID>());
     if (ann.goodLocal) {
       auto neweverg = mlit->second.emplace(ann.goodLocal->first,
@@ -147,9 +147,9 @@ class ZAnnotation {
     return result;
   }
 
-  bool defines(const Node * nd) const {
-    assert(isRead(nd));
-    auto key = VCIID(nd->getProcessID(), nd->getEventID());
+  bool defines(const ZEvent *ev) const {
+    assert(isRead(ev));
+    auto key = VCIID(ev->threadID(), ev->eventID());
     return (mapping.find(key) != mapping.end());
   }
 
@@ -158,19 +158,19 @@ class ZAnnotation {
     return (mapping.find(key) != mapping.end());
   }
 
-  bool isEverGood(const Node * nd) const {
-    assert(isWrite(nd));
-    auto mlit = everGood.find(nd->getEvent()->ml);
+  bool isEverGood(const ZEvent *ev) const {
+    assert(isWriteB(ev));
+    auto mlit = everGood.find(ev->ml);
     if (mlit == everGood.end()) {
       return false;
     }
-    return mlit->second.count(VCIID(nd->getProcessID(),
-                                    nd->getEventID()));
+    return mlit->second.count(VCIID(ev->threadID(),
+                                    ev->eventID()));
   }
 
-  const Ann& getAnn(const Node * nd) const {
-    assert(isRead(nd));
-    auto key = VCIID(nd->getProcessID(), nd->getEventID());
+  const Ann& getAnn(const ZEvent *ev) const {
+    assert(isRead(ev));
+    auto key = VCIID(ev->threadID(), ev->eventID());
     auto it = mapping.find(key);
     assert(it != mapping.end());
     return it->second;
@@ -187,39 +187,40 @@ class ZAnnotation {
   /* LAST LOCK                   */
   /* *************************** */
 
-  void setLastLock(const Node * nd) {
-    assert(isLock(nd));
-    auto it = lastlock.find(nd->getEvent()->ml);
+  void setLastLock(const ZEvent *ev) {
+    assert(isLock(ev));
+    auto it = lastlock.find(ev->ml);
     if (it == lastlock.end())
-      lastlock.emplace_hint(it, nd->getEvent()->ml,
-                            VCIID(nd->getProcessID(), nd->getEventID()));
+      lastlock.emplace_hint(it, ev->ml,
+                            VCIID(ev->threadID(), ev->eventID()));
     else
-      it->second = VCIID(nd->getProcessID(), nd->getEventID());
+      it->second = VCIID(ev->threadID(), ev->eventID());
   }
 
-  std::pair<bool, VCIID> getLastLock(const Node * nd) const {
-    assert(isLock(nd));
-    auto it = lastlock.find(nd->getEvent()->ml);
+  std::pair<bool, VCIID> getLastLock(const ZEvent *ev) const {
+    assert(isLock(ev));
+    auto it = lastlock.find(ev->ml);
     if (it == lastlock.end())
       return {false, VCIID(1337,47)};
     else
       return {true, it->second};
   }
 
-  bool isLastLock(const Node * nd) const {
-    assert(isLock(nd));
-    auto it = lastlock.find(nd->getEvent()->ml);
+  bool isLastLock(const ZEvent *ev) const {
+    assert(isLock(ev));
+    auto it = lastlock.find(ev->ml);
     if (it == lastlock.end())
       return false;
     else
-      return (it->second == VCIID(nd->getProcessID(), nd->getEventID()));
+      return (it->second == VCIID(ev->threadID(), ev->eventID()));
   }
 
-  bool locationHasSomeLock(const Node * nd) const {
-    assert(isLock(nd));
-    return (lastlock.find(nd->getEvent()->ml) != lastlock.end());
+  bool locationHasSomeLock(const ZEvent *ev) const {
+    assert(isLock(ev));
+    return (lastlock.find(ev->ml) != lastlock.end());
   }
 };
+
 
 namespace std {
   template <>

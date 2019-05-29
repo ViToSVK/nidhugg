@@ -27,11 +27,11 @@
 #include <llvm/Metadata.h>
 #endif
 
+#include <tuple>
+
 #include "CPid.h"
 #include "TSOPSOTraceBuilder.h"
 #include "SymEv.h"
-
-#include <tuple>
 
 
 /* Information about a (short) sequence of consecutive events by the
@@ -56,8 +56,8 @@ class ZEvent {
     _event_id(event_order),
     _trace_id(trace_id),
     observed_trace_id(-1),
-    write_other_id(-1),
-    write_other_ptr(nullptr) /*set at PObuild time*/
+    write_other_trace_id(-1),
+    write_other_ptr(nullptr), /*set at PObuild time*/
     //
     iid(iid),
     size(1),
@@ -69,15 +69,16 @@ class ZEvent {
     }
 
   ZEvent(bool initial)
-    : kind(KIND:INITIAL),
-    ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
+    : kind(Kind::INITIAL),
+
+    ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
     value(-47),
-    _thread_id(MAX_INT),
+    _thread_id(INT_MAX),
     _aux_id(-1),
-    _event_id(MAX_INT),
+    _event_id(INT_MAX),
     _trace_id(-1),
     observed_trace_id(-1),
-    write_other_id(-1),
+    write_other_trace_id(-1),
     write_other_ptr(nullptr)
     {
       assert(initial);
@@ -99,8 +100,8 @@ class ZEvent {
     _event_id(oth._event_id),
     _trace_id(trace_id),
     observed_trace_id(-1),
-    write_other_id(-1),
-    write_other_ptr(nullptr) /*set at PObuild time*/
+    write_other_trace_id(-1),
+    write_other_ptr(nullptr), /*set at PObuild time*/
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
@@ -113,7 +114,7 @@ class ZEvent {
         // The observed trace ID stays the same
         // as we are reusing the whole trace
         observed_trace_id = oth.observed_trace_id;
-        write_other_id = oth.write_other_id;
+        write_other_trace_id = oth.write_other_trace_id;
       }
     }
 
@@ -157,7 +158,7 @@ class ZEvent {
   int observed_trace_id;
   /* Trace ID of its memory-write if this is a buffer-write
    * Trace ID of its buffer-write if this is a memory-write */
-  int write_other_id;
+  int write_other_trace_id;
   /* Point to this other event */
   const ZEvent * write_other_ptr;
 
@@ -187,10 +188,11 @@ class ZEvent {
   }
 
   bool operator<(const ZEvent& oth) const {
-    return std::tie(threadID(), auxID(), eventID())
-      < std::tie(oth.threadID(), oth.auxID(), oth.eventID());
+    return std::tie(_thread_id, _aux_id, _event_id)
+      < std::tie(oth._thread_id, oth._aux_id, oth._event_id);
   }
 
+  std::string to_string(bool write_cpid) const;
   void dump() const;
 };
 

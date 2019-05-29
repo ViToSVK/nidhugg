@@ -35,10 +35,9 @@
 #include <llvm/LLVMContext.h>
 #endif
 
-#include<iostream>
-
 #include "ZInterpreterTSO.h"
 #include "ZBuilderTSO.h"
+
 
 static void SetValue(llvm::Value *V, llvm::GenericValue Val, llvm::ExecutionContext &SF) {
   SF.Values[V] = Val;
@@ -267,9 +266,7 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
   }else{
     /* Store to buffer */
     // Storing value Val.IntVal.getSExtValue()
-    if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-      TB.store(sd, (int) Val.IntVal.getSExtValue());
-    }
+    TB.store(sd, (int) Val.IntVal.getSExtValue());
     assert(!DryRun); /**/
     tso_threads[CurrentThread].store_buffer.emplace_back(Ptr, std::move(sd));
   }

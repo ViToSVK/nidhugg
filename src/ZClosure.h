@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,63 +21,53 @@
 #ifndef __Z_CLOSURE_H__
 #define __Z_CLOSURE_H__
 
-#include "Debug.h"
 #include "ZGraph.h"
+
 
 class ZClosure {
  public:
 
-  ZClosure(const ZGraph& gr, const ZAnnotation& an)
-  : graph(gr), annotation(an) {}
+  ZClosure(const ZGraph& graph,
+           const ZAnnotation& annotation,
+           ZPartialOrder& partialOrder)
+  : gr(graph), an(annotation), po(partialOrder) {}
 
-  ZClosure(const ZClosure& oth) = default;
+  ZClosure(const ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure& oth) = delete;
-  ZClosure(ZClosure&& oth) = default;
+  ZClosure(ZClosure&& oth) = delete;
   ZClosure& operator=(ZClosure&& oth) = delete;
 
  private:
 
-  const Node *getGood(const ZAnnotation::Ann& ann) {
-    if (ann.goodLocal) {
-      assert(ann.loc != ZAnnotation::Loc::REMOTE);
-      if (ann.goodLocal->first == INT_MAX)
-        return graph.initial_node;
-      auto result = graph.getNode(*(ann.goodLocal));
-      assert(isWrite(result));
-      return result;
-    }
-    assert(ann.goodRemote.size() == 1);
-    auto result = graph.getNode(*(ann.goodRemote.begin()));
-    assert(isWrite(result));
-    return result;
+  const ZEvent *getGood(const ZAnnotation::Ann& ann) {
+    return nullptr;
   }
 
   std::pair<bool, bool> ruleOne
-    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
+    (const ZEvent *read, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleTwo
-    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
+    (const ZEvent *read, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> ruleThree
-    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
+    (const ZEvent *read, const ZAnnotation::Ann& ann);
 
   std::pair<bool, bool> rules
-    (const PartialOrder& po, const Node * readnd, const ZAnnotation::Ann& ann);
+    (const ZEvent *read, const ZAnnotation::Ann& ann);
 
  public:
 
-  void valClose(const PartialOrder& po, const Node * newread,
-                const ZAnnotation::Ann * newval);
+  bool close
+    (const ZEvent *newread, const ZAnnotation::Ann *newobs);
 
-  void valCloseLock(const PartialOrder& po,
-                    const Node * locknode,
-                    const Node * lastunlocknode);
+  bool closeLock
+    (const ZEvent *newlock, const ZEvent *lastunlock);
 
-  const ZGraph& graph;
+  const ZGraph& gr;
 
-  const ZAnnotation& annotation;
+  const ZAnnotation& an;
 
-  bool closed;
+  ZPartialOrder& po;
 };
 
 #endif // __Z_CLOSURE_H__
