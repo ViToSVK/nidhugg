@@ -1,6 +1,6 @@
 /* Copyright (C) 2014-2016 Carl Leonardsson
  * Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -251,22 +251,25 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
   llvm::GenericValue *Ptr = (llvm::GenericValue *)GVTOP(getOperandValue(I.getPointerOperand(), SF));
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
 
+  const SymAddrSize& ml = sd.get_ref();
+  // Stores to local memory on stack may not conflict
   if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
      0 <= AtomicFunctionCall){
     /* Atomic store */
-    llvm::errs() << "Interpreter: No support for Atomic store\n";
-    abort(); /**/
-    assert(tso_threads[CurrentThread].store_buffer.empty());
-    TB.atomic_store(sd);
-    if(DryRun){
-      DryRunMem.push_back(std::move(sd));
-      return;
+    if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
+      llvm::errs() << "Interpreter: No support for Atomic store\n";
+      abort(); /**/
+      //TB.atomic_store(sd);
     }
+    assert(tso_threads[CurrentThread].store_buffer.empty());
+    assert(!DryRun); /**/
     CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
   }else{
     /* Store to buffer */
     // Storing value Val.IntVal.getSExtValue()
-    TB.store(sd, (int) Val.IntVal.getSExtValue());
+    if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
+      TB.store(sd, (int) Val.IntVal.getSExtValue());
+    }
     assert(!DryRun); /**/
     tso_threads[CurrentThread].store_buffer.emplace_back(Ptr, std::move(sd));
   }

@@ -1,6 +1,6 @@
 /* Copyright (C) 2014-2016 Carl Leonardsson
  * Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *

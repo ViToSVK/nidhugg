@@ -18,12 +18,11 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <iostream>
-
 #include "Debug.h"
 #include "ZTrace.h"
 #include "ZBuilderTSO.h"
 #include "ZExplorer.h"
+
 
 bool ZBuilderTSO::reset()
 {
@@ -38,11 +37,9 @@ bool ZBuilderTSO::reset()
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
   ZExplorer explorer = ZExplorer(std::move(prefix),
-                                   !somethingToAnnotate.empty(),
-                                   *this,
-                                   this->star_root_index,
-                                   this->previous_mutation_process_first,
-                                   this->root_before_nonroots);
+                                 !somethingToAnnotate.empty(),
+                                 *this,
+                                 this->star_root_index);
 
   // Call the main method
   bool error = explorer.explore();
@@ -53,29 +50,30 @@ bool ZBuilderTSO::reset()
   return error;
 }
 
+
 /* *************************** */
 /* SCHEDULING                  */
 /* *************************** */
+
 
 bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 {
   // Not using these arguments
   *dryrun = false;
   *alt = 0;
-  *aux = -1;
   this->dryrun = false;
 
   if(sch_replay) {
-    assert(!sch_initial && !sch_extend);
-    return schedule_replay_trace(proc);
+    assert(!sch_extend);
+    return schedule_replay_trace(proc, aux);
   }
 
-  assert(!sch_replay && (sch_initial || sch_extend));
-
-  return schedule_arbitrarily(proc);
+  assert(!sch_replay && sch_extend);
+  return schedule_arbitrarily(proc, aux);
 }
 
-bool ZBuilderTSO::schedule_replay_trace(int *proc)
+
+bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
 {
   assert(!replay_trace.empty());
   assert(prefix_idx < (int) replay_trace.size());
@@ -103,16 +101,16 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc)
     assert(replay_trace.size() > prefix.size());
     assert(prefix_idx == (int) prefix.size());
     unsigned p = replay_trace[prefix_idx].iid.get_pid();
+    // If below assertion fails, search for p' tied to r_t[p_i].cpid,
+    // scan r_t down and swap p with p' in all found events
+    assert(replay_trace[prefix_idx].cpid ==
+           threads[p].cpid && "IPID<->CPID correspondence has changed");
     // Mark that thread p owns the new event
     threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    assert(replay_trace[prefix_idx].cpid ==
-           threads[p].cpid && "Inconsistent scheduling");
-    // if above fails, search for p' tied to r_t[p_i].cpid,
-    // scan r_t down and swap p with p' in all found events
     assert(replay_trace[prefix_idx].instruction_order ==
            threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-    assert(replay_trace[prefix_idx].event_order ==
+    assert(replay_trace[prefix_idx].eventID() ==
            threads[p].executed_events && "Inconsistent scheduling");
 
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
@@ -123,7 +121,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc)
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     ++threads[p].executed_instructions;
-    assert(prefix.back().id == prefix.size() - 1);
+    assert(prefix.back().traceID() == prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
@@ -148,32 +146,47 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc)
   // Mark that thread p executes a new instruction
   // ++threads[p].executed_instructions;
 
-  bool ret = schedule_thread(proc, p);
+  bool ret = schedule_thread(proc, aux, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
 
   return ret;
 }
 
-bool ZBuilderTSO::schedule_arbitrarily(int *proc)
+
+bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
 {
-  assert(!sch_replay && (sch_initial || sch_extend));
+  assert(!sch_replay && sch_extend);
 
   assert(threads.size() % 2 == 0);
+  // We prefer scheduling threads that have not yet
+  // seen a new unannotated event; this improves
+  // chances that new unannotated reads observe in
+  // this trace a write that we will subsequently
+  // include in our partial order
+  // Further we prefer auxiliary before real threads
+
+  const unsigned sz = threads.size();
+  unsigned p;
   if (somethingToAnnotate.size() < (threads.size() / 2)) {
-    // We prefer scheduling threads that have not yet
-    // seen a new unannotated event; this improves
-    // chances that new unannotated reads observe in
-    // this trace a write that we will subsequently
-    // include in our partial order
-    for(unsigned p = 0; p < threads.size(); p += 2) {
+    for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
+      if (!somethingToAnnotate.count(p - 1))
+        if (schedule_thread(proc, aux, p))
+          return true;
+    }
+    for (p = 0; p < sz; p += 2) { // Loop through real threads
       if (!somethingToAnnotate.count(p))
-        if (schedule_thread(proc, p))
+        if (schedule_thread(proc, aux, p))
           return true;
     }
   }
 
-  for(unsigned p = 0; p < threads.size(); p += 2) {
-    if (schedule_thread(proc, p))
+  for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
+    if (schedule_thread(proc, aux, p))
+      return true;
+  }
+
+  for (p = 0; p < sz; p += 2) { // Loop through real threads
+    if (schedule_thread(proc, aux, p))
       return true;
   }
 
@@ -182,26 +195,29 @@ bool ZBuilderTSO::schedule_arbitrarily(int *proc)
   return false;
 }
 
+
 // Schedule the next instruction to be the next instruction from thread p
-bool ZBuilderTSO::schedule_thread(int *proc, unsigned p)
+bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
 {
   if (threads[p].available && !threads[p].sleeping &&
       (conf.max_search_depth < 0 || threads[p].last_event_index() < conf.max_search_depth)) {
 
-    if (sch_initial || sch_extend) {
+    if (sch_extend) {
       update_prefix(p);
     } else {
       assert(sch_replay);
     }
 
-    // set the scheduled thread
+    // set the scheduled thread and aux
     *proc = p/2;
+    *aux = (p % 2) - 1; // -1 for real, 0 for auxiliary
 
     return true;
   }
 
   return false;
 }
+
 
 // Used only when we are not replaying replay_trace
 void ZBuilderTSO::update_prefix(unsigned p)
@@ -234,14 +250,16 @@ void ZBuilderTSO::update_prefix(unsigned p)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().id == prefix.size() - 1);
+    assert(prefix.back().traceID() == prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 }
 
+
 /* ******************************************************* */
 /* ADDRESSING FEEDBACK FROM INTERPRETER AFTER SCHEDULING   */
 /* ******************************************************* */
+
 
 void ZBuilderTSO::refuse_schedule()
 {
@@ -250,6 +268,7 @@ void ZBuilderTSO::refuse_schedule()
   assert(!prefix.back().may_conflict);
 
   unsigned p = curnode().iid.get_pid();
+  assert(p % 2 == 0 && "Only real threads can be refused");
 
   // Here used to be:
   // --threads[p].event_indices[p];
@@ -278,6 +297,7 @@ void ZBuilderTSO::refuse_schedule()
   mark_unavailable(p/2, -1);
 }
 
+
 void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
 {
   auto& curn = curnode();
@@ -291,10 +311,12 @@ void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
   #endif
 }
 
+
 void ZBuilderTSO::metadata(const llvm::MDNode *md)
 {
   if (md) curnode().md = md;
 }
+
 
 IID<CPid> ZBuilderTSO::get_iid() const
 {
@@ -303,9 +325,12 @@ IID<CPid> ZBuilderTSO::get_iid() const
   return IID<CPid>(threads[pid].cpid,idx);
 }
 
+
 void ZBuilderTSO::spawn()
 {
   //llvm::errs() << " SPAWN";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::SPAWN;
   mayConflict();
@@ -316,12 +341,15 @@ void ZBuilderTSO::spawn()
 
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
-  threads.back().available = false; // Empty store buffer
+  threads.back().available = false; // New thread starts with an empty store buffer
 }
+
 
 void ZBuilderTSO::join(int tgt_proc)
 {
   //llvm::errs() << " JOIN";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   // We make sure that every join is an event with exactly
   // one instruction - only the join instruction itself
@@ -352,48 +380,123 @@ void ZBuilderTSO::join(int tgt_proc)
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
 }
 
-void ZBuilderTSO::atomic_store(const SymData &sd, int val)
+
+void ZBuilderTSO::store(const SymData &sd, int val)
 {
-  // Stores to local memory on stack may not conflict
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   // Global stores happening with just one thread existing may not conflict
   // but we have to record them as such anyway to keep track of them
-  const SymAddrSize &ml = sd.get_ref();
-  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-    //llvm::errs() << " STORE_" << ml.to_string() << " ";
-    assert(curnode().kind == ZEvent::Kind::DUMMY);
-    curnode().kind = ZEvent::Kind::STORE;
-    mayConflict(&ml);
-    curnode().value = val;
-    lastWrite[ml] = prefix_idx;
-  }
+  const SymAddrSize& ml = sd.get_ref();
+  assert(ml.addr.block.is_global() || ml.addr.block.is_heap()
+         && "Stores to local memory should be invisible");
+
+  //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::WRITEB;
+  mayConflict(&ml);
+  curnode().value = val;
+
+  // Enqueue the update into store queue
+  unsigned p = curnode().iid.get_pid();
+  if (!storeQueues.count(p))
+    storeQueues.emplace(p, std::vector<int>());
+  storeQueues[p].push_back(prefix_idx);
 }
+
+
+void ZBuilderTSO::atomic_store(const SymData &sd)
+{
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 1 &&
+         "Only auxiliary threads can perform memory-writes");
+  const SymAddrSize& ml = sd.get_ref();
+  assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
+         "Stores to local memory should be invisible");
+  //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
+
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::WRITEM;
+  mayConflict(&ml);
+
+  unsigned auxp = curnode().iid.get_pid();
+  assert(auxp % 2 == 1);
+  unsigned realp = auxp - 1;
+  assert(auxp > realp);
+  // Locate corresponding buffer-write
+  assert(storeQueues.count(realp) && !storeQueues[realp].empty());
+  curnode().write_other_id = storeQueues[realp].front();
+  assert(curnode().write_other_id >= 0 &&
+         curnode().write_other_id <= prefix.size() - 2);
+  assert(prefix[curnode().write_other_id].kind == ZEvent::Kind::WRITEB);
+  assert(prefix[curnode().write_other_id].ml == ml &&
+         "Inconsistent memory locations");
+  curnode().value = prefix[curnode().write_other_id].value;
+  assert(prefix[curnode().write_other_id].write_other_id == -1);
+  prefix[curnode().write_other_id].write_other_id = prefix_idx;
+
+  // Dequeue oldest update from queue
+  for(unsigned i=0; i<storeQueues[realp].size()-1; ++i){
+    storeQueues[realp][i] = storeQueues[realp][i+1];
+  }
+  storeQueues[realp].pop_back();
+
+  lastWrite[ml] = prefix_idx;
+}
+
 
 void ZBuilderTSO::load(const SymAddrSize &ml, int val)
 {
   // Loads from local memory on stack may not conflict
   // Also global loads happening with just one thread existing may not conflict
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
       threads.size() > 2) { // 2 because two entries for each thread
-    //llvm::errs() << " LOAD_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
+    //llvm::errs() << " READ_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
     assert(curnode().kind == ZEvent::Kind::DUMMY);
-    curnode().kind = ZEvent::Kind::LOAD;
+    curnode().kind = ZEvent::Kind::READ;
     mayConflict(&ml);
     curnode().value = val;
-    curnode().observed_id =
-      (lastWrite.count(ml)) ? lastWrite[ml] : -1;
+
+    // Set ID of observed event
+    // last memory-write
+    int obs_idx = (lastWrite.count(ml)) ? lastWrite[ml] : -1;
+    // check for buffer-writes present in queue
+    unsigned p = curnode().iid.get_pid();
+    if (!storeQueues.count(p))
+      storeQueues.emplace(p, std::vector<int>());
+    else {
+      for(unsigned i=storeQueues[p].size()-1; i>=0; --i) {
+        int idx = storeQueues[p][i];
+        if (prefix[idx].ml == ml) {
+          obs_idx = idx;
+          break;
+        }
+      }
+    }
+    curnode().observed_id = obs_idx;
+
     if (!sch_replay)
       somethingToAnnotate.insert(curnode().iid.get_pid());
   }
 }
 
+
 void ZBuilderTSO::fence()
 {
+  assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
+  assert(threads[ipid].store_buffer.empty());
+  curnode().fence = true;
 }
+
 
 void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   fence();
   assert(!mutexes.count(ml.addr));
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -402,9 +505,12 @@ void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
   mutexes[ml.addr] = Mutex(-1); // prefix_idx
 }
 
+
 void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -417,9 +523,12 @@ void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
   mutexes.erase(ml.addr);
 }
 
+
 void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -429,7 +538,7 @@ void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 
   Mutex &mutex = mutexes[ml.addr];
   assert(0 <= mutex.last_access);
-  assert(mutex.locked && "Unlocked resource got unlocked again");
+  assert(mutex.locked && "Unlocked mutex got unlocked again");
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::M_UNLOCK;
@@ -439,9 +548,12 @@ void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
   mutex.locked = false;
 }
 
+
 void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -458,7 +570,7 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
     // Some invisible instructions happened before the
     // lock instruction, we split this into two events
     unsigned p = curnode().iid.get_pid();
-    --prefix[prefix_idx].size; // Substract the lock instruction
+    --prefix[prefix_idx].size; // Subtract the lock instruction
     // Create a new event with only the lock instruction
     ++prefix_idx;
     // Mark that thread p owns the new event
@@ -489,9 +601,11 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
   mutex.locked = true;
 }
 
+
 void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
   //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
     mutexes[ml.addr] = Mutex(-1);
@@ -507,6 +621,7 @@ void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
     somethingToAnnotate.insert(curnode().iid.get_pid());
   endsWithLockFail.emplace(curnode().iid.get_pid(), ml);
 }
+
 
 std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
@@ -524,6 +639,7 @@ std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
 
   return {prefix, !somethingToAnnotate.empty()};
 }
+
 
 void ZBuilderTSO::add_failed_lock_attempts() {
   // Add lock event for every thread ending with a failed mutex lock attempt
@@ -549,6 +665,7 @@ void ZBuilderTSO::add_failed_lock_attempts() {
     mayConflict(&(p_ml.second));
   }
 }
+
 
 Trace *ZBuilderTSO::get_trace() const
 {

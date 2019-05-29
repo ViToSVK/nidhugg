@@ -94,6 +94,8 @@ class ZBuilderTSO : public TSOTraceBuilder {
   void add_failed_lock_attempts();
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
+  // Ipid -> Trace indices of writes in store queue of thread Ipid
+  std::unordered_map<int, std::vector<int>> storeQueues;
 
 
   ZEvent& curnode() {

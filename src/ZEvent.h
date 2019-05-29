@@ -48,21 +48,22 @@ class ZEvent {
    : kind(Kind::DUMMY),
     cpid(cpid),
     childs_cpid(),
+    fence(false),
     ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
     value(-47),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id(cpid.get_aux_index()),
-    _event_id(1337), /*set at PObuild time*/
+    _event_id(event_order),
     _trace_id(trace_id),
     observed_trace_id(-1),
-    writeOther(nullptr),
+    write_other_id(-1),
+    write_other_ptr(nullptr) /*set at PObuild time*/
     //
     iid(iid),
     size(1),
     md(nullptr),
     may_conflict(false),
-    instruction_order(instruction_order),
-    event_order(event_order)
+    instruction_order(instruction_order)
     {
       assert(iid.get_pid() >= 0);
     }
@@ -71,12 +72,13 @@ class ZEvent {
     : kind(KIND:INITIAL),
     ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
     value(-47),
-    _thread_id(1000), /*set at PObuild time*/
+    _thread_id(MAX_INT),
     _aux_id(-1),
-    _event_id(1000), /*set at PObuild time*/
-    _trace_id(1000),
+    _event_id(MAX_INT),
+    _trace_id(-1),
     observed_trace_id(-1),
-    writeOther(nullptr)
+    write_other_id(-1),
+    write_other_ptr(nullptr)
     {
       assert(initial);
     }
@@ -89,27 +91,29 @@ class ZEvent {
     : kind(oth.kind),
     cpid(oth.cpid),
     childs_cpid(oth.childs_cpid),
+    fence(oth.fence),
     ml(oth.ml),
     value(oth.value),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id(oth.cpid.get_aux_index()),
-    _event_id(1337), /*set at PObuild time*/
+    _event_id(oth._event_id),
     _trace_id(trace_id),
     observed_trace_id(-1),
-    writeOther(nullptr),
+    write_other_id(-1),
+    write_other_ptr(nullptr) /*set at PObuild time*/
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
     md(nullptr),
     may_conflict(oth.may_conflict),
-    instruction_order(oth.instruction_order), /*guide interpreter*/
-    event_order(oth.event_order) /*guide interpreter*/
+    instruction_order(oth.instruction_order) /*guide interpreter*/
     {
       assert(iid.get_pid() >= 0);
       if (!blank) {
         // The observed trace ID stays the same
         // as we are reusing the whole trace
         observed_trace_id = oth.observed_trace_id;
+        write_other_id = oth.write_other_id;
       }
     }
 
@@ -127,6 +131,9 @@ class ZEvent {
    * 1) this event spawned (then this event is pthread_create) or
    * 2) this event joined (then this event is pthread_join) */
   CPid childs_cpid;
+  /* Whether a fence happens immediately before the last
+     (i.e. the visible) instruction of this event */
+  bool fence;
   /* Memory location (if any) modified/read by this event */
   SymAddrSize ml;
   /* The value read/written by this event */
@@ -137,7 +144,9 @@ class ZEvent {
   /* Aux ID in our partial order */
   int _aux_id;
   int auxID() const { return _aux_id; }
-  /* Event ID in our partial order */
+  /* Sequential number (within the thread) of this event,
+   * also Event ID in our partial order
+   * The first event of the thread is number 0 !!! */
   unsigned _event_id;
   unsigned eventID() const { return _event_id; }
   /* ID of the event (index into the trace this event is part of) */
@@ -146,9 +155,11 @@ class ZEvent {
   /* Trace ID of the observed event (lock observes unlock)
    * -1 means the initial event was observed */
   int observed_trace_id;
-  /* Pointer to its memory-write if this is a buffer-write
-   * Pointer to its buffer-write if this is a memory-write */
-  const ZEvent * writeOther;
+  /* Trace ID of its memory-write if this is a buffer-write
+   * Trace ID of its buffer-write if this is a memory-write */
+  int write_other_id;
+  /* Point to this other event */
+  const ZEvent * write_other_ptr;
 
   ZEvent copy(int id, bool blank) const {
     return ZEvent(*this, id, blank);
@@ -168,9 +179,6 @@ class ZEvent {
   /* Sequential number (within the thread) of the LAST instruction in this event
    * The first instruction of the thread is number 1 !!! */
   unsigned instruction_order;
-  /* Sequential number (within the thread) of this event
-   * The first event of the thread is number 0 !!! */
-  unsigned event_order;
 
   bool operator==(const ZEvent& oth) const {
     return (threadID() == oth.threadID() &&
