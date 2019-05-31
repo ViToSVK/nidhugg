@@ -22,14 +22,64 @@
 #include "ZGraph.h"
 
 
+// Empty
+ZGraph::ZGraph()
+  : basis(*this), po(this->basis), tw_candidate()
+{
+  assert(&(basis.graph) == this);
+  assert(&(po.basis) == &basis);
+  assert(empty());
+}
+
+
+// Initial
+ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index)
+  : basis(*this, star_root_index),
+    po(this->basis),
+    tw_candidate()
+{
+  assert(&(basis.graph) == this);
+  assert(&(po.basis) == &basis);
+  //traceToPO(trace, nullptr);
+  assert(basis.root() < basis.size() &&
+         "Root index too big (not enough threads in the initial trace)");
+}
+
+
+// Moving
+ZGraph::ZGraph(ZGraph&& oth)
+  : basis(std::move(oth.basis)),
+    po(std::move(oth.po)),
+    tw_candidate(std::move(oth.tw_candidate))
+{
+  assert(oth.empty());
+}
+
+
+// Partial order that will be moved as original
+// Trace and annotation that will extend this copy of the graph
+ZGraph::ZGraph(const ZGraph& oth,
+       ZPartialOrder&& po,
+       const std::vector<ZEvent>& trace,
+       const ZAnnotation& annotation)
+  : basis(oth.basis, *this),
+    po(po, this->basis),
+    tw_candidate()
+{
+  assert(&(basis.graph) == this);
+  assert(&(po.basis) == &basis);
+  //traceToPO(trace, &annotation);
+}
+
+
 /* *************************** */
 /* GRAPH EXTENSION             */
 /* *************************** */
-
+/*
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
-void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
-                         const ZAnnotation *annotationPtr)
+void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
+                       const ZAnnotation *annotationPtr)
 {
   assert(!trace.empty());
   assert(trace.size() >= basis.nodes_size());

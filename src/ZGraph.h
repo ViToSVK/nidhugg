@@ -24,7 +24,6 @@
 #include "ZPartialOrder.h"
 #include "ZAnnotationNeg.h"
 
-
 class ZGraph {
 
   ZBasis basis;
@@ -62,56 +61,24 @@ class ZGraph {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-
   ~ZGraph() {};
-
-  ZGraph() : basis(), po(), tw_candidate()
-      {
-        assert(empty());
-      }
-
-  ZGraph(const std::vector<ZEvent>& trace,
-         int star_root_index)
-    : basis(*this, star_root_index),
-    po(this->basis),
-    tw_candidate()
-      {
-        assert(&(basis.graph) == this);
-        assert(&(po.basis) == &basis);
-        //traceToPO(trace, nullptr);
-        assert(basis.root() < basis.size() &&
-               "Root index too big (not enough threads in the initial trace)");
-      }
-
-  ZGraph(ZGraph&& oth)
-  : basis(std::move(oth.basis)),
-    po(std::move(oth.po)),
-    tw_candidate(std::move(oth.tw_candidate))
-      {
-        assert(oth.empty());
-      }
-
-  ZGraph& operator=(ZGraph&& oth) = delete;
-
-  ZGraph(const ZGraph& oth) = delete;
+  // Empty
+  ZGraph();
+  // Initial
+  ZGraph(const std::vector<ZEvent>& trace, int star_root_index);
+  // Moving
+  ZGraph(ZGraph&& oth);
 
   // Partial order that will be moved as original
   // Trace and annotation that will extend this copy of the graph
   ZGraph(const ZGraph& oth,
          ZPartialOrder&& po,
          const std::vector<ZEvent>& trace,
-         const ZAnnotation& annotation)
-    : basis(oth.basis, *this),
-    po(po, this->basis),
-    tw_candidate()
-      {
-        assert(&(basis.graph) == this);
-        assert(&(po.basis) == &basis);
-        traceToPO(trace, &annotation);
-      }
+         const ZAnnotation& annotation);
 
+  ZGraph& operator=(ZGraph&& oth) = delete;
+  ZGraph(const ZGraph& oth) = delete;
   ZGraph& operator=(ZGraph& oth) = delete;
-
 
   /* *************************** */
   /* GRAPH EXTENSION             */
@@ -130,7 +97,7 @@ class ZGraph {
   // 3) partial order is extended to accomodate new
   //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
+  //void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
 
 
  public:

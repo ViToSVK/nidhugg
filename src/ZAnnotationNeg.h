@@ -75,6 +75,9 @@ class ZAnnotationNeg {
     }
   }
 
+
+  bool empty() const { return forbids_init.empty() && mapping.empty(); }
+
  private:
   std::unordered_set<VCIID> forbids_init;
   std::unordered_map<VCIID, std::vector<unsigned>> mapping;

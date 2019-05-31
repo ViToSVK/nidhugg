@@ -19,6 +19,45 @@
  */
 
 #include "ZBasis.h"
+#include "ZGraph.h"
+
+
+// Empty
+ZBasis::ZBasis(const ZGraph& gr)
+  : graph(gr),
+    root_thread_id(INT_MAX),
+    init(ZEvent(true)),
+    lines(),
+    thread_aux_to_line_id(),
+    proc_seq_to_thread_id(),
+    event_to_position()
+{
+  assert(graph.empty());
+}
+
+
+// Initial
+ZBasis::ZBasis(const ZGraph& gr, int root_thread_id)
+  : graph(gr),
+    root_thread_id(root_thread_id),
+    init(ZEvent(true)),
+    lines(),
+    thread_aux_to_line_id(),
+    proc_seq_to_thread_id(),
+    event_to_position()
+{}
+
+
+// When extending
+ZBasis::ZBasis(const ZBasis& oth, const ZGraph& gr)
+  : graph(gr),
+    root_thread_id(oth.root_thread_id),
+    init(ZEvent(true)),
+    lines(oth.lines),
+    thread_aux_to_line_id(oth.thread_aux_to_line_id),
+    proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
+    event_to_position(oth.event_to_position)
+{}
 
 
 const LineT& ZBasis::operator[](std::pair<unsigned, int> ids) const

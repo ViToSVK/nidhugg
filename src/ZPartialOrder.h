@@ -65,19 +65,11 @@ class ZPartialOrder {
 
 
  public:
-  // ZPartialOrder is not responsible for any resources
   ZPartialOrder() = delete;
-  ZPartialOrder(const ZBasis& basis)
-    : basis(basis),
-    _succ(),
-    _pred()
-      {}
-
-  ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis)
-    : basis(basis),
-    _succ(oth._succ),
-    _pred(oth._pred)
-      {}
+  // Empty or Initial
+  ZPartialOrder(const ZBasis& basis);
+  // When extending
+  ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis);
 
   ZPartialOrder(ZPartialOrder&& oth) = default;
   ZPartialOrder& operator=(ZPartialOrder&& oth) = delete;

@@ -21,6 +21,24 @@
 #include "ZPartialOrder.h"
 
 
+// Empty or Initial
+ZPartialOrder::ZPartialOrder(const ZBasis& basis)
+  : basis(basis),
+    _succ(),
+    _pred()
+{
+  assert(empty());
+}
+
+
+// When extending
+ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis)
+  : basis(basis),
+    _succ(oth._succ),
+    _pred(oth._pred)
+{}
+
+
 std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const
 {
   assert(from && "Null pointer event");

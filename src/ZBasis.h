@@ -41,7 +41,6 @@ namespace std {
 
 class ZGraph;
 
-
 typedef std::vector<const ZEvent *> LineT;
 typedef std::vector<LineT> LinesT;
 
@@ -104,36 +103,12 @@ class ZBasis {
 
 
  public:
-  // ZBasis is not responsible for any resources
-  ZBasis()
-    : graph(ZGraph()),
-    root_thread_id(INT_MAX),
-    init(ZEvent(true)),
-    lines(),
-    thread_aux_to_line_id(),
-    proc_seq_to_thread_id(),
-    event_to_position()
-      {}
-
-  ZBasis(const ZGraph& graph, int root_thread_id)
-    : graph(graph),
-    root_thread_id(root_thread_id),
-    init(ZEvent(true)),
-    lines(),
-    thread_aux_to_line_id(),
-    proc_seq_to_thread_id(),
-    event_to_position()
-      {}
-
-  ZBasis(const ZBasis& oth, const ZGraph& gr)
-    : graph(gr),
-    root_thread_id(oth.root_thread_id),
-    init(ZEvent(true)),
-    lines(oth.lines),
-    thread_aux_to_line_id(oth.thread_aux_to_line_id),
-    proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
-    event_to_position(oth.event_to_position)
-      {}
+  // Empty
+  ZBasis(const ZGraph& gr);
+  // Initial
+  ZBasis(const ZGraph& gr, int root_thread_id);
+  // When extending
+  ZBasis(const ZBasis& oth, const ZGraph& gr);
 
   ZBasis(ZBasis&& oth) = default;
   ZBasis& operator=(ZBasis&& oth) = delete;
@@ -157,5 +132,6 @@ class ZBasis {
   typename LinesT::const_iterator end() const { return lines.end(); }
 
 };
+
 
 #endif // _Z_BASIS_H_
