@@ -26,51 +26,44 @@ void removeSubstrings(std::string& s, std::string&& p) {
 std::string ZEvent::to_string(bool write_cpid = true) const {
   std::stringstream res;
 
+  res << traceID() << "_";
   if (write_cpid)
-    res << cpid << "__";
-  res << "[" << threadID() << "," << auxID() << "," << eventID() << "]__";
-  res << traceID() << "__";
+    res << cpid << "_";
+  res << "[" << threadID() << "," << auxID() << "," << eventID() << "]";
   switch(kind) {
    case ZEvent::Kind::DUMMY :
-     res << "<size: " << size << ">";
+     res << " <s:" << size << ">";
      break;
    case ZEvent::Kind::READ :
-     res << "read <- " << ml.addr.to_string() << " <observes: " << observed_trace_id << ">";
+     res << " read <- " << ml.addr.to_string() << " <O:" << observed_trace_id << ">";
      break;
    case ZEvent::Kind::WRITEB :
-     res << "writeBuf -> " << ml.addr.to_string();
+     res << " writeB -> " << ml.addr.to_string();
      break;
    case ZEvent::Kind::WRITEM :
-     res << "writeMem -> " << ml.addr.to_string() << " <Buf ";
-     if (write_other_ptr) {
-       res << "[" << write_other_ptr->threadID() << ","
-       << write_other_ptr->auxID() << "," << write_other_ptr->eventID();
-       assert(write_other_ptr->traceID() == write_other_trace_id);
-     } else {
-       res << "[?,?,?]";
-     }
-     res << "]__" << write_other_trace_id << ">";
+     res << " writeM -> " << ml.addr.to_string()
+         << " <B:" << write_other_trace_id << ">";
      break;
    case ZEvent::Kind::SPAWN :
-     res << "spawn " << childs_cpid;
+     res << " spawn " << childs_cpid;
      break;
    case ZEvent::Kind::JOIN :
-     res << "join " << childs_cpid << " <size: " << size << ">";
+     res << " join " << childs_cpid;
      break;
    case ZEvent::Kind::M_INIT :
-     res << "mutexinit " << ml.addr.to_string();
+     res << " mutexinit " << ml.addr.to_string();
      break;
    case ZEvent::Kind::M_DESTROY :
-     res << "mutexdestroy " << ml.addr.to_string();
+     res << " mutexdestroy " << ml.addr.to_string();
      break;
    case ZEvent::Kind::M_LOCK :
-     res << "lock " << ml.addr.to_string() << " <size: " << size << ">";
+     res << " lock " << ml.addr.to_string();
      break;
    case ZEvent::Kind::M_UNLOCK :
-     res << "unlock " << ml.addr.to_string();
+     res << " unlock " << ml.addr.to_string();
      break;
    default :
-     res << "unknown";
+     res << " unknown";
   }
 
   return res.str();
@@ -129,7 +122,7 @@ void ZPartialOrder::dump() const {
       for (unsigned evid = 0; evid < basis(tid, aux).size(); ++evid) {
         const ZEvent *ev = basis(tid, aux)[evid];
         res << "NODE" << line * 100000 + evid
-            << " [label=\"" << ev->to_string(false) << "\"]\n";
+            << " [shape=\"rectangle\", label=\"" << ev->to_string(false) << "\"]\n";
       }
     }
 
@@ -164,7 +157,7 @@ void ZPartialOrder::dump() const {
 
   res << "}\n\n";
 
-  llvm::errs() << res.str() << "\n";
+  llvm::errs() << res.str();
 }
 
 

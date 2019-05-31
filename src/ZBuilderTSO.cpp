@@ -34,8 +34,6 @@ bool ZBuilderTSO::reset()
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
 
-  dump(prefix);
-
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
   ZExplorer explorer = ZExplorer(std::move(prefix),

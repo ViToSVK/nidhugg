@@ -66,13 +66,14 @@ class ZBasis {
   LinesT lines; ////
  public:
   const ZEvent *initial() const { return &init; }
-  const LineT& operator[](std::pair<unsigned, int> ids) const;
+  const LineT& operator()(std::pair<unsigned, int> ids) const;
   const LineT& operator()(unsigned thread_id, int aux_id) const;
   //
   const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
   void addLine(const ZEvent *ev);
   void addEvent(const ZEvent *ev);
   void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);
+  void shrink();
 
 
   // THREAD_AUX->LINE_ID (retained accross recursion children)
@@ -92,6 +93,7 @@ class ZBasis {
   std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
  public:
   // <threadID, added_with_this_call?>
+  std::pair<unsigned, bool> getThreadID(const std::vector<int>& proc_seq);
   std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
 
 

@@ -69,8 +69,9 @@ bool ZExplorer::explore()
 
 bool ZExplorer::exploreRec(ZTrace& annTrace)
 {
-  ZBuilderTSO::dump(annTrace.trace);
-  std::cout << "here\n";
+  //ZBuilderTSO::dump(annTrace.trace);
+  annTrace.graph.dump();
+
   return false;
 }
 

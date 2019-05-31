@@ -62,6 +62,7 @@ class ZPartialOrder {
   // When creating PO from trace
   void addLine(const ZEvent * ev);
   void addEvent(const ZEvent * ev);
+  void shrink();
 
 
  public:

@@ -97,7 +97,7 @@ class ZGraph {
   // 3) partial order is extended to accomodate new
   //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  //void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
+  void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
 
 
  public:
@@ -152,6 +152,8 @@ class ZGraph {
   // Linearizes a partial order
   //std::vector<ZEvent> linearize(const PartialOrder& po,
   //const ZAnnotation& annotation) const;
+
+  void dump() const { po.dump(); }
 
 };
 

@@ -60,7 +60,7 @@ ZBasis::ZBasis(const ZBasis& oth, const ZGraph& gr)
 {}
 
 
-const LineT& ZBasis::operator[](std::pair<unsigned, int> ids) const
+const LineT& ZBasis::operator()(std::pair<unsigned, int> ids) const
 {
   auto it = thread_aux_to_line_id.find(ids);
   assert(it != thread_aux_to_line_id.end());
@@ -70,7 +70,7 @@ const LineT& ZBasis::operator[](std::pair<unsigned, int> ids) const
 
 const LineT& ZBasis::operator()(unsigned thread_id, int aux_id) const
 {
-  return operator[](std::pair<unsigned, int>(thread_id, aux_id));
+  return operator()(std::pair<unsigned, int>(thread_id, aux_id));
 }
 
 
@@ -137,6 +137,14 @@ void ZBasis::replaceEvent(const ZEvent *oldEv, const ZEvent *newEv)
 }
 
 
+void ZBasis::shrink()
+{
+  lines.shrink_to_fit();
+  for (unsigned i=0; i<lines.size(); ++i)
+    lines[i].shrink_to_fit();
+}
+
+
 unsigned ZBasis::lineID(unsigned thread_id, int aux_id) const
 {
   assert(hasThreadAux(thread_id, aux_id));
@@ -170,7 +178,7 @@ std::unordered_map<std::pair<unsigned, int>, unsigned> ZBasis::line_sizes() cons
   auto res = std::unordered_map<std::pair<unsigned, int>, unsigned>();
   for (const auto& thaux_line : thread_aux_to_line_id) {
     auto thaux = thaux_line.first;
-    unsigned size = (*this)[thaux].size();
+    unsigned size = (*this)(thaux).size();
     res.emplace(thaux, size);
   }
   return res;
@@ -178,9 +186,8 @@ std::unordered_map<std::pair<unsigned, int>, unsigned> ZBasis::line_sizes() cons
 
 
 // <threadID, added_with_this_call?>
-std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
+std::pair<unsigned, bool> ZBasis::getThreadID(const std::vector<int>& proc_seq)
 {
-  auto proc_seq = ev->cpid.get_proc_seq();
   auto it = proc_seq_to_thread_id.find(proc_seq);
   if (it == proc_seq_to_thread_id.end()) {
     unsigned res = proc_seq_to_thread_id.size();
@@ -188,6 +195,13 @@ std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
     return {res, true};
   };
   return {it->second, false};
+}
+
+
+// <threadID, added_with_this_call?>
+std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
+{
+  return getThreadID(ev->cpid.get_proc_seq());
 }
 
 

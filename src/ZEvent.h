@@ -140,7 +140,7 @@ class ZEvent {
   /* The value read/written by this event */
   int value;
   /* Thread ID in our partial order */
-  unsigned _thread_id;
+  mutable unsigned _thread_id;
   unsigned threadID() const { return _thread_id; }
   /* Aux ID in our partial order */
   int _aux_id;
@@ -158,9 +158,9 @@ class ZEvent {
   int observed_trace_id;
   /* Trace ID of its memory-write if this is a buffer-write
    * Trace ID of its buffer-write if this is a memory-write */
-  int write_other_trace_id;
+  mutable int write_other_trace_id;
   /* Point to this other event */
-  const ZEvent * write_other_ptr;
+  mutable const ZEvent * write_other_ptr;
 
   ZEvent copy(int id, bool blank) const {
     return ZEvent(*this, id, blank);

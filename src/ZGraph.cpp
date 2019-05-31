@@ -18,8 +18,11 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include <list>
+
 #include "ZHelpers.h"
 #include "ZGraph.h"
+#include "ZBuilderTSO.h"
 
 
 // Empty
@@ -40,7 +43,7 @@ ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index)
 {
   assert(&(basis.graph) == this);
   assert(&(po.basis) == &basis);
-  //traceToPO(trace, nullptr);
+  traceToPO(trace, nullptr);
   assert(basis.root() < basis.size() &&
          "Root index too big (not enough threads in the initial trace)");
 }
@@ -68,24 +71,24 @@ ZGraph::ZGraph(const ZGraph& oth,
 {
   assert(&(basis.graph) == this);
   assert(&(po.basis) == &basis);
-  //traceToPO(trace, &annotation);
+  traceToPO(trace, &annotation);
 }
 
 
 /* *************************** */
 /* GRAPH EXTENSION             */
 /* *************************** */
-/*
+
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
 void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
                        const ZAnnotation *annotationPtr)
 {
   assert(!trace.empty());
-  assert(trace.size() >= basis.nodes_size());
+  assert(trace.size() >= basis.events_size());
 
-  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thr;
-  ipid_to_thr.reserve(8);
+  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thraux;
+  ipid_to_thraux.reserve(8);
 
   std::unordered_map<std::pair<unsigned, int>, unsigned>
     cur_evidx;
@@ -107,28 +110,32 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   std::unordered_set<std::pair<unsigned, int>> thraux_with_event_we_dont_add;
   thraux_with_event_we_dont_add.reserve(8);
 
-  std::vector<const Node *> spawns;
+  std::unordered_map<unsigned,
+                     std::unordered_map<SymAddrSize,
+                                        std::list<const ZEvent *>>> store_buffer;
+
+  std::vector<const ZEvent *> spawns;
   spawns.reserve(8);
 
-  std::vector<const Node *> joins;
+  std::vector<const ZEvent *> joins;
   joins.reserve(8);
 
-  std::unordered_map<SymAddrSize, const Node *> mutex_inits;
+  std::unordered_map<SymAddrSize, const ZEvent *> mutex_inits;
   mutex_inits.reserve(8);
 
-  std::unordered_map<SymAddrSize, const Node *> mutex_destroys;
+  std::unordered_map<SymAddrSize, const ZEvent *> mutex_destroys;
   mutex_destroys.reserve(8);
 
   std::unordered_map<SymAddrSize,
-                     std::unordered_map<unsigned, const Node *>> mutex_first;
+                     std::unordered_map<unsigned, const ZEvent *>> mutex_first;
   mutex_first.reserve(8);
 
   std::unordered_map<SymAddrSize,
-                     std::unordered_map<unsigned, const Node *>> mutex_last;
+                     std::unordered_map<unsigned, const ZEvent *>> mutex_last;
   mutex_first.reserve(8);
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    ZEvent *ev = &(*traceit);
+    const ZEvent *ev = &(*traceit);
 
     if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
         // This is a forbidden process because it
@@ -145,18 +152,20 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     unsigned thr_idx = INT_MAX;
 
     // Check if this process is already known
-    auto ipidit = ipid_to_thr.find(ev->iid.get_pid());
-    if (ipidit != ipid_to_thr.end()) {
+    auto ipidit = ipid_to_thraux.find(ev->iid.get_pid());
+    if (ipidit != ipid_to_thraux.end()) {
       thr_idx = ipidit->second.first;
+      assert(ev->auxID() == ipidit->second.second);
     } else {
       auto thr_new = basis.getThreadID(ev);
       thr_idx = thr_new.first;
       // add to ipid cache for faster lookup next time
-      ipid_to_thr.emplace(ev->iid.get_pid(), thr_idx);
+      ipid_to_thraux.emplace(ev->iid.get_pid(),
+                             std::pair<unsigned, int>(thr_idx,
+                                                      ev->auxID()));
     }
 
     ev->_thread_id = thr_idx;
-
     auto thraux = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
 
     if (!basis.hasThreadAux(thraux)) {
@@ -165,89 +174,120 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       assert(!cur_evidx.count(thraux));
       cur_evidx.emplace(thraux, 0);
 
-
-      processes.emplace_back(std::vector<Node *>());
-      processes[proc_idx].reserve((int) trace.size() / 2);
-      ipid_to_processid.emplace(ev->iid.get_pid(), proc_idx);
-      cpid_to_processid.emplace(ev->cpid, proc_idx);
+      basis.addLine(ev);
+      po.addLine(ev);
     }
 
-    if (proc_idx == INT_MAX) {
+    unsigned ev_idx = cur_evidx[thraux];
 
-    }
-
-    unsigned ev_idx = cur_evidx[proc_idx];
-
-    // Check if we already haven't added a process-predecessor
-    if (processes_with_event_we_dont_add.count(proc_idx)) {
-      assert(ev_idx == processes[proc_idx].size());
+    // Check possible cases why we cannot add this event
+    //
+    // Check if we already haven't added a thraux-predecessor of this event
+    if (thraux_with_event_we_dont_add.count(thraux)) {
+      assert(ev_idx == basis(thraux).size());
       continue;
     }
-    // Check if proc_idx already has an unannotated read
-    if (has_unannotated_read_or_lock.count(proc_idx)) {
+    // Check if thraux already has an unannotated read
+    if (has_unannotated_read_or_lock.count(thraux.first) &&
+        thraux.second == -1) {
       // This event happens after something we need to
       // annotate first, so we don't add it into the graph
-      assert(ev_idx == processes[proc_idx].size());
-      processes_with_event_we_dont_add.insert(proc_idx);
+      assert(ev_idx == basis(thraux).size());
+      thraux_with_event_we_dont_add.insert(thraux);
       continue;
     }
-    // Joins of processes with an event we didn't include also
+    // Joins of threads with an event we didn't include also
     // can not be included and neither any of their successors
     if (isJoin(ev)) {
-      auto childs_proc_it = cpid_to_processid.find(ev->childs_cpid);
-      if (childs_proc_it == cpid_to_processid.end() ||
-          processes_with_event_we_dont_add.count(childs_proc_it->second)) {
-        assert(ev_idx == processes[proc_idx].size());
-        processes_with_event_we_dont_add.insert(proc_idx);
+      bool dontInclude = false;
+      auto childs_proc_it = proc_seq_within_po.find(ev->childs_cpid.get_proc_seq());
+      if (childs_proc_it == proc_seq_within_po.end()) {
+        dontInclude = true;
+      } else {
+        auto thr_added = basis.getThreadID(ev->childs_cpid.get_proc_seq());
+        assert(!thr_added.second);
+        auto childs_thraux = std::pair<unsigned, int>(thr_added.first, -1);
+        // It is enough to check the presence of the real thread
+        if (thraux_with_event_we_dont_add.count(childs_thraux))
+          dontInclude = true;
+      }
+      if (dontInclude) {
+        assert(ev_idx == basis(thraux).size());
+        thraux_with_event_we_dont_add.insert(thraux);
+        continue;
+      }
+    }
+    // Memory-writes cannot be added if their buffer-write
+    // was not added
+    if (isWriteM(ev)) {
+      assert(ev->auxID() != -1 && "Only auxiliary threads");
+      assert(store_buffer.count(ev->threadID()));
+      if (!store_buffer[ev->threadID()].count(ev->ml) ||
+          store_buffer[ev->threadID()][ev->ml].empty()) {
+        assert(ev_idx == basis(thraux).size());
+        thraux_with_event_we_dont_add.insert(thraux);
         continue;
       }
     }
 
-    Node *nd = nullptr;
-    if (ev_idx == processes[proc_idx].size()) {
+    // We will add the event
+    assert(ev->eventID() == ev_idx);
+    if (ev_idx == basis(thraux).size()) {
       // New event
-      nd = new Node(proc_idx, ev_idx, ev);
-
-      nodes.insert(nd);
-      processes[proc_idx].push_back(nd);
-      assert(processes[proc_idx].size() == ev_idx + 1);
-      event_to_node.emplace(ev, nd);
+      basis.addEvent(ev);
+      po.addEvent(ev);
 
       // XXX: function pointer calls not handled
       if (isSpawn(ev))
-        spawns.push_back(nd);
+        spawns.push_back(ev);
       if (isJoin(ev))
-        joins.push_back(nd);
+        joins.push_back(ev);
 
     } else {
       // Already known event
-      assert(ev_idx < processes[proc_idx].size());
-      nd = processes[proc_idx][ev_idx];
-      assert(nd && nodes.count(nd));
-      #ifndef NDEBUG
-      bool evType = (nd->getEvent()->kind == ev->kind);
-      assert(evType && "Original part of the basis is changed in 'trace'");
-      #endif
-      auto etnit = event_to_node.find(nd->getEvent());
-      assert(etnit != event_to_node.end());
-      event_to_node.erase(etnit);
-      event_to_node.emplace(ev, nd);
-
-      nd->setEvent(ev);
+      const ZEvent *oldev = basis.getEvent(ev->threadID(),
+                                           ev->auxID(),
+                                           ev->eventID());
+      basis.replaceEvent(oldev, ev);
     }
 
-    assert(nd->getProcessID() == proc_idx &&
-           nd->getEventID() == ev_idx &&
-           nd->getEvent() == ev);
-    assert(nd->getEvent()->event_order == nd->getEventID());
-    nd->getEvent()->setPID(nd->getProcessID());
-
-    ++cur_evidx[proc_idx];
+    ++cur_evidx[thraux];
 
     // Handle Spawn
     if (isSpawn(ev)) {
-      processes_created_within_po_cpid.insert(ev->childs_cpid);
+      proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
     }
+    // Handle Buffer-Write
+    if (isWriteB(ev)) {
+      assert(ev->auxID() == -1 && "Only real threads");
+      if (!store_buffer.count(ev->threadID()))
+        store_buffer.emplace(ev->threadID(),
+                             std::unordered_map<SymAddrSize,
+                             std::list<const ZEvent *>>());
+      if (!store_buffer[ev->threadID()].count(ev->ml))
+        store_buffer[ev->threadID()].emplace(ev->ml,
+                                             std::list<const ZEvent *>());
+      store_buffer[ev->threadID()][ev->ml].push_back(ev);
+    }
+    // Handle Memory-Write
+    if (isWriteM(ev)) {
+      assert(ev->auxID() != -1 && "Only auxiliary threads");
+      assert(store_buffer.count(ev->threadID()) &&
+             store_buffer[ev->threadID()].count(ev->ml));
+      assert(!ev->write_other_ptr);
+      ev->write_other_ptr = store_buffer[ev->threadID()][ev->ml].front();
+      assert(isWriteB(ev->write_other_ptr) && sameMl(ev, ev->write_other_ptr));
+      assert(!ev->write_other_ptr->write_other_ptr);
+      ev->write_other_ptr->write_other_ptr = ev;
+      assert(ev->write_other_ptr->traceID() == ev->write_other_trace_id);
+      assert(ev->write_other_ptr->write_other_trace_id == ev->traceID());
+      store_buffer[ev->threadID()][ev->ml].pop_front();
+
+      assert(!po.hasEdge(ev, ev->write_other_ptr));
+      if (!po.hasEdge(ev->write_other_ptr, ev))
+        po.addEdge(ev->write_other_ptr, ev);
+    }
+    /*
     // Handle Write
     if (isWrite(ev)) {
       if (nd->getProcessID() == starRoot()) {
@@ -269,14 +309,16 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         wNonrootUnord[ev->ml].insert(nd);
       }
     }
-
+    */
     // Handle Read
     if (isRead(ev)) {
       // Check if nd is not annotated yet
-      if (!annotationPtr || !(annotationPtr->defines(nd))) {
+      if (!annotationPtr || !(annotationPtr->defines(ev))) {
         // This will be the last node for the corresponding thread
-        has_unannotated_read_or_lock.insert(nd->getProcessID());
+        has_unannotated_read_or_lock.insert(ev->threadID());
       }
+    }
+      /*
       auto ittw = tw_candidate.find(ev->ml);
       if (ittw == tw_candidate.end())
         tw_candidate.emplace_hint(ittw, ev->ml, std::vector<std::vector<int>>());
@@ -309,64 +351,65 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         readsNonroot[ev->ml].insert(nd);
       }
     }
-
+    */
     // Handle Mutex events
     if (isMutexInit(ev)) {
       assert(!mutex_inits.count(ev->ml));
-      mutex_inits.emplace(ev->ml, nd);
+      mutex_inits.emplace(ev->ml, ev);
     }
     if (isMutexDestroy(ev)) {
       assert(!mutex_destroys.count(ev->ml));
-      mutex_destroys.emplace(ev->ml, nd);
+      mutex_destroys.emplace(ev->ml, ev);
     }
     if (isLock(ev)) {
-      // Check if nd is not annotated yet
-      if (!annotationPtr || !(annotationPtr->locationHasSomeLock(nd))) {
+      // Check if ev is not annotated yet
+      if (!annotationPtr || !(annotationPtr->locationHasSomeLock(ev))) {
         // No annotated lock has held this location yet
         // This will be the last node for the corresponding thread
-        has_unannotated_read_or_lock.insert(nd->getProcessID());
+        has_unannotated_read_or_lock.insert(ev->threadID());
       } else {
         // Some lock has already happened on this location
-        if (annotationPtr->isLastLock(nd)) {
+        if (annotationPtr->isLastLock(ev)) {
           // This is the last annotated lock for this location
-          assert(!found_last_lock_for_location.count(nd->getEvent()->ml));
-          found_last_lock_for_location.insert(nd->getEvent()->ml);
-        } else if (found_last_lock_for_location.count(nd->getEvent()->ml)) {
+          assert(!found_last_lock_for_location.count(ev->ml));
+          found_last_lock_for_location.insert(ev->ml);
+        } else if (found_last_lock_for_location.count(ev->ml)) {
           // This is a lock after the last annotated lock for this location
           // This will be the last node for the corresponding thread
-          has_unannotated_read_or_lock.insert(nd->getProcessID());
+          has_unannotated_read_or_lock.insert(ev->threadID());
         }
       }
     }
     if (isLock(ev) || isUnlock(ev)) {
       // For each ml, for each thread, remember first access
       if (!mutex_first.count(ev->ml)) {
-        mutex_first.emplace(ev->ml, std::unordered_map<unsigned, const Node *>());
+        mutex_first.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
         mutex_first[ev->ml].reserve(8);
       }
-      if (!mutex_first[ev->ml].count(nd->getProcessID()))
-        mutex_first[ev->ml].emplace(nd->getProcessID(), nd);
+      if (!mutex_first[ev->ml].count(ev->threadID()))
+        mutex_first[ev->ml].emplace(ev->threadID(), ev);
       // For each ml, for each thread, remember last access
       if (!mutex_last.count(ev->ml)) {
-        mutex_last.emplace(ev->ml, std::unordered_map<unsigned, const Node *>());
+        mutex_last.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
         mutex_last[ev->ml].reserve(8);
       }
-      mutex_last[ev->ml][nd->getProcessID()] = nd;
+      mutex_last[ev->ml][ev->threadID()] = ev;
     }
   } // end of loop for traversing trace and creating nodes
 
-  processes.shrink_to_fit();
-  for (unsigned i=0; i<processes.size(); ++i)
-    processes[i].shrink_to_fit();
+
+  basis.shrink();
+  po.shrink();
 
   #ifndef NDEBUG
-  assert(processes.size() == cur_evidx.size());
-  for (unsigned i = 0; i < cur_evidx.size(); ++i) {
-    assert(cur_evidx[i] == processes[i].size()
+  assert(basis.size() == cur_evidx.size());
+  for (auto& thraux_numevents : cur_evidx) {
+    assert(thraux_numevents.second == basis(thraux_numevents.first).size()
            && "Didn't go through entire original part of the basis");
   }
   #endif
 
+  /*
   // TAIL WRITE CANDIDATES CACHE
   // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
   // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
@@ -400,134 +443,67 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       }
     } // end of loop for evid
   } // end of loop for tid
-
-  ThreadPairsVclocks& succ_original = *(original.first);
-  ThreadPairsVclocks& pred_original = *(original.second);
-  succ_original.reserve(processes.size());
-  pred_original.reserve(processes.size());
-
-  // CLOSURE SAFE UNTIL EVENT ID - init
-  bool newProcesses = (succ_original.size() < processes.size());
-  if (newProcesses) {
-    closureSafeUntil = std::vector<int>(processes.size(), -1);
-  } else {
-    closureSafeUntil = std::vector<int>();
-    closureSafeUntil.reserve(succ_original.size());
-    for (unsigned i=0; i<succ_original.size(); i++) {
-      closureSafeUntil.push_back( processes[i].size() - 2);
-    }
-  }
-
-  // EDGES - extend for original processes
-  for (unsigned i=0; i<succ_original.size(); i++) {
-    succ_original[i].reserve(processes.size());
-    pred_original[i].reserve(processes.size());
-    for (unsigned j=0; j<processes.size(); j++) {
-      if (j < succ_original.size() && i != j) {
-        // Vclocks from original processes to original processes
-        succ_original[i][j].reserve(processes[i].size());
-        pred_original[i][j].reserve(processes[i].size());
-        // new succ slots should be filled with INT_MAX,
-        // new pred slots should be filled with what the last original slot says
-        int last_pred = pred_original[i][j]
-                                     [pred_original[i][j].size() - 1];
-        if (succ_original[i][j].size() < processes[i].size()) {
-          // New node at process i, all the nodes of process j
-          // after last_pred become unsafe wrt closure
-          if (closureSafeUntil[j] > last_pred)
-            closureSafeUntil[j] = last_pred;
-        }
-        while (succ_original[i][j].size() < processes[i].size()) {
-          succ_original[i][j].push_back(INT_MAX);
-          pred_original[i][j].push_back(last_pred);
-        }
-        assert(succ_original[i][j].size() == processes[i].size() &&
-               pred_original[i][j].size() == processes[i].size());
-      }
-      if (j >= succ_original.size()) {
-        // Vclocks from original processes to new processes
-        succ_original[i].push_back(std::vector<int>(processes[i].size(), INT_MAX));
-        pred_original[i].push_back(std::vector<int>(processes[i].size(), -1));
-      }
-    }
-  }
-
-  // EDGES - create for new proccesses
-  assert(succ_original.size() == pred_original.size());
-  while (succ_original.size() < processes.size()) {
-    unsigned i = succ_original.size();
-
-    succ_original.push_back(std::vector<std::vector<int>>());
-    succ_original[i].reserve(processes.size());
-    pred_original.push_back(std::vector<std::vector<int>>());
-    pred_original[i].reserve(processes.size());
-
-    for (unsigned j=0; j<processes.size(); j++) {
-      if (i != j) {
-        succ_original[i].push_back(std::vector<int>(processes[i].size(), INT_MAX));
-        pred_original[i].push_back(std::vector<int>(processes[i].size(), -1));
-      } else {
-        succ_original[i].push_back(std::vector<int>());
-        pred_original[i].push_back(std::vector<int>());
-      }
-    }
-  }
-
-  succ_original.shrink_to_fit();
-  pred_original.shrink_to_fit();
-  for (unsigned i=0; i<processes.size(); ++i) {
-    succ_original[i].shrink_to_fit();
-    pred_original[i].shrink_to_fit();
-  }
+  */
 
   // EDGES - spawns
-  for (const Node *spwn : spawns) {
-    auto spwn_it = cpid_to_processid.find(spwn->getEvent()->childs_cpid);
-    assert (spwn_it != cpid_to_processid.end());
-    const Node *nthr = processes[spwn_it->second][0];
+  for (const ZEvent *spwn : spawns) {
+    auto thr_added = basis.getThreadID(spwn->childs_cpid.get_proc_seq());
+    assert(!thr_added.second);
+    int aux = -1;
+    while (basis.hasThreadAux(thr_added.first, aux)) {
+      const ZEvent *nthr = basis.getEvent(thr_added.first, aux, 0);
 
-    assert(!hasEdge(nthr, spwn, original));
-    if (!hasEdge(spwn, nthr, original))
-      addEdge(spwn, nthr, original);
+      assert(!po.hasEdge(nthr, spwn));
+      if (!po.hasEdge(spwn, nthr))
+        po.addEdge(spwn, nthr);
+
+      aux++;
+    }
   }
 
   // EDGES - joins
-  for (const Node *jn : joins) {
-    auto jn_it = cpid_to_processid.find(jn->getEvent()->childs_cpid);
-    assert (jn_it != cpid_to_processid.end());
-    const Node *wthr = processes[jn_it->second]
-                                [processes[jn_it->second].size() - 1];
+  for (const ZEvent *jn : joins) {
+    auto thr_joined = basis.getThreadID(jn->childs_cpid.get_proc_seq());
+    assert(!thr_joined.second);
+    int aux = -1;
+    while (basis.hasThreadAux(thr_joined.first, aux)) {
+      unsigned lastev_idx = basis(thr_joined.first, aux).size() - 1;
+      const ZEvent *wthr = basis.getEvent(thr_joined.first, aux, lastev_idx);
 
-    assert(!hasEdge(jn, wthr, original));
-    if (!hasEdge(wthr, jn, original))
-      addEdge(wthr, jn, original);
+      assert(!po.hasEdge(jn, wthr));
+      if (!po.hasEdge(wthr, jn))
+        po.addEdge(wthr, jn);
+
+      aux++;
+    }
+    assert(aux >= 0);
   }
 
   // EDGES - mutex inits
   for (auto& in : mutex_inits) {
     const SymAddrSize& loc_init = in.first;
-    const Node *nd_init = in.second;
+    const ZEvent *ev_init = in.second;
 
-    for (auto& tid_nd_first : mutex_first[loc_init]) {
-      const Node *nd_first = tid_nd_first.second;
+    for (auto& tid_ev_first : mutex_first[loc_init]) {
+      const ZEvent *ev_first = tid_ev_first.second;
 
-      assert(!hasEdge(nd_first, nd_init, original));
-      if (!hasEdge(nd_init, nd_first, original))
-        addEdge(nd_init, nd_first, original);
+      assert(!po.hasEdge(ev_first, ev_init));
+      if (!po.hasEdge(ev_init, ev_first))
+        po.addEdge(ev_init, ev_first);
     }
   }
 
   // EDGES - mutex destroys
   for (auto& de : mutex_destroys) {
     const SymAddrSize& loc_destroy = de.first;
-    const Node *nd_destroy = de.second;
+    const ZEvent *ev_destroy = de.second;
 
-    for (auto& tid_nd_last : mutex_last[loc_destroy]) {
-      const Node *nd_last = tid_nd_last.second;
+    for (auto& tid_ev_last : mutex_last[loc_destroy]) {
+      const ZEvent *ev_last = tid_ev_last.second;
 
-      assert(!hasEdge(nd_destroy, nd_last, original));
-      if (!hasEdge(nd_last, nd_destroy, original))
-        addEdge(nd_last, nd_destroy, original);
+      assert(!po.hasEdge(ev_destroy, ev_last));
+      if (!po.hasEdge(ev_last, ev_destroy))
+        po.addEdge(ev_last, ev_destroy);
     }
   }
 }

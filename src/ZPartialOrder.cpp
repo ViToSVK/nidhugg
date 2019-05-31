@@ -239,10 +239,9 @@ void ZPartialOrder::addLine(const ZEvent * ev)
 {
   // This should be called right after line is added to basis
   assert(ev && "Null pointer event");
-  assert(basis.hasEvent(ev));
   assert(ev->eventID() == 0);
-  assert(basis.size() == _succ.size() -1 &&
-         basis.size() == _pred.size() -1);
+  assert(basis.size() == _succ.size() + 1 &&
+         basis.size() == _pred.size() + 1);
   assert(basis.lineID(ev) == _succ.size());
 
   // Clocks from original lines to new one
@@ -290,5 +289,23 @@ void ZPartialOrder::addEvent(const ZEvent * ev)
     _pred[lID][li].push_back(newpred);
     assert(basis.lines[lID].size() == _succ[lID][li].size());
     assert(basis.lines[lID].size() == _pred[lID][li].size());
+  }
+}
+
+
+void ZPartialOrder::shrink()
+{
+  assert(_succ.size() == _pred.size());
+  _succ.shrink_to_fit();
+  _pred.shrink_to_fit();
+  for (unsigned i=0; i<_succ.size(); ++i) {
+    assert(_succ[i].size() == _pred[i].size());
+    _succ[i].shrink_to_fit();
+    _pred[i].shrink_to_fit();
+    for (unsigned j=0; j<_succ[i].size(); ++j) {
+      assert(_succ[i][j].size() == _pred[i][j].size());
+      _succ[i][j].shrink_to_fit();
+      _pred[i][j].shrink_to_fit();
+    }
   }
 }
