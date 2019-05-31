@@ -25,30 +25,24 @@
 /* *************************** */
 /* GRAPH EXTENSION             */
 /* *************************** */
-/*
+
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
 void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
-                                const ZAnnotation *annotationPtr)
+                         const ZAnnotation *annotationPtr)
 {
-  assert(worklist_ready.empty());
-  assert(worklist_done.empty());
   assert(!trace.empty());
-  assert(trace.size() >= nodes_size());
+  assert(trace.size() >= basis.nodes_size());
 
-  cpid_to_processid.reserve(trace.size() / 2);
-  processes.reserve(trace.size() / 2);
-  event_to_node.reserve(trace.size());
+  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thr;
+  ipid_to_thr.reserve(8);
 
-  // Faster than cpid_to_processid
-  std::unordered_map<int, unsigned> ipid_to_processid;
-  ipid_to_processid.reserve(trace.size() / 2);
-
-  std::vector<unsigned> cur_evidx(processes.size(), 0);
-  cur_evidx.reserve(trace.size() / 2);
+  std::unordered_map<std::pair<unsigned, int>, unsigned>
+    cur_evidx;
+  cur_evidx.reserve(8);
 
   std::unordered_set<unsigned> has_unannotated_read_or_lock;
-  has_unannotated_read_or_lock.reserve(trace.size() / 2);
+  has_unannotated_read_or_lock.reserve(8);
 
   std::unordered_set<SymAddrSize> found_last_lock_for_location;
   found_last_lock_for_location.reserve(8);
@@ -56,12 +50,12 @@ void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
   std::unordered_set<unsigned> forbidden_processes_ipid;
   forbidden_processes_ipid.reserve(8);
 
-  std::unordered_set<CPid> processes_created_within_po_cpid;
-  processes_created_within_po_cpid.reserve(8);
-  processes_created_within_po_cpid.insert(trace[0].cpid);
+  std::unordered_set<std::vector<int>> proc_seq_within_po;
+  proc_seq_within_po.reserve(8);
+  proc_seq_within_po.insert(trace[0].cpid.get_proc_seq());
 
-  std::unordered_set<unsigned> processes_with_event_we_dont_add;
-  processes_with_event_we_dont_add.reserve(8);
+  std::unordered_set<std::pair<unsigned, int>> thraux_with_event_we_dont_add;
+  thraux_with_event_we_dont_add.reserve(8);
 
   std::vector<const Node *> spawns;
   spawns.reserve(8);
@@ -84,45 +78,52 @@ void ZGraph::extendGraph(const std::vector<ZEvent>& trace,
   mutex_first.reserve(8);
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    const ZEvent *ev = &(*traceit);
+    ZEvent *ev = &(*traceit);
 
     if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
         // This is a forbidden process because it
         // happens after a so-far unannotated node
         continue;
     }
-
-    unsigned proc_idx = INT_MAX;
-
-    // Check if this process is already known
-    auto ipidit = ipid_to_processid.find(ev->iid.get_pid());
-    if (ipidit != ipid_to_processid.end()) {
-      proc_idx = ipidit->second;
-    } else {
-      auto cpidit = cpid_to_processid.find(ev->cpid);
-      if (cpidit != cpid_to_processid.end()) {
-        proc_idx = cpidit->second;
-        // add to ipid cache for faster lookup next time
-        ipid_to_processid.emplace(ev->iid.get_pid(), proc_idx);
-      }
+    if (!proc_seq_within_po.count(ev->cpid.get_proc_seq())) {
+      // This is a forbidden process because it
+      // is created after a so-far unannotated node
+      forbidden_processes_ipid.insert(ev->iid.get_pid());
+      continue;
     }
 
-    if (proc_idx == INT_MAX) {
-      // A new process appeared
-      if (!processes_created_within_po_cpid.count(ev->cpid)) {
-        // This is a forbidden process because it
-        // is created after a so-far unannotated node
-        forbidden_processes_ipid.insert(ev->iid.get_pid());
-        continue;
-      }
-      proc_idx = processes.size();
-      assert(cur_evidx.size() == proc_idx);
-      cur_evidx.push_back(0);
+    unsigned thr_idx = INT_MAX;
+
+    // Check if this process is already known
+    auto ipidit = ipid_to_thr.find(ev->iid.get_pid());
+    if (ipidit != ipid_to_thr.end()) {
+      thr_idx = ipidit->second.first;
+    } else {
+      auto thr_new = basis.getThreadID(ev);
+      thr_idx = thr_new.first;
+      // add to ipid cache for faster lookup next time
+      ipid_to_thr.emplace(ev->iid.get_pid(), thr_idx);
+    }
+
+    ev->_thread_id = thr_idx;
+
+    auto thraux = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
+
+    if (!basis.hasThreadAux(thraux)) {
+      // A new thread/aux appeared,
+      // we've checked above that it is allowed
+      assert(!cur_evidx.count(thraux));
+      cur_evidx.emplace(thraux, 0);
+
 
       processes.emplace_back(std::vector<Node *>());
       processes[proc_idx].reserve((int) trace.size() / 2);
       ipid_to_processid.emplace(ev->iid.get_pid(), proc_idx);
       cpid_to_processid.emplace(ev->cpid, proc_idx);
+    }
+
+    if (proc_idx == INT_MAX) {
+
     }
 
     unsigned ev_idx = cur_evidx[proc_idx];

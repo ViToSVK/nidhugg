@@ -37,11 +37,20 @@ class ZTrace {
 
   ZGraph graph;
 
+  bool empty() const {
+    return (trace.empty() && annotation.empty() &&
+            negative.empty() && graph.empty());
+  }
+
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ZTrace() = delete;
+  ZTrace()
+    : trace(), annotation(), negative(), graph()
+      {
+        assert(empty());
+      };
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
          int star_root_index)

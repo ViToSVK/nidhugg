@@ -105,7 +105,16 @@ class ZBasis {
 
  public:
   // ZBasis is not responsible for any resources
-  ZBasis() = delete;
+  ZBasis()
+    : graph(ZGraph()),
+    root_thread_id(INT_MAX),
+    init(ZEvent(true)),
+    lines(),
+    thread_aux_to_line_id(),
+    proc_seq_to_thread_id(),
+    event_to_position()
+      {}
+
   ZBasis(const ZGraph& graph, int root_thread_id)
     : graph(graph),
     root_thread_id(root_thread_id),

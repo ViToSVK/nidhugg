@@ -54,7 +54,7 @@ class ZGraph {
  public:
 
   bool empty() const {
-    return (basis.empty() && po.empty());
+    return (basis.empty() && po.empty() && tw_candidate.empty());
   }
 
 
@@ -65,7 +65,10 @@ class ZGraph {
 
   ~ZGraph() {};
 
-  ZGraph() = delete;
+  ZGraph() : basis(), po(), tw_candidate()
+      {
+        assert(empty());
+      }
 
   ZGraph(const std::vector<ZEvent>& trace,
          int star_root_index)
@@ -104,7 +107,7 @@ class ZGraph {
       {
         assert(&(basis.graph) == this);
         assert(&(po.basis) == &basis);
-        //traceToPO(trace, &annotation);
+        traceToPO(trace, &annotation);
       }
 
   ZGraph& operator=(ZGraph& oth) = delete;
@@ -122,13 +125,12 @@ class ZGraph {
   // Argument: 'trace' - extension of 'orig_trace'
   // The method links this graph with 'trace' as follows:
   // 1) events of 'trace' that already happened in 'orig_trace'
-  //    are linked to the corresponding (already existing) nodes
-  // 2) new events of 'trace' create new nodes and in the basis
-  //    they extend existing threads / create new threads
-  // 3) succ/pred_original are extended to accomodate new
-  //    threads+nodes while keeping all the original info
+  //    replace their corresponding 'orig_trace' pointers
+  // 2) new events of 'trace' extend existing threads / create new threads
+  // 3) partial order is extended to accomodate new
+  //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  //void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
+  void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
 
 
  public:
