@@ -221,8 +221,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     // was not added
     if (isWriteM(ev)) {
       assert(ev->auxID() != -1 && "Only auxiliary threads");
-      assert(store_buffer.count(ev->threadID()));
-      if (!store_buffer[ev->threadID()].count(ev->ml) ||
+      if (!store_buffer.count(ev->threadID()) ||
+          !store_buffer[ev->threadID()].count(ev->ml) ||
           store_buffer[ev->threadID()][ev->ml].empty()) {
         assert(ev_idx == basis(thraux).size());
         thraux_with_event_we_dont_add.insert(thraux);

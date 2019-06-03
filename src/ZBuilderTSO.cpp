@@ -45,7 +45,7 @@ bool ZBuilderTSO::reset()
   bool error = explorer.explore();
 
   // Print the result statistics
-  explorer.print_stats();
+  // explorer.print_stats();
 
   return error;
 }

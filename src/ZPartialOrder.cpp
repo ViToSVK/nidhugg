@@ -117,7 +117,7 @@ bool ZPartialOrder::hasEdge(const ZEvent *from, const ZEvent *to) const
     return from->eventID() < to->eventID();
 
   unsigned fromLine = basis.lineID(from);
-  unsigned toLine = basis.lineID(from);
+  unsigned toLine = basis.lineID(to);
   return _succ[fromLine][toLine]
               [from->eventID()] <= (int) to->eventID();
 }
@@ -146,6 +146,7 @@ void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
   assert(basis.size() == _succ.size() && basis.size() == _pred.size());
   unsigned li = basis.lineID(from);
   unsigned lj = basis.lineID(to);
+  assert(li != lj);
 
   std::set<const ZEvent *> before_from, after_to;
   for (unsigned lk = 0; lk<basis.size(); ++lk) {
@@ -199,6 +200,7 @@ void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
 {
   unsigned li = basis.lineID(from);
   unsigned lj = basis.lineID(to);
+  assert(li != lj);
   unsigned li_evx = from->eventID();
   unsigned lj_evx = to->eventID();
   assert( _succ[li][lj][li_evx] > (int) lj_evx && // ! li[li_evx] HB lj[lj_evx]

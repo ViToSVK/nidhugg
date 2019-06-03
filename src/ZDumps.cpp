@@ -116,7 +116,7 @@ void ZPartialOrder::dump() const {
         << " " << basis(tid, -1)[0]->cpid;
     if (basis.isRoot(tid))
       res << " ROOT";
-    res << "\"\n";
+    res << "\" style=\"rounded\" \n";
     for (const auto& aux : th_aux[tid]) {
       unsigned line =  basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
       for (unsigned evid = 0; evid < basis(tid, aux).size(); ++evid) {
