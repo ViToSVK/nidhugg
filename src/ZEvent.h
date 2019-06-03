@@ -28,6 +28,7 @@
 #endif
 
 #include <tuple>
+#include <unordered_map>
 
 #include "CPid.h"
 #include "TSOPSOTraceBuilder.h"
@@ -63,7 +64,8 @@ class ZEvent {
     size(1),
     md(nullptr),
     may_conflict(false),
-    instruction_order(instruction_order)
+    instruction_order(instruction_order),
+    aux_invisible()
     {
       assert(iid.get_pid() >= 0);
     }
@@ -107,7 +109,8 @@ class ZEvent {
     size(oth.size), /*guide interpreter*/
     md(nullptr),
     may_conflict(oth.may_conflict),
-    instruction_order(oth.instruction_order) /*guide interpreter*/
+    instruction_order(oth.instruction_order), /*guide interpreter*/
+    aux_invisible(oth.aux_invisible) /*guide interpreter*/
     {
       assert(iid.get_pid() >= 0);
       if (!blank) {
@@ -180,6 +183,8 @@ class ZEvent {
   /* Sequential number (within the thread) of the LAST instruction in this event
    * The first instruction of the thread is number 1 !!! */
   unsigned instruction_order;
+  /* Invisible instructions done on an auxiliary thread */
+  std::unordered_map<int, unsigned> aux_invisible;
 
   bool operator==(const ZEvent& oth) const {
     return (threadID() == oth.threadID() &&

@@ -135,7 +135,7 @@ void ZPartialOrder::dump() const {
   for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
     for (const auto& aux : th_aux[tid]) {
       unsigned line =  basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
-      for (unsigned evid = 0; evid < basis(tid, aux).size() - 1; ++evid) {
+      for (int evid = 0; evid < (int) basis(tid, aux).size() - 1; ++evid) {
         res << "NODE" << line * 100000 + evid
             << " -> NODE" << line * 100000 + evid + 1 << "[style=bold]\n";
       }

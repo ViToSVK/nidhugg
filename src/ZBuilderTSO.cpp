@@ -130,11 +130,25 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     assert(replay_trace[prefix_idx].size >=
            prefix[prefix_idx].size && "Inconsistent scheduling");
     unsigned p = replay_trace[prefix_idx].iid.get_pid();
+    // Handle when next instruction is an invisible one
+    // coming from an auxiliary thread
+    if (p % 2 == 0 &&
+        replay_trace[prefix_idx].aux_invisible.count(prefix[prefix_idx].size)) {
+      p++;
+      assert(p == replay_trace[prefix_idx].aux_invisible[prefix[prefix_idx].size]);
+    }
     ++threads[p].executed_instructions;
   }
 
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[prefix_idx].iid.get_pid();
+  // Handle when next instruction is an invisible one
+  // coming from an auxiliary thread
+  if (p % 2 == 0 &&
+      replay_trace[prefix_idx].aux_invisible.count(prefix[prefix_idx].size)) {
+    p++;
+    assert(p == replay_trace[prefix_idx].aux_invisible[prefix[prefix_idx].size]);
+  }
   assert(threads[p].available);
 
   // Here used to be:
@@ -415,13 +429,17 @@ void ZBuilderTSO::store(const SymData &sd, int val)
 void ZBuilderTSO::atomic_store(const SymData &sd)
 {
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 1 &&
+  assert((curnode().iid.get_pid() % 2 == 1 ||
+          (sch_replay && !sch_extend &&
+           replay_trace[prefix_idx].aux_invisible.count(curnode().size))) &&
          "Only auxiliary threads can perform memory-writes");
 
   unsigned auxp = curnode().iid.get_pid();
+  if (auxp % 2 != 1)
+    auxp = replay_trace[prefix_idx].aux_invisible[curnode().size];
   assert(auxp % 2 == 1);
   unsigned realp = auxp - 1;
-  assert(auxp > realp);
+  assert(auxp > realp && auxp == realp + 1);
 
   // Remove pending store from buffer
   for(unsigned i=0; i<threads[realp].store_buffer.size()-1; ++i) {
@@ -458,6 +476,37 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
     visibleStoreQueue[realp].pop_back();
 
     lastWrite[ml] = prefix_idx;
+  } else if (sch_extend) {
+    assert(curnode().iid.get_pid() == (int) auxp);
+    if (curnode().size == 1 && !curnode().may_conflict && prefix_idx > 0 &&
+        prefix[prefix_idx - 1].iid.get_pid() == (int) realp &&
+        !prefix[prefix_idx - 1].may_conflict &&
+        prefix[prefix_idx - 1].kind == ZEvent::Kind::DUMMY) {
+      // This is a single invisible auxiliary instruction,
+      // previous event is invisible and belongs to
+      // the corresponding real thread
+      // We squash these two events together
+
+      // Do not do this: --threads[auxp].executed_instructions;
+      // Unmark ownership of this new event
+      assert((int) threads[auxp].event_indices.back() == prefix_idx);
+      threads[auxp].event_indices.pop_back();
+      --threads[auxp].executed_events; //
+      // Delete this new event
+      prefix.pop_back();
+      --prefix_idx;
+
+      assert(curnode().iid.get_pid() == (int) realp &&
+             !curnode().may_conflict &&
+             curnode().kind == ZEvent::Kind::DUMMY);
+      // We extend the now-current event
+      assert(prefix_idx == (int) (prefix.size() - 1));
+      ++prefix[prefix_idx].size;
+      // We add that this instruction actually belongs
+      // to its auxiliary thread, to keep track of it
+      assert(!curnode().aux_invisible.count(curnode().size));
+      curnode().aux_invisible.emplace(curnode().size, auxp);
+    }
   }
 }
 

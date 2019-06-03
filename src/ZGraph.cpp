@@ -168,23 +168,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     ev->_thread_id = thr_idx;
     auto thraux = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
 
-    if (!basis.hasThreadAux(thraux)) {
-      // A new thread/aux appeared,
-      // we've checked above that it is allowed
-      assert(!cur_evidx.count(thraux));
-      cur_evidx.emplace(thraux, 0);
-
-      basis.addLine(ev);
-      po.addLine(ev);
-    }
-
-    unsigned ev_idx = cur_evidx[thraux];
-
     // Check possible cases why we cannot add this event
     //
     // Check if we already haven't added a thraux-predecessor of this event
     if (thraux_with_event_we_dont_add.count(thraux)) {
-      assert(ev_idx == basis(thraux).size());
+      assert(!basis.hasThreadAux(thraux) ||
+             cur_evidx.at(thraux) == basis(thraux).size());
       continue;
     }
     // Check if thraux already has an unannotated read
@@ -192,7 +181,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         thraux.second == -1) {
       // This event happens after something we need to
       // annotate first, so we don't add it into the graph
-      assert(ev_idx == basis(thraux).size());
+      assert(!basis.hasThreadAux(thraux) ||
+             cur_evidx.at(thraux) == basis(thraux).size());
       thraux_with_event_we_dont_add.insert(thraux);
       continue;
     }
@@ -212,7 +202,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
           dontInclude = true;
       }
       if (dontInclude) {
-        assert(ev_idx == basis(thraux).size());
+        assert(!basis.hasThreadAux(thraux) ||
+               cur_evidx.at(thraux) == basis(thraux).size());
         thraux_with_event_we_dont_add.insert(thraux);
         continue;
       }
@@ -224,13 +215,27 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       if (!store_buffer.count(ev->threadID()) ||
           !store_buffer[ev->threadID()].count(ev->ml) ||
           store_buffer[ev->threadID()][ev->ml].empty()) {
-        assert(ev_idx == basis(thraux).size());
+        assert(!basis.hasThreadAux(thraux) ||
+               cur_evidx.at(thraux) == basis(thraux).size());
         thraux_with_event_we_dont_add.insert(thraux);
         continue;
       }
     }
 
     // We will add the event
+    // First, add line if not already present
+    if (!basis.hasThreadAux(thraux)) {
+      // A new thread/aux appeared,
+      // we've checked above that it is allowed
+      assert(!cur_evidx.count(thraux));
+      cur_evidx.emplace(thraux, 0);
+
+      basis.addLine(ev);
+      po.addLine(ev);
+    }
+
+    unsigned ev_idx = cur_evidx[thraux];
+
     assert(ev->eventID() == ev_idx);
     if (ev_idx == basis(thraux).size()) {
       // New event
@@ -397,7 +402,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
   } // end of loop for traversing trace and creating nodes
 
-
   basis.shrink();
   po.shrink();
 
@@ -451,12 +455,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     assert(!thr_added.second);
     int aux = -1;
     while (basis.hasThreadAux(thr_added.first, aux)) {
+      assert(!basis(thr_added.first, aux).empty());
       const ZEvent *nthr = basis.getEvent(thr_added.first, aux, 0);
 
       assert(!po.hasEdge(nthr, spwn));
       if (!po.hasEdge(spwn, nthr))
         po.addEdge(spwn, nthr);
-
       aux++;
     }
   }
@@ -467,6 +471,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     assert(!thr_joined.second);
     int aux = -1;
     while (basis.hasThreadAux(thr_joined.first, aux)) {
+      assert(!basis(thr_joined.first, aux).empty());
       unsigned lastev_idx = basis(thr_joined.first, aux).size() - 1;
       const ZEvent *wthr = basis.getEvent(thr_joined.first, aux, lastev_idx);
 

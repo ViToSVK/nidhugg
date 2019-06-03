@@ -69,22 +69,15 @@ bool ZExplorer::explore()
 
 bool ZExplorer::exploreRec(ZTrace& annTrace)
 {
-  //ZBuilderTSO::dump(annTrace.trace);
+  ZBuilderTSO::dump(annTrace.trace);
   annTrace.graph.dump();
 
   auto trace2 = std::vector<ZEvent>();
-  for (unsigned i=0; i<4; ++i)
+  for (unsigned i=0; i<8; ++i)
     trace2.push_back(annTrace.trace[i].copy(annTrace.trace[i].traceID(), true));
 
   ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(trace2));
   auto tr3_x = TB.extendGivenTrace();
-  auto tr3 = tr3_x.first;
-
-  assert(annTrace.trace.size() == tr3.size());
-  for (unsigned i=0; i<tr3.size(); ++i)
-    assert(annTrace.trace[i].kind == tr3[i].kind &&
-           annTrace.trace[i].eventID() == tr3[i].eventID() &&
-           annTrace.trace[i].auxID() == tr3[i].auxID());
 
   return false;
 }
