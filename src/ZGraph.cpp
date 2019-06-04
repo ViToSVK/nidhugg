@@ -110,9 +110,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   std::unordered_set<std::pair<unsigned, int>> thraux_with_event_we_dont_add;
   thraux_with_event_we_dont_add.reserve(8);
 
-  std::unordered_map<unsigned,
-                     std::unordered_map<SymAddrSize,
-                                        std::list<const ZEvent *>>> store_buffer;
+  std::unordered_map
+    <unsigned, std::unordered_map
+     <SymAddrSize, std::list<const ZEvent *>>> store_buffer;
+
+  std::unordered_map
+    <unsigned, std::unordered_map
+     <SymAddrSize, const ZEvent *>> last_mwrite;
 
   std::vector<const ZEvent *> spawns;
   spawns.reserve(8);
@@ -126,12 +130,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   std::unordered_map<SymAddrSize, const ZEvent *> mutex_destroys;
   mutex_destroys.reserve(8);
 
-  std::unordered_map<SymAddrSize,
-                     std::unordered_map<unsigned, const ZEvent *>> mutex_first;
+  std::unordered_map
+    <SymAddrSize, std::unordered_map<unsigned, const ZEvent *>> mutex_first;
   mutex_first.reserve(8);
 
-  std::unordered_map<SymAddrSize,
-                     std::unordered_map<unsigned, const ZEvent *>> mutex_last;
+  std::unordered_map
+    <SymAddrSize, std::unordered_map<unsigned, const ZEvent *>> mutex_last;
   mutex_first.reserve(8);
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
@@ -258,6 +262,16 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
     ++cur_evidx[thraux];
 
+    // Handle Fence
+    if (ev->fence) {
+      if (store_buffer.count(ev->threadID()))
+        for (const auto& ml_last : last_mwrite[ev->threadID()]) {
+          auto last = ml_last.second;
+          assert(!po.hasEdge(ev, last));
+          if (!po.hasEdge(last, ev))
+            po.addEdge(last, ev);
+        }
+    }
     // Handle Spawn
     if (isSpawn(ev)) {
       proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
@@ -266,9 +280,10 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     if (isWriteB(ev)) {
       assert(ev->auxID() == -1 && "Only real threads");
       if (!store_buffer.count(ev->threadID()))
-        store_buffer.emplace(ev->threadID(),
-                             std::unordered_map<SymAddrSize,
-                             std::list<const ZEvent *>>());
+        store_buffer.emplace
+          (ev->threadID(),
+           std::unordered_map
+           <SymAddrSize, std::list<const ZEvent *>>());
       if (!store_buffer[ev->threadID()].count(ev->ml))
         store_buffer[ev->threadID()].emplace(ev->ml,
                                              std::list<const ZEvent *>());
@@ -286,11 +301,20 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       ev->write_other_ptr->write_other_ptr = ev;
       assert(ev->write_other_ptr->traceID() == ev->write_other_trace_id);
       assert(ev->write_other_ptr->write_other_trace_id == ev->traceID());
-      store_buffer[ev->threadID()][ev->ml].pop_front();
 
       assert(!po.hasEdge(ev, ev->write_other_ptr));
       if (!po.hasEdge(ev->write_other_ptr, ev))
         po.addEdge(ev->write_other_ptr, ev);
+
+      store_buffer[ev->threadID()][ev->ml].pop_front();
+      if (!last_mwrite.count(ev->threadID()))
+        last_mwrite.emplace
+          (ev->threadID(), std::unordered_map<SymAddrSize, const ZEvent *>());
+      auto it = last_mwrite[ev->threadID()].find(ev->ml);
+      if (it != last_mwrite[ev->threadID()].end())
+        it = last_mwrite[ev->threadID()].erase(it);
+      last_mwrite[ev->threadID()].emplace_hint
+        (it, ev->ml, ev);
     }
     /*
     // Handle Write

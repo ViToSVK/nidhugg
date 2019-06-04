@@ -165,6 +165,8 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     mutatedAnnotation.dump();
+    //bool mutationFollowsCurrentTrace =
+    //  (nd->getEvent()->value == vciid_ann.second.value);
     // TODO call chronological
   }
 
@@ -195,6 +197,8 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     auto mutatedPO = annTrace.graph.copyPO();
 
     mutatedAnnotation.dump();
+    //bool mutationFollowsCurrentTrace =
+    //(nd->getEvent()->observed_id == -1);
     // TODO call chronological
     return false;
   }
@@ -230,6 +234,8 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   mutatedAnnotation.dump();
+  //bool mutationFollowsCurrentTrace =
+  //(nd->getEvent()->observed_id == (int) lastunlocknd->getEvent()->id);
   // TODO call chronological
   return false;
 }
@@ -237,9 +243,6 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
 
 /*
-
-      bool mutationFollowsCurrentTrace =
-        (nd->getEvent()->value == vciid_ann.second.value);
 
   if (!withoutMutation.closed) {
     // This ordering of extension events
@@ -287,10 +290,6 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     afterMutationChoicePOs.clear();
   }
 
-
-
-    bool mutationFollowsCurrentTrace =
-      (nd->getEvent()->observed_id == -1);
     auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                         negativeWriteMazBranch, nd->getProcessID(),
                                         mutationFollowsCurrentTrace);

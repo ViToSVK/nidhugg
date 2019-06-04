@@ -1,3 +1,7 @@
+
+#ifndef _Z_DUMPS_
+#define _Z_DUMPS_
+
 #include <fstream>
 
 #include <llvm/Support/raw_ostream.h>
@@ -112,24 +116,27 @@ void ZPartialOrder::dump() const {
   // NODES
   for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
     res << "subgraph cluster_" << tid << "{\n";
-    res << "label = \"Th" << tid
+    res << "style=\"bold,rounded\" label = \"Th" << tid
         << " " << basis(tid, -1)[0]->cpid;
     if (basis.isRoot(tid))
       res << " ROOT";
-    res << "\" style=\"rounded\" \n";
+    res << "\"\n";
     for (const auto& aux : th_aux[tid]) {
       unsigned line =  basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
+      res << "subgraph cluster_" << 1001+tid*100+aux << "{\n";
+      res << "style=\"invis\" label = \"" << ((aux==-1)?"real":"aux") << "\"\n";
       for (unsigned evid = 0; evid < basis(tid, aux).size(); ++evid) {
         const ZEvent *ev = basis(tid, aux)[evid];
         res << "NODE" << line * 100000 + evid
             << " [shape=\"rectangle\", label=\"" << ev->to_string(false) << "\"]\n";
       }
+
+      res << "}\n";
     }
 
     res << "}\n";
   }
   res << "\n";
-
 
   // THREAD ORDER
   for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
@@ -143,17 +150,50 @@ void ZPartialOrder::dump() const {
   }
 
   // REST ORDER
-  for (unsigned li=0; li<_succ.size(); ++li)
-    for (unsigned lj=0; lj<_succ[li].size(); ++lj) {
-      int curval = INT_MAX;
-      for (int liev = _succ[li][lj].size() - 1; liev >= 0; --liev) {
-        if (_succ[li][lj][liev] < curval) {
-          curval = _succ[li][lj][liev];
-            res << "NODE" << li * 100000 + liev
-                << " -> NODE" << lj * 100000 + curval << "\n";
+  for (unsigned tidI = 0; tidI < th_aux.size(); ++tidI) {
+  for (const auto& auxI : th_aux.at(tidI)) {
+    unsigned lI = basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, auxI));
+    unsigned realI = (auxI == -1) ? lI
+    : basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, -1));
+
+    for (unsigned tidJ = 0; tidJ < th_aux.size(); ++tidJ) {
+    for (const auto& auxJ : th_aux.at(tidJ)) {
+      unsigned lJ = basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, auxJ));
+      unsigned realJ = (auxJ == -1) ? lJ
+      : basis.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, -1));
+
+      if (lI != lJ) {
+        int curval = INT_MAX;
+        for (int liev = _succ.at(lI).at(lJ).size() - 1; liev >= 0; --liev) {
+          if (auxI != -1 && realI != lJ) {
+            // Do not add edges that transitively follow from
+            // lI(aux) -> realI -> lJ
+            auto fromev = basis.getEvent(tidI, auxI, liev);
+            auto succ_idx = succ(fromev, tidI, -1);
+            if (succ_idx.second < (int) _succ.at(realI).at(lJ).size() &&
+                _succ.at(realI).at(lJ).at(succ_idx.second) < curval)
+              curval = _succ.at(realI).at(lJ).at(succ_idx.second);
+          }
+          if (auxJ != -1 && lI != realJ) {
+            // Do not add edges that transitively follow from
+            // lI -> realJ -> lJ(aux)
+            auto fromev = basis.getEvent(tidI, auxI, liev);
+            auto succ_idx = succ(fromev, tidJ, -1);
+            if (succ_idx.second < (int) _succ.at(realJ).at(lJ).size() &&
+                _succ.at(realJ).at(lJ).at(succ_idx.second) < curval)
+              curval = _succ.at(realJ).at(lJ).at(succ_idx.second);
+          }
+          if (_succ.at(lI).at(lJ).at(liev) < curval) {
+            curval = _succ.at(lI).at(lJ).at(liev);
+              res << "NODE" << lI * 100000 + liev
+                  << " -> NODE" << lJ * 100000 + curval << "\n";
+          }
         }
       }
     }
+    }
+  }
+  }
 
   res << "}\n\n";
 
@@ -174,3 +214,6 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) 
 void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
+
+
+#endif // _Z_DUMPS_
