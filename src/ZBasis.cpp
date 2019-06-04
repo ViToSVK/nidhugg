@@ -84,6 +84,29 @@ const ZEvent * ZBasis::getEvent(unsigned thread_id, int aux_id, unsigned event_i
 }
 
 
+const ZEvent * ZBasis::getEvent(const ZObs& obs) const
+{
+  return getEvent(obs.thr, -1, obs.ev);
+}
+
+
+const ZEvent * ZBasis::getUnlockOfThisLock(const ZObs& obs) const
+{
+  unsigned curEv = obs.ev;
+  auto lock = getEvent(obs.thr, -1, curEv);
+  assert(isLock(lock));
+
+  while (curEv + 1 < (*this)(obs.thr, -1).size()) {
+    curEv++;
+    auto res = getEvent(obs.thr, -1, curEv);
+    if (isUnlock(res) && sameMl(lock, res))
+      return res;
+  }
+
+  return nullptr;
+}
+
+
 void ZBasis::addLine(const ZEvent *ev)
 {
   assert(!hasEvent(ev));

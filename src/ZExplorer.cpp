@@ -26,6 +26,30 @@
 #include "ZDumps.cpp"
 
 
+ZExplorer::~ZExplorer()
+{
+  delete initial;
+  initial = nullptr;
+}
+
+
+ZExplorer::ZExplorer
+(std::vector<ZEvent>&& initial_trace,
+ bool somethingToAnnotate,
+ ZBuilderTSO& tb,
+ int star_root_index)
+  : originalTB(tb)
+{
+  if (tb.someThreadAssumeBlocked)
+    interpreter_assume_blocked_thread = 1;
+
+  if (!somethingToAnnotate)
+    executed_traces_full = 1;
+  else
+    initial = new ZTrace(std::move(initial_trace), star_root_index);
+}
+
+
 void ZExplorer::print_stats()
 {
   std::setprecision(4);
@@ -72,164 +96,206 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
   ZBuilderTSO::dump(annTrace.trace);
   annTrace.graph.dump();
 
-  auto trace2 = std::vector<ZEvent>();
-  for (unsigned i=0; i<8; ++i)
-    trace2.push_back(annTrace.trace[i].copy(annTrace.trace[i].traceID(), true));
+  auto eventsToMutate = annTrace.getEventsToMutate();
+  assert(!eventsToMutate.empty());
+  for (auto& ev : eventsToMutate)
+    ev->dump();
 
-  ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(trace2));
-  auto tr3_x = TB.extendGivenTrace();
+  // Unset this when any mutation succeeds
+  annTrace.deadlocked = true;
 
-  return false;
-}
-
-/*
-bool ZExplorer::explore()
-{
-  while (!worklist.empty()) {
-    // Get a ZTrace
-    assert(!current.get());
-    current = std::move(worklist.front());
-    assert(!worklist.front().get());
-    worklist.pop_front();
-    mutationProducesMaxTrace.clear();
-
-    //llvm::errs() << "********* TRACE *********\n";
-    //current->annotation.dump();
-    //current->graph.to_dot("");
-    assert(traceRespectsAnnotation());
-
-    // Get nodes available to be mutated
-    auto nodesToMutate = current->graph.getNodesToMutate(current->annotation);
-    assert(!nodesToMutate.empty());
-
-    // Ordering of nodes to try mutations
-    // Four VCDPOR version: mrl, mlr, rl, lr
-    // 'm' means process of last mutation gets considered very first for new mutations
-    // 'rl' means root process is considered before leaf processes
-    // 'lr' considers leaf processes before root
-    // leaves themselves are always ordered ascendingly by processID
-    auto orderedNodesToMutate = std::list<const Node *>();
-    auto nonrootpid = std::vector<const Node *>(current->graph.size(), nullptr);
-    const Node *pref = nullptr;
-    const Node *root = nullptr;
-    for (auto& ndtomut : nodesToMutate) {
-      if (ndtomut->getProcessID() == current->processMutationPreference &&
-          previous_mutation_process_first)
-        pref = ndtomut;
-      else if (ndtomut->getProcessID() == current->graph.starRoot())
-        root = ndtomut;
-      else
-        nonrootpid.at(ndtomut->getProcessID()) = ndtomut;
+  // Mutate the events
+  for (const auto& ev : eventsToMutate) {
+    if (isRead(ev)) {
+      annTrace.deadlocked = false;
+      bool error = mutateRead(annTrace, ev);
+      if (error) {
+        assert(originalTB.error_trace);
+        return error;
+      }
     }
-
-    // Nonroots are taken in the process-id-ascending fashion
-    for (unsigned i=0; i<nonrootpid.size(); ++i)
-      if (nonrootpid[i])
-        orderedNodesToMutate.push_back(nonrootpid[i]);
-
-    if (root) {
-      if (root_before_nonroots)
-        orderedNodesToMutate.push_front(root); // Root before nonroots
-      else
-        orderedNodesToMutate.push_back(root); // Root after nonroots
+    else {
+      assert(isLock(ev));
+      bool error = mutateLock(annTrace, ev);
+      if (error) {
+        assert(originalTB.error_trace);
+        return error;
+      }
     }
+  }
 
-    if (pref) {
-      // Preference very first
-      assert(previous_mutation_process_first);
-      if (!root || pref != root)
-        orderedNodesToMutate.push_front(pref);
-    }
-
-    std::vector<unsigned> processLengths = current->graph.getProcessLengths();
-
-    // Get partial-order refinements that order extension events
-    // Each refinement will be a candidate for possible mutations
-    clock_t init = std::clock();
-    std::list<PartialOrder> extendedPOs = orderingsAfterExtension();
-    time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-    bool once = false;
-    while (!extendedPOs.empty() || !once) {
-      once = true;
-      const PartialOrder& po =
-        extendedPOs.empty() ? current->graph.getOriginal()
-        : extendedPOs.front();
-      bool haveOriginal = (po == current->graph.getOriginal());
-
-      init = std::clock();
-      auto withoutMutation = ZClosure(current->graph, current->annotation);
-      //llvm::errs() << "no-mutation-closure...";
-      withoutMutation.valClose(po, nullptr, nullptr);
-      //llvm::errs() << "done\n";
-      time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-      if (!withoutMutation.closed) {
-        // This ordering of extension events
-        // makes the original annotation unrealizable
-        // therefore no need to try any mutations
-        ++cl_ordering_failed;
-        assert(!haveOriginal && "current->trace is one witness");
-        extendedPOs.front().first.reset();
-        extendedPOs.front().second.reset();
-        extendedPOs.pop_front();
-        continue;
-      }
-
-      ++cl_ordering_succeeded;
-      //llvm::errs() << "********* EXTENSION *********\n";
-      //current->graph.to_dot(po, "");
-
-      auto negativeWriteMazBranch = ZAnnotationNeg(current->negative);
-      deadlockedExtension = true;
-
-      // Try all possible nodes available to mutate
-      for (auto ndit = orderedNodesToMutate.begin();
-           ndit != orderedNodesToMutate.end(); ++ndit) {
-        const Node * nd = *ndit;
-        if (isRead(nd)) {
-          deadlockedExtension = false;
-          bool error = mutateRead(po, withoutMutation, negativeWriteMazBranch, nd);
-          if (error) {
-            assert(originalTB.error_trace);
-            current.reset();
-            worklist.clear();
-            return error;
-          }
-          negativeWriteMazBranch.update(nd, processLengths);
-        }
-        else {
-          assert(isLock(nd));
-          bool error = mutateLock(po, withoutMutation, negativeWriteMazBranch, nd);
-          if (error) {
-            assert(originalTB.error_trace);
-            current.reset();
-            worklist.clear();
-            return error;
-          }
-          negativeWriteMazBranch.update(nd, processLengths);
-        }
-      }
-
-      // Done with this po
-      if (deadlockedExtension) {
-        // 'Full' trace ending in a deadlock
-        ++executed_traces_full;
-        ++executed_traces_full_deadlock;
-      }
-      if (!haveOriginal) {
-        extendedPOs.front().first.reset();
-        extendedPOs.front().second.reset();
-        extendedPOs.pop_front();
-      }
-    } // end of loop for working with extension POs
-
-    // Delete managed ZTrace
-    current.reset();
+  // Done with this recursion node
+  if (annTrace.deadlocked) {
+    // Not full trace ending in a deadlock
+    // We count it as full
+    ++executed_traces_full;
+    ++executed_traces_full_deadlock;
   }
 
   return false;
 }
+
+
+/* *************************** */
+/* MUTATE READ                 */
+/* *************************** */
+
+bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
+{
+  assert(isRead(read));
+
+  auto obsCandidates = annTrace.getObsCandidates(read);
+  if (obsCandidates.empty()) {
+    // All candidates are ruled out by negative annotation
+    ++read_ordered_pos_no_mut_choices;
+    return false;
+  }
+
+  for (auto& observation : obsCandidates) {
+
+    ++mutations_considered;
+    ZAnnotation mutatedAnnotation(annTrace.annotation);
+    mutatedAnnotation.add(read, observation);
+    assert(mutatedAnnotation.size() == annTrace.annotation.size() + 1);
+    auto mutatedPO = annTrace.graph.copyPO();
+
+    auto init = std::clock();
+    ZClosure preClosure(annTrace.graph, mutatedAnnotation, mutatedPO);
+    preClosure.preClose(read, observation);
+    time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+    mutatedAnnotation.dump();
+    // TODO call chronological
+  }
+
+  return false;
+}
+
+
+/* *************************** */
+/* MUTATE LOCK                 */
+/* *************************** */
+
+bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
+{
+  assert(isLock(lock));
+
+  if (!annTrace.annotation.locationHasSomeLock(lock)) {
+    // This lock hasn't been touched before
+    annTrace.deadlocked = false;
+    if (annTrace.negative.forbidsInitialEvent(lock)) {
+      // Negative annotation forbids initial unlock
+      return false;
+    }
+
+    // Trivially realizable
+    ++mutations_considered;
+    ZAnnotation mutatedAnnotation(annTrace.annotation);
+    mutatedAnnotation.setLastLock(lock);
+    auto mutatedPO = annTrace.graph.copyPO();
+
+    mutatedAnnotation.dump();
+    // TODO call chronological
+    return false;
+  }
+
+  // The lock has been touched before
+  auto lastLockObs = annTrace.annotation.getLastLock(lock);
+  auto lastUnlock = annTrace.graph.basis.getUnlockOfThisLock(lastLockObs);
+
+  if (!lastUnlock) {
+    // This lock is currently locked
+    // Trivially unrealizable
+    return false;
+  }
+
+  // This lock is currently unlocked by lastUnlock
+  assert(lastUnlock && sameMl(lock, lastUnlock));
+  annTrace.deadlocked = false;
+
+  if (annTrace.negative.forbids(lock, lastUnlock)) {
+    // Negative annotation forbids this unlock
+    return false;
+  }
+
+  // Realizable
+  ++mutations_considered;
+  ZAnnotation mutatedAnnotation(annTrace.annotation);
+  mutatedAnnotation.setLastLock(lock);
+  auto mutatedPO = annTrace.graph.copyPO();
+
+  auto init = std::clock();
+  ZClosure preClosure(annTrace.graph, mutatedAnnotation, mutatedPO);
+  preClosure.preClose(lock, lastUnlock);
+  time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+  mutatedAnnotation.dump();
+  // TODO call chronological
+  return false;
+}
+
+
+
+/*
+
+      bool mutationFollowsCurrentTrace =
+        (nd->getEvent()->value == vciid_ann.second.value);
+
+  if (!withoutMutation.closed) {
+    // This ordering of extension events
+    // makes the original annotation unrealizable
+    // therefore no need to try any mutations
+    ++cl_ordering_failed;
+    assert(!haveOriginal && "current->trace is one witness");
+    extendedPOs.front().first.reset();
+    extendedPOs.front().second.reset();
+    extendedPOs.pop_front();
+    continue;
+  }
+
+  ++cl_ordering_succeeded;
+  //llvm::errs() << "********* EXTENSION *********\n";
+  //current->graph.to_dot(po, "");
+
+  std::vector<unsigned> processLengths = current->graph.getProcessLengths();
+  auto negativeWriteMazBranch = ZAnnotationNeg(current->negative);
+  negativeWriteMazBranch.update(nd, processLengths);
+
+  // Orderings of the read just before mutating it
+  clock_t init = std::clock();
+  std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
+  time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+
+  auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
+                                      negativeWriteMazBranch, nd->getProcessID(),
+                                      mutationFollowsCurrentTrace);
+  if (error_addedToWL.first)
+    return true;
+  if (!error_addedToWL.second) {
+    // Annotating this read with this value on this trace produces a maximal trace
+    // No need to repeat this mutation in a sibling Mazurkiewicz branch
+    auto it = mutationProducesMaxTrace.find(nd->getProcessID());
+    if (it == mutationProducesMaxTrace.end())
+      mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
+                                            std::unordered_set<VCIID>());
+    assert(!mutationProducesMaxTrace
+           [nd->getProcessID()].count(vciid_ann.first));
+    mutationProducesMaxTrace
+      [nd->getProcessID()].insert(vciid_ann.first);
+    // Clear the rest of POs with this mutation
+    afterMutationChoicePOs.clear();
+  }
+
+
+
+    bool mutationFollowsCurrentTrace =
+      (nd->getEvent()->observed_id == -1);
+    auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
+                                        negativeWriteMazBranch, nd->getProcessID(),
+                                        mutationFollowsCurrentTrace);
+    return error_addedToWL.first;
+
 
 
 /* *************************** */
@@ -304,259 +370,6 @@ std::list<PartialOrder> ZExplorer::orderingsAfterMutationChoice
   return current->graph.dumpDoneWorklist();
 }
 
-
-/* *************************** */
-/* MUTATE READ                 */
-/* *************************** */
-/*
-bool ZExplorer::mutateRead(const PartialOrder& po, const ZClosure& withoutMutation,
-                            const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
-{
-  assert(isRead(nd));
-  // Orderings of the read just before mutating it
-  clock_t init = std::clock();
-  std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
-  time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-  bool once = false;
-  while (!readOrderedPOs.empty() || !once) {
-    once = true;
-    const PartialOrder& roPo =
-      readOrderedPOs.empty() ? po : readOrderedPOs.front();
-    bool haveArg = (roPo == po);
-    ++read_ordered_pos;
-
-    // We could do closure here to already rule out some po-s, but don't have to
-    auto mutationCandidates =
-      current->graph.getMutationCandidates(roPo, negativeWriteMazBranch, nd);
-    if (mutationCandidates.empty()) {
-      // All candidates are ruled out by negative annotation
-      if (!haveArg) {
-        readOrderedPOs.front().first.reset();
-        readOrderedPOs.front().second.reset();
-        readOrderedPOs.pop_front();
-      }
-      ++read_ordered_pos_no_mut_choices;
-      continue;
-    }
-
-
-    for (auto& vciid_ann : mutationCandidates) {
-      // llvm::errs() << vciid_ann.first.first << "_" << vciid_ann.first.second << "...";
-      if (mutationProducesMaxTrace.count(nd->getProcessID()) &&
-          mutationProducesMaxTrace
-          [nd->getProcessID()].count(vciid_ann.first)) {
-        // This mutation was already done in a sibling Mazurkiewicz branch
-        // And it produces a maximal trace with the same value function
-        continue;
-      }
-
-      ++mutations_considered;
-      // Collect writes that become newly everGood by performing this mutation
-      // We will have to order them with conflicting notEverGood writes
-      ZAnnotation mutatedAnnotation(current->annotation);
-      auto newlyEverGoodVCIIDs = mutatedAnnotation.add(nd, vciid_ann.second);
-      auto newlyEverGoodWrites = std::vector<const Node *>();
-      for (auto& vciid : newlyEverGoodVCIIDs) {
-        if (vciid.first != INT_MAX) {
-          assert(isWrite(current->graph.getNode(vciid.first, vciid.second)));
-          newlyEverGoodWrites.push_back(current->graph.getNode(vciid.first, vciid.second));
-        }
-      }
-      // Sort the vector so that the execution is deterministic
-      if (newlyEverGoodWrites.size() > 1) {
-        auto comp = NodePtrComp();
-        #ifndef NDEBUG
-        for (auto it1 = newlyEverGoodWrites.begin();
-             it1 != newlyEverGoodWrites.end(); ++it1)
-          for (auto it2 = newlyEverGoodWrites.begin();
-               it2 != it1; ++it2)
-            assert(comp(*it1, *it2) || comp(*it2, *it1));
-        #endif
-        std::sort(newlyEverGoodWrites.begin(), newlyEverGoodWrites.end(), comp);
-      }
-      assert(mutatedAnnotation.size() == current->annotation.size() + 1);
-
-      // Orderings of newly everGood writes
-      clock_t init = std::clock();
-      std::list<PartialOrder> afterMutationChoicePOs =
-        orderingsAfterMutationChoice(roPo, newlyEverGoodWrites);
-      assert(!afterMutationChoicePOs.empty());
-      time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-      while (!afterMutationChoicePOs.empty()) {
-        auto mutatedPo = std::move(afterMutationChoicePOs.front());
-        assert(!afterMutationChoicePOs.front().first.get() &&
-               !afterMutationChoicePOs.front().second.get());
-        afterMutationChoicePOs.pop_front();
-
-        // Closure after read+mutationChoice orderings and the actual mutation
-        init = std::clock();
-        auto withMutation = ZClosure(withoutMutation);
-        //llvm::errs() << "closure...";
-        withMutation.valClose(mutatedPo, nd, &(vciid_ann.second));
-        //llvm::errs() << "done\n";
-        time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-        if (!withMutation.closed) {
-          // The mutation on 'mutatedPo' failed
-          ++cl_mutation_failed;
-          // llvm::errs() << "FAILED\n";
-          // current->graph.to_dot(mutatedPo, "");
-          mutatedPo.first.reset();
-          mutatedPo.second.reset();
-          continue;
-        }
-
-        // The mutation on 'mutatedPo' succeeded
-        ++cl_mutation_succeeded;
-        // llvm::errs() << "SUCCEEDED\n";
-        // current->graph.to_dot(mutatedPo, "");
-
-        assert(mutatedAnnotation.size() == current->annotation.size() + 1);
-        bool mutationFollowsCurrentTrace =
-          (nd->getEvent()->value == vciid_ann.second.value);
-        /////DC version below
-          (vciid_ann.first.first == INT_MAX && nd->getEvent()->observed_id == -1) ||
-          (vciid_ann.first.first != INT_MAX &&
-           nd->getEvent()->observed_id ==
-           (int) current->graph.getNode(vciid_ann.first)->getEvent()->id);
-
-        auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                            negativeWriteMazBranch, nd->getProcessID(),
-                                            mutationFollowsCurrentTrace);
-        if (error_addedToWL.first)
-          return true;
-        if (!error_addedToWL.second) {
-          // Annotating this read with this value on this trace produces a maximal trace
-          // No need to repeat this mutation in a sibling Mazurkiewicz branch
-          auto it = mutationProducesMaxTrace.find(nd->getProcessID());
-          if (it == mutationProducesMaxTrace.end())
-            mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
-                                                  std::unordered_set<VCIID>());
-          assert(!mutationProducesMaxTrace
-                 [nd->getProcessID()].count(vciid_ann.first));
-          mutationProducesMaxTrace
-            [nd->getProcessID()].insert(vciid_ann.first);
-          // Clear the rest of POs with this mutation
-          afterMutationChoicePOs.clear();
-        }
-
-      } // end of loop for newEverGoodOrdered partial order
-    } // end of loop for mutation annotation
-    if (!haveArg) {
-        readOrderedPOs.front().first.reset();
-        readOrderedPOs.front().second.reset();
-        readOrderedPOs.pop_front();
-    }
-  } // end of loop for readOrdered partial order
-
-  return false;
-}
-
-
-/* *************************** */
-/* MUTATE LOCK                 */
-/* *************************** */
-/*
-bool ZExplorer::mutateLock(const PartialOrder& po, const ZClosure& withoutMutation,
-                            const ZAnnotationNeg& negativeWriteMazBranch, const Node *nd)
-{
-  assert(isLock(nd));
-  auto lastLock = current->annotation.getLastLock(nd);
-
-  if (!lastLock.first) {
-    // This lock hasn't been touched before
-    deadlockedExtension = false;
-    if (negativeWriteMazBranch.forbidsInitialEvent(nd)) {
-      // Negative annotation forbids initial unlock
-      return false;
-    }
-
-    // Trivially realizable
-
-    auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
-                                  (new ThreadPairsVclocks(*(po.first))),
-                                  std::unique_ptr<ThreadPairsVclocks>
-                                  (new ThreadPairsVclocks(*(po.second))));
-
-    ZAnnotation mutatedAnnotation(current->annotation);
-    mutatedAnnotation.setLastLock(nd);
-
-    bool mutationFollowsCurrentTrace =
-      (nd->getEvent()->observed_id == -1);
-    auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                        negativeWriteMazBranch, nd->getProcessID(),
-                                        mutationFollowsCurrentTrace);
-    return error_addedToWL.first;
-  }
-
-  // The lock has been touched before
-  assert(lastLock.first);
-  auto lastunlockit = current->graph.nodes_iterator(lastLock.second);
-  #ifndef NDEBUG
-  const Node * lastlocknd = *lastunlockit;
-  assert(isLock(lastlocknd));
-  #endif
-  const Node * lastunlocknd = nullptr;
-
-  while (!lastunlockit.atProcessEnd()) {
-    ++lastunlockit;
-    const ZEvent& cand = *((*lastunlockit)->getEvent());
-    if (isUnlock(cand) && cand.ml == nd->getEvent()->ml) {
-      assert(cand.ml == lastlocknd->getEvent()->ml);
-      lastunlocknd = (*lastunlockit);
-      break;
-    }
-  }
-
-  if (!lastunlocknd) {
-    // This lock is currently locked
-    // Trivially unrealizable
-    return false;
-  }
-
-  // This lock is currently unlocked by lastunlocknd
-  assert(lastunlocknd);
-  deadlockedExtension = false;
-
-  if (negativeWriteMazBranch.forbids(nd, lastunlocknd)) {
-    // Negative annotation forbids this unlock
-    return false;
-  }
-
-  auto mutatedPo = PartialOrder(std::unique_ptr<ThreadPairsVclocks>
-                                (new ThreadPairsVclocks(*(po.first))),
-                                std::unique_ptr<ThreadPairsVclocks>
-                                (new ThreadPairsVclocks(*(po.second))));
-
-  clock_t init = std::clock();
-  // Closure with lock-mutation
-  auto withMutation = ZClosure(withoutMutation);
-  withMutation.valCloseLock(mutatedPo, nd, lastunlocknd);
-  time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-  if (!withMutation.closed) {
-    // The lock-mutation on 'mutatedPo' failed
-    ++cl_mutation_failed;
-    mutatedPo.first.reset();
-    mutatedPo.second.reset();
-    return false;
-  }
-
-  // The lock-mutation on 'mutatedPo' succeeded
-  ++cl_mutation_succeeded;
-
-  ZAnnotation mutatedAnnotation(current->annotation);
-  mutatedAnnotation.setLastLock(nd);
-
-  bool mutationFollowsCurrentTrace =
-    (nd->getEvent()->observed_id == (int) lastunlocknd->getEvent()->id);
-  auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                      negativeWriteMazBranch, nd->getProcessID(),
-                                      mutationFollowsCurrentTrace);
-  return error_addedToWL.first;
-}
 
 
 /* *************************** */

@@ -37,9 +37,21 @@ class ZTrace {
 
   ZGraph graph;
 
+  // Whether this trace is not full but no mutation is
+  // possible (i.e. deadlocked). We'll count it as full
+  mutable bool deadlocked;
+
   bool empty() const {
     return (trace.empty() && annotation.empty() &&
             negative.empty() && graph.empty());
+  }
+
+  std::list<const ZEvent *> getEventsToMutate() const {
+    return graph.getEventsToMutate(annotation);
+  }
+
+  std::list<ZObs> getObsCandidates(const ZEvent *read) const {
+    return graph.getObsCandidates(read, negative);
   }
 
   /* *************************** */
@@ -47,7 +59,7 @@ class ZTrace {
   /* *************************** */
 
   ZTrace()
-    : trace(), annotation(), negative(), graph()
+    : trace(), annotation(), negative(), graph(), deadlocked(false)
       {
         assert(empty());
       };
@@ -57,7 +69,8 @@ class ZTrace {
   : trace(std::move(initial_trace)),
     annotation(),
     negative(),
-    graph(this->trace, star_root_index)
+    graph(this->trace, star_root_index),
+    deadlocked(false)
       {};
 
   ZTrace(std::vector<ZEvent>&& new_trace,
@@ -69,7 +82,8 @@ class ZTrace {
     annotation(new_annotation),
     negative(new_negative),
     graph(old_graph, std::move(new_po),
-          this->trace, this->annotation)
+          this->trace, this->annotation),
+    deadlocked(false)
       {};
 
   ZTrace(ZTrace&& tr) = default;

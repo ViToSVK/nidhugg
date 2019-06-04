@@ -21,12 +21,15 @@
 #ifndef __Z_GRAPH_H__
 #define __Z_GRAPH_H__
 
+#include <list>
+
 #include "ZPartialOrder.h"
 #include "ZAnnotationNeg.h"
 
 class ZGraph {
-
+ public:
   ZBasis basis;
+ private:
   ZPartialOrder po;
 
 /*
@@ -56,6 +59,10 @@ class ZGraph {
     return (basis.empty() && po.empty() && tw_candidate.empty());
   }
 
+  ZPartialOrder copyPO() const {
+    return ZPartialOrder(po, basis);
+  }
+
 
   /* *************************** */
   /* CONSTRUCTORS                */
@@ -78,7 +85,7 @@ class ZGraph {
 
   ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph(const ZGraph& oth) = delete;
-  ZGraph& operator=(ZGraph& oth) = delete;
+  ZGraph& operator=(const ZGraph& oth) = delete;
 
   /* *************************** */
   /* GRAPH EXTENSION             */
@@ -141,13 +148,12 @@ class ZGraph {
   //void orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
   //bool newlyEverGoodWrite, const PartialOrder& po);
 
-  // Returns last nodes of processes that are reads or locks
-  //std::unordered_set<const Node *> getNodesToMutate(const ZAnnotation& annotation) const;
+  // Returns events to mutate in a specified order
+  std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
 
-  // Returns mutation candidates for a read node
-  //std::map<VCIID, ZAnnotation::Ann>
-  //getMutationCandidates(const PartialOrder& po,
-  //const ZAnnotationNeg& negative, const Node *readnd) const;
+  // Returns observation candidates for a read node
+  std::list<ZObs> getObsCandidates(const ZEvent *read,
+                                   const ZAnnotationNeg& negative) const;
 
   // Linearizes a partial order
   //std::vector<ZEvent> linearize(const PartialOrder& po,

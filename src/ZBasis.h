@@ -21,7 +21,7 @@
 #ifndef _Z_BASIS_H_
 #define _Z_BASIS_H_
 
-#include "ZEvent.h"
+#include "ZAnnotation.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -70,6 +70,8 @@ class ZBasis {
   const LineT& operator()(unsigned thread_id, int aux_id) const;
   //
   const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
+  const ZEvent *getEvent(const ZObs& obs) const;
+  const ZEvent *getUnlockOfThisLock(const ZObs& obs) const;
   void addLine(const ZEvent *ev);
   void addEvent(const ZEvent *ev);
   void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);

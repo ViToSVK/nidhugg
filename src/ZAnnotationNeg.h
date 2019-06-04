@@ -28,24 +28,24 @@
 
 class ZAnnotationNeg {
  public:
-  ZAnnotationNeg()
-    : forbids_init(false) {}
-
+  ZAnnotationNeg() = default;
   ZAnnotationNeg(const ZAnnotationNeg& oth) = default;
   ZAnnotationNeg(ZAnnotationNeg&& oth) = default;
+  ZAnnotationNeg& operator=(const ZAnnotationNeg&) = delete;
+  ZAnnotationNeg& operator=(ZAnnotationNeg&& a) = delete;
 
   bool forbidsInitialEvent(const ZEvent *readev) const {
     assert(isRead(readev) || isLock(readev));
-    auto key = VCIID(readev->threadID(), readev->eventID());
-    return forbids_init.count(key);
+    auto key = ZObs(readev->threadID(), readev->eventID());
+    return mapping.count(key);
   }
 
   bool forbids(const ZEvent *readev, const ZEvent *writeev) const {
-    assert(writeev && writeev->kind != ZEvent::Kind::INITIAL &&
-           "Should call the special function for init event");
+    assert(writeev && !isInitial(writeev) &&
+           "Call the special function for init event");
     assert((isRead(readev) && isWriteB(writeev)) ||
            (isLock(readev) && isUnlock(writeev)));
-    auto key = VCIID(readev->threadID(), readev->eventID());
+    auto key = ZObs(readev->threadID(), readev->eventID());
     auto it = mapping.find(key);
     if (it == mapping.end())
       return false;
@@ -58,8 +58,7 @@ class ZAnnotationNeg {
 
   void update(const ZEvent *readev, const std::vector<unsigned>& newneg) {
     assert(isRead(readev) || isLock(readev));
-    auto key = VCIID(readev->threadID(), readev->eventID());
-    forbids_init.insert(key);
+    auto key = ZObs(readev->threadID(), readev->eventID());
     auto it = mapping.find(key);
     if (it == mapping.end())
       mapping.emplace_hint(it, key, newneg);
@@ -75,12 +74,10 @@ class ZAnnotationNeg {
     }
   }
 
-
-  bool empty() const { return forbids_init.empty() && mapping.empty(); }
+  bool empty() const { return mapping.empty(); }
 
  private:
-  std::unordered_set<VCIID> forbids_init;
-  std::unordered_map<VCIID, std::vector<unsigned>> mapping;
+  std::unordered_map<ZObs, std::vector<unsigned>> mapping;
 
 };
 

@@ -161,40 +161,12 @@ void ZPartialOrder::dump() const {
 }
 
 
-/*
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Loc& loc) {
-  char c = (loc == ZAnnotation::Loc::LOCAL)?'L':
-    ((loc == ZAnnotation::Loc::REMOTE)?'R':'A');
-  out << c;
-  return out;
-}
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation::Ann& ann) {
-  out << ann.value << "-" << ann.loc << "_";
-  if (ann.loc != ZAnnotation::Loc::LOCAL) {
-    out << "remotegood:";
-    for (auto& iid : ann.goodRemote)
-      out << "[" << iid.first << "][" << iid.second << "] ";
-  }
-  if (ann.loc != ZAnnotation::Loc::REMOTE
-      && ann.goodLocal) {
-    if (ann.goodLocal->first == INT_MAX)
-      out << "_localgood:INIT ";
-    else
-      out << "_localgood:[" << ann.goodLocal->first
-          << "][" << ann.goodLocal->second << "] ";
-  }
-  return out;
-}
-void ZAnnotation::Ann::dump() const {
-  llvm::errs() << *this << "\n";
-}
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) {
   out << "Annotation+ {\n";
-  for (auto& pr : annot) {
-    out << "( ["  << pr.first.first << "][" << pr.first.second
-    << "] observes:: ";
-    out << pr.second;
-    out << ")\n";
+  for (auto& an : annot) {
+    out << an.first.to_string() << "  observes::  ";
+    out << an.second.to_string();
+    out << "\n";
   }
   out << "}\n";
   return out;
@@ -202,4 +174,3 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) 
 void ZAnnotation::dump() const {
   llvm::errs() << *this;
 }
-*/

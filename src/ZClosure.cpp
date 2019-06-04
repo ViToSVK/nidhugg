@@ -21,6 +21,13 @@
 #include "ZClosure.h"
 
 
+std::pair<const ZEvent *, const ZEvent *>
+ZClosure::getObs(const ZObs& obs)
+{
+  return {nullptr, nullptr};
+}
+
+
 /* *************************** */
 /* RULE 1                      */
 /* *************************** */
@@ -28,7 +35,7 @@
 // first) true iff impossible
 // second) true iff something changed
 std::pair<bool, bool> ZClosure::ruleOne
-(const ZEvent *read, const ZAnnotation::Ann& ann)
+(const ZEvent *read, const ZObs& obs)
 {
   return {false, false}; // done, no change
 }
@@ -41,7 +48,7 @@ std::pair<bool, bool> ZClosure::ruleOne
 // first) true iff impossible
 // second) true iff something changed
 std::pair<bool, bool> ZClosure::ruleTwo
-(const ZEvent *read, const ZAnnotation::Ann& ann)
+(const ZEvent *read, const ZObs& obs)
 {
   return {false, false}; // done, no change
 }
@@ -54,7 +61,7 @@ std::pair<bool, bool> ZClosure::ruleTwo
 // first) true iff impossible
 // second) true iff something changed
 std::pair<bool, bool> ZClosure::ruleThree
-(const ZEvent *read, const ZAnnotation::Ann& ann)
+(const ZEvent *read, const ZObs& obs)
 {
   return {false, false}; // done, no change
 }
@@ -65,18 +72,18 @@ std::pair<bool, bool> ZClosure::ruleThree
 /* *************************** */
 
 std::pair<bool, bool> ZClosure::rules
-(const ZEvent *read, const ZAnnotation::Ann& ann)
+(const ZEvent *read, const ZObs& obs)
 {
   assert(read && isRead(read));
 
   bool change = false;
   // Rule1 is done only the first time
   // Rule2
-  auto res = ruleTwo(read, ann);
+  auto res = ruleTwo(read, obs);
   if (res.first) return {true, false};
   if (res.second) change = true;
   //Rule3
-  res = ruleThree(read, ann);
+  res = ruleThree(read, obs);
   if (res.first) return {true, false};
   if (res.second) change = true;
 
@@ -89,25 +96,28 @@ std::pair<bool, bool> ZClosure::rules
 /* *************************** */
 
 bool ZClosure::close
-(const ZEvent *newread, const ZAnnotation::Ann *newobs)
+(const ZEvent *newread)
 {
-  // Rule1 for new read + observation
+  // Rules for new read
   if (newread) {
-    assert(newobs);
-    auto res = ruleOne(newread, *newobs);
+    auto res = rules(newread, an.getObs(newread));
     if (res.first) { return false; }
   }
 
   bool change = true;
   while (change) {
     change = false;
-    for (const auto& key_ann : an) {
-      auto res = rules(gr.basis.getEvent(key_ann.first.first, -1, key_ann.first.second), key_ann.second);
-      if (res.first) { return false; }
-      if (res.second) change = true;
+    for (const auto& read_obs : an) {
+      auto read = gr.basis.getEvent(read_obs.first.thr, -1,
+                                    read_obs.first.ev);
+      if (!newread || newread != read) {
+        auto res = rules(read, read_obs.second);
+        if (res.first) { return false; }
+        if (res.second) change = true;
+      }
     }
     if (newread) {
-      auto res = rules(newread, *newobs);
+      auto res = rules(newread, an.getObs(newread));
       if (res.first) { return false; }
       if (res.second) change = true;
     }
@@ -119,24 +129,39 @@ bool ZClosure::close
 
 
 /* *************************** */
-/* CLOSE LOCK                  */
+/* PRE-CLOSE                   */
 /* *************************** */
 
-bool ZClosure::closeLock
-(const ZEvent *newlock, const ZEvent *lastunlock)
+void ZClosure::preClose
+(const ZEvent *ev, const ZEvent *obsEv)
 {
-  assert(isLock(newlock) && isUnlock(lastunlock) &&
-         sameMl(newlock, lastunlock));
+  assert(sameMl(ev, obsEv));
+  assert((isRead(ev) && isWriteB(obsEv)) ||
+         (isLock(ev) && isUnlock(obsEv)));
 
-  if (po.hasEdge(newlock, lastunlock)) {
-    return false;
-  } else if (po.hasEdge(lastunlock, newlock)) {
-    return true;
+  if (isLock(ev)) {
+    assert(!po.hasEdge(ev, obsEv));
+    if (!po.hasEdge(obsEv, ev))
+      po.addEdge(obsEv, ev);
+    return;
   }
 
-  po.addEdge(lastunlock, newlock);
+  assert(isRead(ev) && obsEv->write_other_ptr);
+  if (ev->threadID() != obsEv->threadID()) {
+    auto obsMem = obsEv->write_other_ptr;
+    assert(isWriteM(obsMem));
 
-  return close(nullptr, nullptr);
+    assert(!po.hasEdge(ev, obsMem));
+    if (!po.hasEdge(obsMem, ev))
+      po.addEdge(obsMem, ev);
+
+    //TODO rest of rule1
+  }
 }
 
-// test
+
+void ZClosure::preClose
+(const ZEvent *ev, const ZObs& obs)
+{
+  preClose(ev, po.basis.getEvent(obs));
+}

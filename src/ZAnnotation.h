@@ -23,80 +23,67 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <sstream>
 
 #include "ZEvent.h"
 #include "ZHelpers.h"
 
 
-typedef std::pair<unsigned, unsigned> VCIID;
+class ZObs {
+ public:
+  ZObs() = delete;
+  ZObs(unsigned thread_idx, unsigned event_idx)
+    : thr(thread_idx), ev(event_idx) {}
+
+  ZObs(const ZObs& oth) = default;
+  ZObs(ZObs&& oth) = default;
+  ZObs& operator=(const ZObs& oth) = delete;
+  ZObs& operator=(ZObs&& oth) = delete;
+
+  const unsigned thr;
+  const unsigned ev;
+
+  std::string to_string() const {
+    std::stringstream res;
+    res << "[" << thr << ",-1," << ev << ",]";
+    return res.str();
+  }
+
+  bool operator==(const ZObs& oth) const {
+    return (thr == oth.thr && ev == oth.ev);
+  }
+};
+
 
 namespace std {
   template <>
-  struct hash<VCIID> {
-    std::size_t operator()(const VCIID& vciid) const {
-      return (hash<unsigned>()(vciid.first) << 12) +
-             hash<unsigned>()(vciid.second);
+  struct hash<ZObs> {
+    std::size_t operator()(const ZObs& obs) const {
+      return (hash<unsigned>()(obs.thr) << 12) +
+             hash<unsigned>()(obs.ev);
     }
   };
 }
 
+
 class ZAnnotation {
  public:
-  enum class Loc {
-    LOCAL, REMOTE, ANY
-  };
 
-  class Ann {
-   public:
-    ~Ann() { delete goodLocal; }
-
-    Ann(int v, Loc l, std::unordered_set<VCIID>&& gr, bool haslocal, VCIID gl)
-      : value(v), loc(l), goodRemote(std::move(gr)),
-      goodLocal(haslocal?(new VCIID(gl.first, gl.second)):nullptr)
-        {}
-
-    Ann(const Ann& oth)
-      : value(oth.value),
-      loc(oth.loc),
-      goodRemote(oth.goodRemote),
-      goodLocal(oth.goodLocal ?
-                new VCIID(oth.goodLocal->first,
-                          oth.goodLocal->second) :
-                nullptr)
-        {}
-
-    Ann(Ann&& oth)
-      : value(oth.value),
-      loc(oth.loc),
-      goodRemote(std::move(oth.goodRemote)),
-      goodLocal(oth.goodLocal)
-        { oth.goodLocal = nullptr; }
-
-    const int value;
-    const Loc loc;
-    const std::unordered_set<VCIID> goodRemote;
-    const VCIID * goodLocal;
-
-    void dump() const;
-  };
-
-  using MappingT = std::unordered_map<VCIID, Ann>;
-  using LastLockT = std::unordered_map<SymAddrSize, VCIID>;
-  using EverGoodT = std::unordered_map<SymAddrSize, std::unordered_set<VCIID>>;
+  using MappingT = std::unordered_map<ZObs, ZObs>;
+  using LastLockT = std::unordered_map<SymAddrSize, ZObs>;
 
  private:
 
   MappingT mapping;
   LastLockT lastlock;
-  EverGoodT everGood;
 
  public:
 
   ZAnnotation() = default;
   ZAnnotation(const ZAnnotation&) = default;
-  ZAnnotation& operator=(const ZAnnotation&) = default;
+  ZAnnotation& operator=(const ZAnnotation&) = delete;
   ZAnnotation(ZAnnotation&& a) = default;
-  ZAnnotation& operator=(ZAnnotation&& a) = default;
+  ZAnnotation& operator=(ZAnnotation&& a) = delete;
 
   bool empty() const { return mapping.empty(); }
   size_t size() const { return mapping.size(); }
@@ -110,78 +97,46 @@ class ZAnnotation {
 
   void dump() const;
 
+
   /* *************************** */
   /* MAPPING                     */
   /* *************************** */
 
- public:
-
-  // Retuns VCIIDs of newly everGood writes in ann
-  std::unordered_set<VCIID> add(const ZEvent *ev, const Ann& ann) {
+  void add(const ZEvent *ev, const ZObs& obs) {
     assert(isRead(ev));
-    auto key = VCIID(ev->threadID(), ev->eventID());
+    auto key = ZObs(ev->threadID(), ev->eventID());
     auto it = mapping.find(key);
     assert(it == mapping.end());
-    assert((ann.goodRemote.size() == 1 && !ann.goodLocal) ||
-           (ann.goodRemote.empty() && ann.goodLocal)); // dc
-    mapping.emplace_hint(it, key, ann);
+    mapping.emplace_hint(it, key, obs);
+  }
 
-    // Maintain the set of everGood writes
-    // Collect and return newly everGood writes
-    auto result = std::unordered_set<VCIID>();
-    auto mlit = everGood.find(ev->ml);
-    if (mlit == everGood.end())
-      mlit = everGood.emplace_hint(mlit, ev->ml,
-                                   std::unordered_set<VCIID>());
-    if (ann.goodLocal) {
-      auto neweverg = mlit->second.emplace(ann.goodLocal->first,
-                                           ann.goodLocal->second);
-      if (neweverg.second)
-        result.emplace(ann.goodLocal->first, ann.goodLocal->second);
-    }
-    for (auto& vciid : ann.goodRemote) {
-      auto neweverg = mlit->second.emplace(vciid.first, vciid.second);
-      if (neweverg.second)
-        result.emplace(vciid.first, vciid.second);
-    }
-    return result;
+  void add(const ZEvent *ev, const ZEvent *obsEv) {
+    assert(isRead(ev) && isWriteB(obsEv));
+    add(ev, ZObs(obsEv->threadID(), obsEv->eventID()));
+  }
+
+  bool defines(unsigned thrid, unsigned evid) const {
+    auto key = ZObs(thrid, evid);
+    return (mapping.find(key) != mapping.end());
   }
 
   bool defines(const ZEvent *ev) const {
     assert(isRead(ev));
-    auto key = VCIID(ev->threadID(), ev->eventID());
-    return (mapping.find(key) != mapping.end());
+    return defines(ev->threadID(), ev->eventID());
   }
 
-  bool defines(unsigned pid, unsigned evid) const {
-    auto key = VCIID(pid, evid);
-    return (mapping.find(key) != mapping.end());
+  const ZObs& getObs(unsigned thrid, unsigned evid) const {
+    auto key = ZObs(thrid, evid);
+    auto it = mapping.find(key);
+    assert(it != mapping.end());
+    return it->second;
   }
 
-  bool isEverGood(const ZEvent *ev) const {
-    assert(isWriteB(ev));
-    auto mlit = everGood.find(ev->ml);
-    if (mlit == everGood.end()) {
-      return false;
-    }
-    return mlit->second.count(VCIID(ev->threadID(),
-                                    ev->eventID()));
-  }
-
-  const Ann& getAnn(const ZEvent *ev) const {
+  const ZObs& getObs(const ZEvent *ev) const {
     assert(isRead(ev));
-    auto key = VCIID(ev->threadID(), ev->eventID());
-    auto it = mapping.find(key);
-    assert(it != mapping.end());
-    return it->second;
+    return getObs(ev->threadID(), ev->eventID());
   }
 
-  const Ann& getAnn(unsigned pid, unsigned evid) const {
-    auto key = VCIID(pid, evid);
-    auto it = mapping.find(key);
-    assert(it != mapping.end());
-    return it->second;
-  }
 
   /* *************************** */
   /* LAST LOCK                   */
@@ -190,20 +145,17 @@ class ZAnnotation {
   void setLastLock(const ZEvent *ev) {
     assert(isLock(ev));
     auto it = lastlock.find(ev->ml);
-    if (it == lastlock.end())
-      lastlock.emplace_hint(it, ev->ml,
-                            VCIID(ev->threadID(), ev->eventID()));
-    else
-      it->second = VCIID(ev->threadID(), ev->eventID());
+    if (it != lastlock.end())
+      it = lastlock.erase(it);
+    lastlock.emplace_hint(it, ev->ml,
+                          ZObs(ev->threadID(), ev->eventID()));
   }
 
-  std::pair<bool, VCIID> getLastLock(const ZEvent *ev) const {
+  const ZObs& getLastLock(const ZEvent *ev) const {
     assert(isLock(ev));
     auto it = lastlock.find(ev->ml);
-    if (it == lastlock.end())
-      return {false, VCIID(1337,47)};
-    else
-      return {true, it->second};
+    assert(it != lastlock.end());
+    return it->second;
   }
 
   bool isLastLock(const ZEvent *ev) const {
@@ -212,24 +164,14 @@ class ZAnnotation {
     if (it == lastlock.end())
       return false;
     else
-      return (it->second == VCIID(ev->threadID(), ev->eventID()));
+      return (it->second ==
+              ZObs(ev->threadID(), ev->eventID()));
   }
 
   bool locationHasSomeLock(const ZEvent *ev) const {
     assert(isLock(ev));
-    return (lastlock.find(ev->ml) != lastlock.end());
+    return (lastlock.count(ev->ml));
   }
 };
-
-
-namespace std {
-  template <>
-  struct hash<std::pair<int, ZAnnotation::Loc>> {
-    std::size_t operator()(const std::pair<int, ZAnnotation::Loc>& val_loc) const {
-      return hash<int>()(val_loc.first) +
-             (size_t) val_loc.second;
-    }
-  };
-}
 
 #endif // _Z_ANNOTATION_H_
