@@ -1,3 +1,22 @@
+/* Copyright (C) 2016-2017 Marek Chalupa
+ * Copyright (C) 2017-2019 Viktor Toman
+ *
+ * This file is part of Nidhugg.
+ *
+ * Nidhugg is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Nidhugg is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
 
 #ifndef _Z_DUMPS_
 #define _Z_DUMPS_
@@ -28,6 +47,9 @@ void removeSubstrings(std::string& s, std::string&& p) {
 
 
 std::string ZEvent::to_string(bool write_cpid = true) const {
+  if (this->kind == ZEvent::Kind::INITIAL)
+    return "-1_<>_[INT_MAX,-1,INT_MAX] initial_event";
+
   std::stringstream res;
 
   res << traceID() << "_";
@@ -39,14 +61,15 @@ std::string ZEvent::to_string(bool write_cpid = true) const {
      res << " <s:" << size << ">";
      break;
    case ZEvent::Kind::READ :
-     res << " read <- " << ml.addr.to_string() << " <O:" << observed_trace_id << ">";
+     res << " read <- " << ml.addr.to_string()
+         << " <O:" << observed_trace_id << "> <val:" << value << ">";
      break;
    case ZEvent::Kind::WRITEB :
-     res << " writeB -> " << ml.addr.to_string();
+     res << " writeB -> " << ml.addr.to_string() << " <val:" << value << ">";
      break;
    case ZEvent::Kind::WRITEM :
      res << " writeM -> " << ml.addr.to_string()
-         << " <B:" << write_other_trace_id << ">";
+         << " <B:" << write_other_trace_id << "> <val:" << value << ">";
      break;
    case ZEvent::Kind::SPAWN :
      res << " spawn " << childs_cpid;
@@ -82,7 +105,7 @@ void ZEvent::dump() const {
 }
 
 
-void ZBuilderTSO::dump(const std::vector<ZEvent>& trace)
+void dumpTrace(const std::vector<ZEvent>& trace)
 {
   llvm::errs() << "TRACE::: " << trace.size() << " EVENTS\n";
   for (const auto& ev : trace)

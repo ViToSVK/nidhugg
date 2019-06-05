@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -93,7 +93,8 @@ bool ZExplorer::explore()
 
 bool ZExplorer::exploreRec(ZTrace& annTrace)
 {
-  ZBuilderTSO::dump(annTrace.trace);
+  assert(annTrace.respectsAnnotation());
+  dumpTrace(annTrace.trace);
   annTrace.graph.dump();
 
   auto eventsToMutate = annTrace.getEventsToMutate();

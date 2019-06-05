@@ -26,6 +26,7 @@
 #include "ZPartialOrder.h"
 #include "ZAnnotationNeg.h"
 
+
 class ZGraph {
  public:
   class Cache {

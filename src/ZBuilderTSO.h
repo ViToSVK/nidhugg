@@ -234,8 +234,6 @@ class ZBuilderTSO : public TSOTraceBuilder {
   virtual bool has_error() const { return (error_trace != nullptr)
                                             || (errors.size() > 0); };
 
-  static void dump(const std::vector<ZEvent>& trace);
-
 };
 
 #endif // __Z_BUILDER_TSO_H__

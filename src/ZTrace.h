@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2018 Viktor Toman
+ * Copyright (C) 2017-2019 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -53,6 +53,8 @@ class ZTrace {
   std::list<ZObs> getObsCandidates(const ZEvent *read) const {
     return graph.getObsCandidates(read, negative);
   }
+
+  bool respectsAnnotation() const;
 
   /* *************************** */
   /* CONSTRUCTORS                */
