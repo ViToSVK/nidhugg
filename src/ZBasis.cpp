@@ -218,6 +218,19 @@ std::unordered_map<std::pair<unsigned, int>, unsigned> ZBasis::line_sizes() cons
 }
 
 
+unsigned ZBasis::number_of_threads() const
+{
+  return threads_auxes.size();
+}
+
+
+const std::set<int>& ZBasis::auxes(unsigned thread_id) const
+{
+  assert(thread_id < threads_auxes.size());
+  return threads_auxes[thread_id];
+}
+
+
 // <threadID, added_with_this_call?>
 std::pair<unsigned, bool> ZBasis::getThreadID(const std::vector<int>& proc_seq)
 {

@@ -87,9 +87,9 @@ class ZBasis {
  public:
   bool hasThreadAux(std::pair<unsigned, int> ids) const;
   bool hasThreadAux(unsigned thread_id, int aux_id) const;
-
   std::unordered_map<std::pair<unsigned, int>, unsigned> line_sizes() const;
-
+  unsigned number_of_threads() const;
+  const std::set<int>& auxes(unsigned thread_id) const;
 
   // PROCSEQ->THREAD_ID (retained accross recursion children)
  private:

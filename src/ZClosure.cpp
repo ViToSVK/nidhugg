@@ -108,8 +108,8 @@ bool ZClosure::close
   while (change) {
     change = false;
     for (const auto& read_obs : an) {
-      auto read = gr.basis.getEvent(read_obs.first.thr, -1,
-                                    read_obs.first.ev);
+      auto read = ba.getEvent
+        (read_obs.first.thr, -1, read_obs.first.ev);
       if (!newread || newread != read) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }

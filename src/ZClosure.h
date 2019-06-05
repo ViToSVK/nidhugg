@@ -27,12 +27,10 @@
 class ZClosure {
  public:
 
-  ZClosure(const ZGraph& graph,
-           const ZAnnotation& annotation,
-           ZPartialOrder& partialOrder)
-  : gr(graph), an(annotation), po(partialOrder) {
-    assert(&(po.basis.graph) == &graph);
-  }
+ ZClosure(const ZAnnotation& annotation,
+          ZPartialOrder& partialOrder)
+  : an(annotation), gr(partialOrder.basis.graph),
+    ba(partialOrder.basis), po(partialOrder) {}
 
   ZClosure(const ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure& oth) = delete;
@@ -66,9 +64,11 @@ class ZClosure {
   void preClose
     (const ZEvent *ev, const ZObs& obs);
 
+  const ZAnnotation& an;
+
   const ZGraph& gr;
 
-  const ZAnnotation& an;
+  const ZBasis& ba;
 
   ZPartialOrder& po;
 };

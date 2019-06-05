@@ -28,35 +28,34 @@
 
 class ZGraph {
  public:
-  ZBasis basis;
+  class Cache {
+  public:
+    // ML -> thr -> thread-ordered memory-writes
+    std::unordered_map
+      <SymAddrSize, std::unordered_map
+      <unsigned, std::vector<const ZEvent *>>> wm;
+
+    // Read -> its local buffer-write
+    std::unordered_map
+      <const ZEvent *, const ZEvent *> readWB;
+
+    bool empty() const {
+      return (wm.empty() && readWB.empty());
+    }
+  };
+
  private:
+  ZBasis basis;
   ZPartialOrder po;
-
-/*
-  std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
-    readsNonroot;
-
-  std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
-    readsRoot;
-
-  std::unordered_map<SymAddrSize, std::unordered_set<const Node *>>
-    wNonrootUnord;
-
-  std::unordered_map<SymAddrSize, std::vector<const Node *>>
-    wRoot;
-*/
-
-  // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
-  // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
-  // returns -1 if there is no such write
-  std::unordered_map<SymAddrSize, std::vector<std::vector<int>>>
-    tw_candidate;
-
+  Cache cache;
 
  public:
+  const ZBasis& getBasis() const { return basis; }
+  const ZPartialOrder& getPo() const { return po; }
+  const Cache& getCache() const { return cache; }
 
   bool empty() const {
-    return (basis.empty() && po.empty() && tw_candidate.empty());
+    return (basis.empty() && po.empty() && cache.empty());
   }
 
   ZPartialOrder copyPO() const {
@@ -107,17 +106,15 @@ class ZGraph {
   void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
 
 
- public:
-
   /* *************************** */
   /* MAIN ALGORITHM              */
   /* *************************** */
 
-  friend class ZClosure;
-
-  // Given 'nd', returns a candidate for a tail write from
-  // the thread 'thr_id' using 'succ' and 'tw_candidate'
-  //const Node *getTailWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
+ public:
+  // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
+  // return first memory-write to ml (resp. index in cache.wm)
+  int getTailWindex(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
+  const ZEvent *getTailW(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
 
   // Given 'nd', returns {root tail write, nonroot tail writes} in 'po'
   //std::pair<const Node *, std::unordered_set<const Node *>>

@@ -160,7 +160,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     auto mutatedPO = annTrace.graph.copyPO();
 
     auto init = std::clock();
-    ZClosure preClosure(annTrace.graph, mutatedAnnotation, mutatedPO);
+    ZClosure preClosure(mutatedAnnotation, mutatedPO);
     preClosure.preClose(read, observation);
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -205,7 +205,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
   // The lock has been touched before
   auto lastLockObs = annTrace.annotation.getLastLock(lock);
-  auto lastUnlock = annTrace.graph.basis.getUnlockOfThisLock(lastLockObs);
+  auto lastUnlock = annTrace.graph.getBasis().getUnlockOfThisLock(lastLockObs);
 
   if (!lastUnlock) {
     // This lock is currently locked
@@ -229,7 +229,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   auto mutatedPO = annTrace.graph.copyPO();
 
   auto init = std::clock();
-  ZClosure preClosure(annTrace.graph, mutatedAnnotation, mutatedPO);
+  ZClosure preClosure(mutatedAnnotation, mutatedPO);
   preClosure.preClose(lock, lastUnlock);
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
