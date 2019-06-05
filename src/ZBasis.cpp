@@ -115,8 +115,13 @@ void ZBasis::addLine(const ZEvent *ev)
 
   auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
   thread_aux_to_line_id.emplace(key, lines.size());
+  assert(ev->threadID() <= threads_auxes.size());
+  if (ev->threadID() == threads_auxes.size())
+    threads_auxes.push_back(std::set<int>());
+  assert(!threads_auxes.at(ev->threadID()).count(ev->auxID()));
+  threads_auxes[ev->threadID()].emplace(ev->auxID());
   lines.push_back(LineT());
-  lines.back().reserve(8);
+  lines.back().reserve(16);
 }
 
 
@@ -186,6 +191,11 @@ unsigned ZBasis::lineID(const ZEvent *ev) const
 
 bool ZBasis::hasThreadAux(std::pair<unsigned, int> ids) const
 {
+  assert(threads_auxes.size() >= ids.first ||
+         !threads_auxes.at(ids.first).count(ids.second) ||
+         thread_aux_to_line_id.count(ids));
+  assert(!thread_aux_to_line_id.count(ids) ||
+         threads_auxes.at(ids.first).count(ids.second));
   return thread_aux_to_line_id.count(ids);
 }
 

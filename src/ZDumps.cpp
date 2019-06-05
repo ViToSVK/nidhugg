@@ -95,23 +95,7 @@ void ZPartialOrder::dump() const {
 
   res << "\ndigraph {\n";
 
-  int max_thread = -1;
-  int max_aux = -2;
-  for (const auto& taux_line : basis.thread_aux_to_line_id) {
-    if ((int) taux_line.first.first > max_thread)
-      max_thread = taux_line.first.first;
-    if (taux_line.first.second > max_aux)
-      max_aux = taux_line.first.second;
-  }
-
-  assert(max_thread >= 0);
-  assert(max_aux >= -1);
-  std::vector<std::set<int>> th_aux;
-  for (int i = 0; i < max_thread+1; ++i)
-    th_aux.push_back(std::set<int>());
-
-  for (const auto& taux_line : basis.thread_aux_to_line_id)
-    th_aux.at(taux_line.first.first).emplace(taux_line.first.second);
+  const auto& th_aux = basis.threads_auxes;
 
   // NODES
   for (unsigned tid = 0; tid < th_aux.size(); ++tid) {

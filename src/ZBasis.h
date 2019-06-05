@@ -81,6 +81,7 @@ class ZBasis {
   // THREAD_AUX->LINE_ID (retained accross recursion children)
  private:
   std::unordered_map<std::pair<unsigned, int>, unsigned> thread_aux_to_line_id; ////
+  std::vector<std::set<int>> threads_auxes;
   unsigned lineID(unsigned thread_id, int aux_id) const;
   unsigned lineID(const ZEvent *ev) const;
  public:
