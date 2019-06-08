@@ -78,6 +78,8 @@ class VCExplorer {
   unsigned interpreter_assume_blocked_thread = 0;
   // Number of 'full' traces ending in a deadlock
   unsigned executed_traces_full_deadlock = 0;
+  // Length of the longest trace
+  unsigned longest_trace = 0;
   // Number of read-ordered partial orders
   unsigned read_ordered_pos = 0;
   // Number ofread-ordered partial orders with no mutation
@@ -155,6 +157,7 @@ class VCExplorer {
              int star_root_index)
     : originalTB(tb)
     {
+      longest_trace = initial_trace.size();
       if (!somethingToAnnotate)
         executed_traces_full = 1;
       else

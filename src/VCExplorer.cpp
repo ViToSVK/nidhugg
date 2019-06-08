@@ -34,6 +34,7 @@ void VCExplorer::print_stats()
   std::cout << "Interpreter used to get a trace:  " << interpreter_used << "\n";
   std::cout << "IntTr with assume-blocked thread: " << interpreter_assume_blocked_thread << "\n";
   std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
+  std::cout << "Length of the longest trace:      " << longest_trace << "\n";
   std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
   std::cout << "RoPOs with no mutation choices:   " << read_ordered_pos_no_mut_choices << "\n";
   std::cout << "Mutations considered:             " << mutations_considered << "\n";
@@ -71,6 +72,8 @@ bool VCExplorer::explore()
     //current->annotation.dump();
     //current->graph.to_dot("");
     assert(traceRespectsAnnotation());
+    if (longest_trace < current->trace.size())
+      longest_trace = current->trace.size();
 
     // Get nodes available to be mutated
     auto nodesToMutate = current->graph.getNodesToMutate(current->annotation);
