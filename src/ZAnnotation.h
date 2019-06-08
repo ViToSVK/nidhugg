@@ -102,76 +102,30 @@ class ZAnnotation {
   /* MAPPING                     */
   /* *************************** */
 
-  void add(const ZEvent *ev, const ZObs& obs) {
-    assert(isRead(ev));
-    auto key = ZObs(ev->threadID(), ev->eventID());
-    auto it = mapping.find(key);
-    assert(it == mapping.end());
-    mapping.emplace_hint(it, key, obs);
-  }
+  void add(const ZEvent *ev, const ZObs& obs);
 
-  void add(const ZEvent *ev, const ZEvent *obsEv) {
-    assert(isRead(ev) && isWriteB(obsEv));
-    add(ev, ZObs(obsEv->threadID(), obsEv->eventID()));
-  }
+  void add(const ZEvent *ev, const ZEvent *obsEv);
 
-  bool defines(unsigned thrid, unsigned evid) const {
-    auto key = ZObs(thrid, evid);
-    return (mapping.find(key) != mapping.end());
-  }
+  bool defines(unsigned thrid, unsigned evid) const;
 
-  bool defines(const ZEvent *ev) const {
-    assert(isRead(ev));
-    return defines(ev->threadID(), ev->eventID());
-  }
+  bool defines(const ZEvent *ev) const;
 
-  const ZObs& getObs(unsigned thrid, unsigned evid) const {
-    auto key = ZObs(thrid, evid);
-    auto it = mapping.find(key);
-    assert(it != mapping.end());
-    return it->second;
-  }
+  const ZObs& getObs(unsigned thrid, unsigned evid) const;
 
-  const ZObs& getObs(const ZEvent *ev) const {
-    assert(isRead(ev));
-    return getObs(ev->threadID(), ev->eventID());
-  }
+  const ZObs& getObs(const ZEvent *ev) const;
 
 
   /* *************************** */
   /* LAST LOCK                   */
   /* *************************** */
 
-  void setLastLock(const ZEvent *ev) {
-    assert(isLock(ev));
-    auto it = lastlock.find(ev->ml);
-    if (it != lastlock.end())
-      it = lastlock.erase(it);
-    lastlock.emplace_hint(it, ev->ml,
-                          ZObs(ev->threadID(), ev->eventID()));
-  }
+  void setLastLock(const ZEvent *ev);
 
-  const ZObs& getLastLock(const ZEvent *ev) const {
-    assert(isLock(ev));
-    auto it = lastlock.find(ev->ml);
-    assert(it != lastlock.end());
-    return it->second;
-  }
+  const ZObs& getLastLock(const ZEvent *ev) const;
 
-  bool isLastLock(const ZEvent *ev) const {
-    assert(isLock(ev));
-    auto it = lastlock.find(ev->ml);
-    if (it == lastlock.end())
-      return false;
-    else
-      return (it->second ==
-              ZObs(ev->threadID(), ev->eventID()));
-  }
+  bool isLastLock(const ZEvent *ev) const;
 
-  bool locationHasSomeLock(const ZEvent *ev) const {
-    assert(isLock(ev));
-    return (lastlock.count(ev->ml));
-  }
+  bool locationHasSomeLock(const ZEvent *ev) const;
 };
 
 #endif // _Z_ANNOTATION_H_

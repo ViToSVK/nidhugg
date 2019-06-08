@@ -82,8 +82,6 @@ class ZExplorer {
 
   //TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
-  //bool traceRespectsAnnotation() const;
-
  public:
 
   bool explore();

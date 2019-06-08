@@ -44,82 +44,17 @@ class ZEvent {
 
  public:
   ZEvent() = delete;
+
   ZEvent(const IID<int> &iid, const CPid& cpid,
-         unsigned instruction_order, unsigned event_order, unsigned trace_id)
-   : kind(Kind::DUMMY),
-    cpid(cpid),
-    childs_cpid(),
-    fence(false),
-    ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
-    value(-47),
-    _thread_id(1337), /*set at PObuild time*/
-    _aux_id(cpid.get_aux_index()),
-    _event_id(event_order),
-    _trace_id(trace_id),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
-    //
-    iid(iid),
-    size(1),
-    md(nullptr),
-    may_conflict(false),
-    instruction_order(instruction_order),
-    aux_invisible()
-    {
-      assert(iid.get_pid() >= 0);
-    }
+         unsigned instruction_order, unsigned event_order, unsigned trace_id);
 
-  ZEvent(bool initial)
-    : kind(Kind::INITIAL),
-
-    ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    value(-47),
-    _thread_id(INT_MAX),
-    _aux_id(-1),
-    _event_id(INT_MAX),
-    _trace_id(-1),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr)
-    {
-      assert(initial);
-    }
+  ZEvent(bool initial);
 
  private:
   // Returns a 'copy' of the event
   // If blank: the event will be a part of replay_trace
   // If not blank: the event is used as if it came from an interpreter
-  ZEvent(const ZEvent& oth, int trace_id, bool blank)
-    : kind(oth.kind),
-    cpid(oth.cpid),
-    childs_cpid(oth.childs_cpid),
-    fence(oth.fence),
-    ml(oth.ml),
-    value(oth.value),
-    _thread_id(1337), /*set at PObuild time*/
-    _aux_id(oth.cpid.get_aux_index()),
-    _event_id(oth._event_id),
-    _trace_id(trace_id),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
-    //
-    iid(oth.iid), /*guide interpreter*/
-    size(oth.size), /*guide interpreter*/
-    md(nullptr),
-    may_conflict(oth.may_conflict),
-    instruction_order(oth.instruction_order), /*guide interpreter*/
-    aux_invisible(oth.aux_invisible) /*guide interpreter*/
-    {
-      assert(iid.get_pid() >= 0);
-      if (!blank) {
-        // The observed trace ID stays the same
-        // as we are reusing the whole trace
-        observed_trace_id = oth.observed_trace_id;
-        write_other_trace_id = oth.write_other_trace_id;
-      }
-    }
+  ZEvent(const ZEvent& oth, int trace_id, bool blank);
 
  public:
   enum class Kind {
@@ -209,5 +144,7 @@ class ZEventPtrComp {
   }
 };
 
+
+void dumpTrace(const std::vector<ZEvent>& trace);
 
 #endif // _Z_EVENT_H_

@@ -19,7 +19,6 @@
  */
 
 #include "ZTrace.h"
-#include "ZDumps.cpp"
 
 
 bool ZTrace::respectsAnnotation() const

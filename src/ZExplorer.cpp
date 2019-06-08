@@ -23,7 +23,6 @@
 
 #include "ZExplorer.h"
 #include "ZHelpers.h"
-#include "ZDumps.cpp"
 
 
 ZExplorer::~ZExplorer()
@@ -484,29 +483,5 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
     traceExtension.hasAssumeBlockedThread = true;
 
   return traceExtension;
-}
-
-
-/* *************************** */
-/* TRACE RESPECTS ANNOTATION   */
-/* *************************** */
-/*
-bool ZExplorer::traceRespectsAnnotation() const {
-  for (unsigned i=0; i < current->trace.size(); ++i) {
-    const ZEvent& ev = current->trace[i];
-    if (isRead(ev) && current->annotation.defines(ev.pid, ev.event_order)) {
-      const auto& ann = current->annotation.getAnn(ev.pid, ev.event_order);
-      if (ann.value != ev.value) {
-        //current->graph.to_dot("");
-        //current->annotation.dump();
-        //current->graph.getNode(ev)->dump();
-        //llvm::errs() << "ANNVALUE: " << ann.value << "  EVENTVALUE: " << ev.value << "\n";
-        return false;
-      }
-      // TODO: check also if observes one of the good writes
-    }
-  }
-
-  return true;
 }
 */

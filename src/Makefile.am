@@ -38,9 +38,9 @@ libnidhugg_a_SOURCES = \
   TSOTraceBuilder.cpp TSOTraceBuilder.h \
   VClock.cpp VClock.h VClock.tcc \
   vecset.h vecset.tcc \
-  ZEvent.h \
+  ZEvent.cpp ZEvent.h \
   ZHelpers.h \
-  ZAnnotation.h \
+  ZAnnotation.cpp ZAnnotation.h \
   ZAnnotationNeg.h \
   ZTrace.cpp ZTrace.h \
   ZBasis.cpp ZBasis.h \
@@ -49,8 +49,7 @@ libnidhugg_a_SOURCES = \
   ZClosure.cpp ZClosure.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \
   ZBuilderTSO.cpp ZBuilderTSO.h \
-  ZExplorer.cpp ZExplorer.h \
-  ZDumps.cpp
+  ZExplorer.cpp ZExplorer.h
 
 libnidhugg_a_CXXFLAGS = -fno-rtti
 
