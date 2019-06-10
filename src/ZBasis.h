@@ -90,6 +90,7 @@ class ZBasis {
   std::unordered_map<std::pair<unsigned, int>, unsigned> line_sizes() const;
   unsigned number_of_threads() const;
   const std::set<int>& auxes(unsigned thread_id) const;
+  int auxForMl(const SymAddrSize& ml, unsigned thr) const;
 
   // PROCSEQ->THREAD_ID (retained accross recursion children)
  private:

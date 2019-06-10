@@ -146,7 +146,7 @@ class ZGraph {
   //void orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
   //bool newlyEverGoodWrite, const PartialOrder& po);
 
-  // Returns events to mutate in a specified order
+  // Returns events-to-mutate in a specified order
   std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
 
   // Returns observation candidates for a read node

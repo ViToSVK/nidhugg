@@ -578,158 +578,142 @@ std::list<ZObs> ZGraph::getObsCandidates
 (const ZEvent *read, const ZAnnotationNeg& negative) const
 {
   assert(isRead(read));
+  assert(basis.hasEvent(read));
 
   std::list<ZObs> res;
-  return res;
 
+  std::unordered_set<const ZEvent *> notCovered;
+  std::unordered_set<const ZEvent *> mayBeCovered;
+  // From the value (evid) and below, everything is covered from read by some other write
+  std::unordered_map
+    <std::pair<unsigned, int>, int> covered;
+  for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr)
+    for (int covaux : basis.auxes(covthr))
+      covered.emplace(std::pair<unsigned, int>(covthr, covaux), -1);
 
-  /*
-
-  assert(nodes.count(readnd));
-  assert(isRead(readnd));
-
-  int nd_tid = readnd->getProcessID();
-  int nd_evid = readnd->getEventID();
-  assert(nd_evid == (int) processes[nd_tid].size() - 1);
-
-  auto mutateWrites = std::unordered_set<const Node *>();
-  auto mayBeCovered = std::unordered_set<const Node *>();
-  // From the value (evid) and below, everything is covered from nd by some other write
-  auto covered = std::vector<int>(processes.size(), -1);
-
-  ThreadPairsVclocks& succ = *(po.first);
-  ThreadPairsVclocks& pred = *(po.second);
-
-  // Handle thread nd_tid
-  for (int evid = nd_evid - 1; evid >= 0; --evid) {
-    const Node *wrnd = processes[nd_tid][evid];
-    if (isWrite(wrnd) && sameMl(wrnd, readnd)) {
-      // Add to mayBeCovered
-      mayBeCovered.insert(wrnd);
-      // Update cover in other threads
-      for (unsigned i = 0; i < processes.size(); ++i)
-        if (nd_tid != (int) i) {
-          int newcov = pred[nd_tid][i][evid];
-          if (newcov > covered[i])
-            covered[i] = newcov;
-        }
-      // Nodes before wrnd in nd_tid are covered by wrnd
-      break;
-    }
-  }
-
-  // Handle all other threads
-  for (unsigned tid = 0; tid < processes.size(); ++tid) {
-    if (nd_tid != (int) tid) {
-      // Handle nodes unordered with nd
-      int su = succ[nd_tid][tid][nd_evid];
-      if (su == INT_MAX)
-        su = processes[tid].size();
-      int pr = pred[nd_tid][tid][nd_evid];
-      // (su-1, su-2, ..., pr+2, pr+1) unordered with nd
-      for (int evid = su-1; evid > pr; --evid) {
-        const Node *wrnd = processes[tid][evid];
-        if (isWrite(wrnd) && sameMl(wrnd, readnd))
-          mutateWrites.insert(wrnd);
-        // wrnd covers nothing since it is unordered with nd
+  // Handle other threads
+  for (unsigned tid = 0; tid < basis.number_of_threads(); ++tid) {
+    if (read->threadID() != tid) {
+      int auxid = basis.auxForMl(read->ml, tid);
+      int su = po.succ(read, tid, auxid).second;
+      if (su >= (int) basis(tid, auxid).size()) {
+        assert(su == INT_MAX);
+        su = (int) basis(tid, auxid).size();
       }
-
-      // Handle nodes that happen before nd
-      for (int evid = pr; evid >= 0; --evid) {
-        const Node *wrnd = processes[tid][evid];
-        if (isWrite(wrnd) && sameMl(wrnd, readnd)) {
-          // Add to mayBeCovered
-          mayBeCovered.insert(wrnd);
-          // Update cover in other threads
-          for (unsigned i = 0; i < processes.size(); ++i)
-            if (tid != i) {
-              int newcov = pred[tid][i][evid];
-              if (newcov > covered[i])
-                covered[i] = newcov;
+      // TailW index to cache.wm
+      int wm_idx = getTailWindex(read->ml, tid, su - 1);
+      while (wm_idx > -1) {
+        const ZEvent *rem = cache.wm.at(read->ml).at(tid).at(wm_idx);
+        assert(rem && isWriteM(rem) && sameMl(read, rem));
+        assert(!po.hasEdge(read, rem));
+        if (po.hasEdge(rem, read)) {
+          // Others in this thread are covered from read by rem
+          assert((int) rem->eventID() <= po.pred(read, tid, auxid).second);
+          mayBeCovered.emplace(rem);
+          // Update cover
+          for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+            if (covthr != rem->threadID()) {
+              for (int covaux : basis.auxes(covthr)) {
+                int newcov = po.pred(rem, covthr, covaux).second;
+                auto covta = std::pair<unsigned, int>(covthr, covaux);
+                assert(covered.count(covta));
+                if (newcov > covered[covta])
+                  covered[covta] = newcov;
+              }
             }
-          // Nodes before wrnd in tid are covered by wrnd
+          }
+          // Break
           break;
+        } else {
+          notCovered.emplace(rem);
         }
+        --wm_idx;
       }
     }
   }
 
-  // Only take those that are not covered from nd by some other
-  for (auto& wrnd : mayBeCovered)
-    if (covered[wrnd->getProcessID()] < (int) wrnd->getEventID())
-      mutateWrites.emplace(wrnd);
-
-  bool considerInitEvent = mayBeCovered.empty();
-
-  // Disregard those forbidden by the negative annotation
-  if (negative.forbidsInitialEvent(readnd)) {
-    considerInitEvent = false;
-
-    for (auto it = mutateWrites.begin(); it != mutateWrites.end(); ) {
-      const Node * writend = *it;
-      assert(isWrite(writend));
-      if (negative.forbids(readnd, writend))
-        it = mutateWrites.erase(it);
+  // Handle thread of read
+  const ZEvent *localB = cache.readWB.at(read);
+  if (localB) {
+    // There is a local write for read
+    assert(isWriteB(localB) && sameMl(localB, read) &&
+           localB->threadID() == read->threadID() &&
+           localB->auxID() == -1 &&
+           localB->eventID() < read->eventID());
+    // Update cover caused by localB
+    for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+      if (covthr != localB->threadID()) {
+        for (int covaux : basis.auxes(covthr)) {
+          int newcov = po.pred(localB, covthr, covaux).second;
+          auto covta = std::pair<unsigned, int>(covthr, covaux);
+          assert(covered.count(covta));
+          if (newcov > covered[covta])
+            covered[covta] = newcov;
+        }
+      }
+    }
+    // Delete remotes that happen after localM
+    const ZEvent *localM = localB->write_other_ptr;
+    assert(isWriteM(localM) && sameMl(localB, localM) &&
+           po.hasEdge(localB, localM));
+    for (auto it = notCovered.begin(); it != notCovered.end(); ) {
+      const ZEvent *rem = *it;
+      assert(isWriteM(rem) && !po.areOrdered(read, rem));
+      if (po.hasEdge(localM, rem))
+        it = notCovered.erase(it);
       else
         ++it;
     }
-  }
-
-  auto result = std::map<VCIID, ZAnnotation::Ann>();
-
-  // Have mutateWrites, create possible annotations
-  while (!mutateWrites.empty()) {
-    auto it = mutateWrites.begin();
-    const Node * writend = *it;
-
-    int value = writend->getEvent()->value;
-    ZAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
-      ? ZAnnotation::Loc::ANY :
-      (writend->getProcessID() == readnd->getProcessID()
-       ? ZAnnotation::Loc::LOCAL : ZAnnotation::Loc::REMOTE);
-
-    assert(!result.count(VCIID(writend->getProcessID(), writend->getEventID())));
-
-    if (writend->getProcessID() == readnd->getProcessID()) {
-      // LOCAL (or ANY with just local good write)
-      auto goodRemote = std::unordered_set<VCIID>();
-      auto goodLocal = VCIID(writend->getProcessID(), writend->getEventID());
-      result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
-                     ZAnnotation::Ann(value, loc, std::move(goodRemote), true, goodLocal));
-      mutateWrites.erase(it);
-      continue;
+    for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
+      const ZEvent *rem = *it;
+      assert(isWriteM(rem) && po.hasEdge(read, rem));
+      if (po.hasEdge(localM, rem))
+        it = mayBeCovered.erase(it);
+      else
+        ++it;
     }
-
-    // REMOTE (or ANY with just remote good write)
-    assert(writend->getProcessID() != readnd->getProcessID());
-    auto goodRemote = std::unordered_set<VCIID>();
-    goodRemote.emplace(writend->getProcessID(), writend->getEventID());
-    auto goodLocal = VCIID(31337, 47);
-    result.emplace(VCIID(writend->getProcessID(), writend->getEventID()),
-                   ZAnnotation::Ann(value, loc, std::move(goodRemote), false, goodLocal));
-    mutateWrites.erase(it);
+    // Add obs if not forbidden
+    if (!negative.forbids(read, localB))
+      res.emplace_back(localB);
+  } else {
+    // No local write for read
+    if (mayBeCovered.empty()) {
+      // Consider initial event if not forbidden
+      if (!negative.forbidsInitialEvent(read))
+        res.emplace_back(INT_MAX, INT_MAX);
+    }
   }
 
-  if (considerInitEvent) {
-    ZAnnotation::Loc loc = (starRoot() != readnd->getProcessID())
-      ? ZAnnotation::Loc::ANY : ZAnnotation::Loc::LOCAL;
-    assert(!result.count(VCIID(INT_MAX, INT_MAX)));
-    result.emplace(VCIID(INT_MAX, INT_MAX),
-                   ZAnnotation::Ann(0, loc, std::unordered_set<VCIID>(), true, {INT_MAX, INT_MAX}));
+  // Take candidates unordered with read
+  for (const auto& remM : notCovered) {
+    assert(isWriteM(remM));
+    const ZEvent *remB = remM->write_other_ptr;
+    assert(isWriteB(remB) && sameMl(remB, remM) &&
+           po.hasEdge(remB, remM));
+    // Add if not forbidden
+    if (!negative.forbids(read, remB))
+      res.emplace_back(remB);
   }
 
-  return result;
+  // Take candidates that happen before read
+  for (const auto& remM : mayBeCovered) {
+    assert(isWriteM(remM));
+    auto covta = std::pair<unsigned, int>
+      (remM->threadID(), remM->auxID());
+    assert(covered.count(covta));
+    if ((int) remM->eventID() > covered[covta]) {
+      // Not covered
+      const ZEvent *remB = remM->write_other_ptr;
+      assert(isWriteB(remB) && sameMl(remB, remM) &&
+             po.hasEdge(remB, remM));
+      // Add if not forbidden
+      if (!negative.forbids(read, remB))
+        res.emplace_back(remB);
+      }
+  }
 
-   */
-
-
+  return res;
 }
-
-
-
-
-
-
 
 
 /*

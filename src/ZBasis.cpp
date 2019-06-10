@@ -62,6 +62,7 @@ ZBasis::ZBasis(const ZBasis& oth, const ZGraph& gr)
 
 const LineT& ZBasis::operator()(std::pair<unsigned, int> ids) const
 {
+  assert(ids.first != INT_MAX && "Called for initial event");
   auto it = thread_aux_to_line_id.find(ids);
   assert(it != thread_aux_to_line_id.end());
   return lines[it->second];
@@ -76,6 +77,7 @@ const LineT& ZBasis::operator()(unsigned thread_id, int aux_id) const
 
 const ZEvent * ZBasis::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
 {
+  assert(thread_id != INT_MAX && "Called for initial event");
   assert(hasThreadAux(thread_id, aux_id));
   const LineT& line = this->operator()(thread_id, aux_id);
   assert(event_id < line.size());
@@ -175,6 +177,7 @@ void ZBasis::shrink()
 
 unsigned ZBasis::lineID(unsigned thread_id, int aux_id) const
 {
+  assert(thread_id != INT_MAX && "Called for initial event");
   assert(hasThreadAux(thread_id, aux_id));
   auto key = std::pair<unsigned,int>(thread_id, aux_id);
   auto it = thread_aux_to_line_id.find(key);
@@ -191,6 +194,7 @@ unsigned ZBasis::lineID(const ZEvent *ev) const
 
 bool ZBasis::hasThreadAux(std::pair<unsigned, int> ids) const
 {
+  assert(ids.first != INT_MAX && "Called for initial event");
   assert(threads_auxes.size() >= ids.first ||
          !threads_auxes.at(ids.first).count(ids.second) ||
          thread_aux_to_line_id.count(ids));
@@ -226,8 +230,26 @@ unsigned ZBasis::number_of_threads() const
 
 const std::set<int>& ZBasis::auxes(unsigned thread_id) const
 {
+  assert(thread_id != INT_MAX && "Called for initial event");
   assert(thread_id < threads_auxes.size());
   return threads_auxes[thread_id];
+}
+
+
+int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
+{
+  assert(thr < number_of_threads());
+  auto axs = auxes(thr);
+  assert(!axs.empty());
+  if (axs.size() == 1)
+    return (*(axs.begin()));
+  // PSO below
+  for (auto aux : axs) {
+    assert(!((*this)(thr, aux).empty()));
+    if (ml == (*this)(thr, aux)[0]->ml)
+      return aux;
+  }
+  assert(false && "Unreachable");
 }
 
 
@@ -247,6 +269,7 @@ std::pair<unsigned, bool> ZBasis::getThreadID(const std::vector<int>& proc_seq)
 // <threadID, added_with_this_call?>
 std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
 {
+  assert(!isInitial(ev) && "Called for initial event");
   return getThreadID(ev->cpid.get_proc_seq());
 }
 

@@ -44,10 +44,10 @@ class ZEvent {
 
  public:
   ZEvent() = delete;
-
+  // Default constructor
   ZEvent(const IID<int> &iid, const CPid& cpid,
          unsigned instruction_order, unsigned event_order, unsigned trace_id);
-
+  // Constructor for initial event
   ZEvent(bool initial);
 
  private:

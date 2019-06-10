@@ -45,6 +45,7 @@ class ZAnnotationNeg {
            "Call the special function for init event");
     assert((isRead(readev) && isWriteB(writeev)) ||
            (isLock(readev) && isUnlock(writeev)));
+    assert(readev->auxID() == -1 && writeev->auxID() == -1);
     auto key = ZObs(readev->threadID(), readev->eventID());
     auto it = mapping.find(key);
     if (it == mapping.end())

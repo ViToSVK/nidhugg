@@ -51,7 +51,13 @@ class ZPartialOrder {
   std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_line) const;
   std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_line) const;
  public:
+  // Smallest (i.e. earliest) successor. Returns:
+  // Event pointer (nullptr if no successor)
+  // Event id (INT_MAX if no successor)
   std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_thread, int to_aux) const;
+  // Biggest (i.e. latest) predecessor. Returns:
+  // Event pointer (nullptr if no predecessor)
+  // Event id (-1 if no predecessor)
   std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_thread, int to_aux) const;
   bool hasEdge(const ZEvent *from, const ZEvent *to) const;
   bool areOrdered(const ZEvent *ev1, const ZEvent *ev2) const;

@@ -52,8 +52,10 @@ std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned 
   assert(succ_evid >= 0);
 
   assert(to_line < basis.lines.size());
-  if ((unsigned) succ_evid >= basis.lines[to_line].size())
+  if ((unsigned) succ_evid >= basis.lines[to_line].size()) {
+    assert(succ_evid == INT_MAX);
     return {nullptr, succ_evid};
+  }
   return {basis.lines[to_line][succ_evid], succ_evid};
 }
 
@@ -84,8 +86,10 @@ std::pair<const ZEvent *, int> ZPartialOrder::pred(const ZEvent *to, unsigned fr
   assert(from_line < basis.lines.size());
   assert(pred_evid < (int) basis.lines[from_line].size());
 
-  if (pred_evid < 0)
+  if (pred_evid < 0) {
+    assert(pred_evid == -1);
     return {nullptr, pred_evid};
+  }
   return {basis.lines[from_line][pred_evid], pred_evid};
 }
 
