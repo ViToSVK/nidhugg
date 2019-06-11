@@ -553,6 +553,88 @@ const ZEvent * ZGraph::getTailW
 }
 
 
+int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
+{
+  assert(isRead(read));
+  assert(basis.hasEvent(read));
+  assert(thr < basis.number_of_threads());
+  assert(thr != read->threadID());
+  assert(cache.wm.count(read->ml));
+  if (!cache.wm.at(read->ml).count(thr))
+    return -1;
+
+  const auto& writes = cache.wm.at(read->ml).at(thr);
+  if (writes.empty())
+    return -1;
+
+  int low = 0;
+  if (partial.hasEdge(read, writes[low]))
+    return -1;
+
+  int high = writes.size() - 1;
+  if (!partial.hasEdge(read, writes[high]))
+    return high;
+
+  assert(low < high);
+  if (low + 1 == high) {
+    assert(!partial.hasEdge(read, writes[low]) &&
+           partial.hasEdge(read, writes[high]));
+    return low;
+  }
+
+  // Low represents something that
+  // can possibly be the answer
+  // High represents something that
+  // is above the answer
+  // Do binary search
+  while (true) {
+    assert(low + 1 < high);
+    assert(!partial.hasEdge(read, writes[low]) &&
+           partial.hasEdge(read, writes[high]));
+    int mid = ((high - low) / 2) + low;
+    assert(low < mid && mid < high);
+
+    if (!partial.hasEdge(read, writes[mid]))
+      low = mid;
+    else
+      high = mid;
+
+    if (low + 1 == high) {
+      assert(!partial.hasEdge(read, writes[low]) &&
+             partial.hasEdge(read, writes[high]));
+      return low;
+    }
+  }
+}
+
+
+const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
+{
+  int idx = getLatestNotAfterIndex(read, thr, partial);
+  if (idx == -1)
+    return nullptr;
+
+  assert(idx < (int) cache.wm.at(read->ml).at(thr).size());
+  auto res = cache.wm.at(read->ml).at(thr)[idx];
+  assert(isWriteM(res) && sameMl(res, read) &&
+         res->threadID() == thr && res->auxID() != -1 &&
+         !partial.hasEdge(read, res));
+  return res;
+}
+
+
+const ZEvent * ZGraph::getLocalBufferW(const ZEvent *read) const
+{
+  assert(isRead(read));
+  assert(basis.hasEvent(read));
+  assert(cache.readWB.count(read));
+  const ZEvent *local = cache.readWB.at(read);
+  assert(!local || isWriteB(local));
+
+  return local;
+}
+
+
 std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotation) const
 {
   auto res = std::list<const ZEvent *>();

@@ -112,39 +112,21 @@ class ZGraph {
   /* *************************** */
 
  public:
+
   // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
-  // return first memory-write to ml (resp. index in cache.wm)
+  // return first memory-write to ml (resp. return its index in cache.wm)
   int getTailWindex(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
   const ZEvent *getTailW(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
 
-  // Given 'nd', returns {root tail write, nonroot tail writes} in 'po'
-  //std::pair<const Node *, std::unordered_set<const Node *>>
-  //getTailWrites(const Node *nd, const PartialOrder& po) const;
+  // In thread thr (and specific aux), from all memory-writes
+  // conflicting with read that do not happen after the read in partial,
+  // return the latest one (resp. return its index in cache.wm)
+  int getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const;
+  const ZEvent *getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const;
 
-  // Given 'nd', returns a candidates for a head write from the thread 'thr_id' that
-  // happens before nd, second are indices from-to for unordered candidate search
-  //std::pair<const Node *, std::pair<int, int>>
-  //getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const;
-
-  // Given 'nd', returns {root head write, nonroot head writes} in 'po'
-  //std::pair<const Node *, std::unordered_set<const Node *>>
-  //getHeadWrites(const Node *nd, const PartialOrder& po) const;
-
-  // Given a write node 'nd' and a partial order 'po',
-  // determines whether 'nd' is observable in that 'po'
-  //bool isObservable(const Node *nd, const PartialOrder& po) const;
-
- private:
-  // Helper for isObservable, where the read node is specified
-  //bool isObservableBy(const Node *writend, const Node *readnd,
-  //const PartialOrder& po) const;
-
- public:
-
-  // Input: partial orders in worklist_ready
-  // Output: partial orders in worklist_done
-  //void orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
-  //bool newlyEverGoodWrite, const PartialOrder& po);
+  // Get the local buffer-write of the read
+  // Returns nullptr if there is no local buffer-write before read
+  const ZEvent *getLocalBufferW(const ZEvent *read) const;
 
   // Returns events-to-mutate in a specified order
   std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
@@ -153,9 +135,15 @@ class ZGraph {
   std::list<ZObs> getObsCandidates(const ZEvent *read,
                                    const ZAnnotationNeg& negative) const;
 
+
   // Linearizes a partial order
   //std::vector<ZEvent> linearize(const PartialOrder& po,
   //const ZAnnotation& annotation) const;
+
+  // Input: partial orders in worklist_ready
+  // Output: partial orders in worklist_done
+  //void orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
+  //bool newlyEverGoodWrite, const PartialOrder& po);
 
   void dump() const { po.dump(); }
 
