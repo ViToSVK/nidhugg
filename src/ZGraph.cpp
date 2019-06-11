@@ -593,8 +593,8 @@ std::list<ZObs> ZGraph::getObsCandidates
 
   // Handle other threads
   for (unsigned tid = 0; tid < basis.number_of_threads(); ++tid) {
-    if (read->threadID() != tid) {
-      int auxid = basis.auxForMl(read->ml, tid);
+    int auxid = basis.auxForMl(read->ml, tid);
+    if (read->threadID() != tid && auxid >= 0) {
       int su = po.succ(read, tid, auxid).second;
       if (su >= (int) basis(tid, auxid).size()) {
         assert(su == INT_MAX);
@@ -666,7 +666,7 @@ std::list<ZObs> ZGraph::getObsCandidates
     }
     for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
       const ZEvent *rem = *it;
-      assert(isWriteM(rem) && po.hasEdge(read, rem));
+      assert(isWriteM(rem) && po.hasEdge(rem, read));
       if (po.hasEdge(localM, rem))
         it = mayBeCovered.erase(it);
       else
@@ -712,6 +712,7 @@ std::list<ZObs> ZGraph::getObsCandidates
       }
   }
 
+  res.sort();
   return res;
 }
 

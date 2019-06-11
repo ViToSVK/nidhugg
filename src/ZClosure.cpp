@@ -163,5 +163,9 @@ void ZClosure::preClose
 void ZClosure::preClose
 (const ZEvent *ev, const ZObs& obs)
 {
-  preClose(ev, po.basis.getEvent(obs));
+  if (obs.thr == INT_MAX) {
+    // Handle initial-event observation separately
+  } else {
+    preClose(ev, po.basis.getEvent(obs));
+  }
 }

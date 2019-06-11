@@ -89,7 +89,11 @@ class ZBasis {
   bool hasThreadAux(unsigned thread_id, int aux_id) const;
   std::unordered_map<std::pair<unsigned, int>, unsigned> line_sizes() const;
   unsigned number_of_threads() const;
+  // All auxiliary indices for thread_id in the basis
   const std::set<int>& auxes(unsigned thread_id) const;
+  // Auxiliary index for the ml in thread thr
+  // Returns -1 if thr has no writes
+  // Otherwise, the answer is always 0 in TSO
   int auxForMl(const SymAddrSize& ml, unsigned thr) const;
 
   // PROCSEQ->THREAD_ID (retained accross recursion children)

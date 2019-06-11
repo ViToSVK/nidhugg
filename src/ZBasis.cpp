@@ -241,8 +241,18 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
   assert(thr < number_of_threads());
   auto axs = auxes(thr);
   assert(!axs.empty());
-  if (axs.size() == 1)
-    return (*(axs.begin()));
+  if (axs.size() == 1) {
+    // No write events in this thread
+    return -1;
+  }
+  if (axs.size() == 2) {
+    auto it = axs.begin();
+    while (*it == -1) {
+      ++it;
+      assert(it != axs.end());
+    }
+    return *it;
+  }
   // PSO below
   for (auto aux : axs) {
     assert(!((*this)(thr, aux).empty()));

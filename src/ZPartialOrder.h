@@ -59,10 +59,14 @@ class ZPartialOrder {
   // Event pointer (nullptr if no predecessor)
   // Event id (-1 if no predecessor)
   std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_thread, int to_aux) const;
+  // Is there an edge from -> to ?
   bool hasEdge(const ZEvent *from, const ZEvent *to) const;
+  // Are ev1 and ev2 ordered ?
   bool areOrdered(const ZEvent *ev1, const ZEvent *ev2) const;
+  // Add a new edge from -> to (and all edges transitively following)
   void addEdge(const ZEvent *from, const ZEvent *to);
  private:
+  // Helper function to maintain transitivity in the partial order
   void addEdgeHelp(const ZEvent *from, const ZEvent *to);
  public:
   // When creating PO from trace

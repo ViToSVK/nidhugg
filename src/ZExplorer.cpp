@@ -98,8 +98,6 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 
   auto eventsToMutate = annTrace.getEventsToMutate();
   assert(!eventsToMutate.empty());
-  for (auto& ev : eventsToMutate)
-    ev->dump();
 
   // Unset this when any mutation succeeds
   annTrace.deadlocked = true;
@@ -143,6 +141,8 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 {
   assert(isRead(read));
+  llvm::errs() << "\nRead to mutate:\n";
+  read->dump();
 
   auto obsCandidates = annTrace.getObsCandidates(read);
   if (obsCandidates.empty()) {
@@ -152,6 +152,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
   }
 
   for (auto& observation : obsCandidates) {
+    //llvm::errs() << observation.to_string() << "\n";
 
     ++mutations_considered;
     ZAnnotation mutatedAnnotation(annTrace.annotation);

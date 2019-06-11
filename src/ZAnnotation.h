@@ -29,6 +29,9 @@
 #include "ZHelpers.h"
 
 
+// Captures the buffer-write part of the
+// observation - hence auxID is always -1
+// Special case: INT_MAX,INT_MAX for initial event
 class ZObs {
  public:
   ZObs() = delete;
@@ -36,9 +39,7 @@ class ZObs {
     : thr(thread_idx), ev(event_idx) {}
   ZObs(const ZEvent *ev)
     : thr(ev->threadID()), ev(ev->eventID())
-    {
-      assert(isWriteB(ev) && ev->auxID() == -1);
-    }
+    { assert(ev->auxID() == -1); }
 
   ZObs(const ZObs& oth) = default;
   ZObs(ZObs&& oth) = default;
@@ -50,12 +51,17 @@ class ZObs {
 
   std::string to_string() const {
     std::stringstream res;
-    res << "[" << thr << ",-1," << ev << ",]";
+    res << "[" << thr << ",-1," << ev << "]";
     return res.str();
   }
 
   bool operator==(const ZObs& oth) const {
     return (thr == oth.thr && ev == oth.ev);
+  }
+
+  bool operator<(const ZObs& oth) const {
+    return std::tie(thr, ev)
+      < std::tie(oth.thr, oth.ev);
   }
 };
 
