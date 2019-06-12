@@ -58,7 +58,7 @@ class ZBasis {
  public:
   unsigned root() const { return root_thread_id; }
   bool isRoot(unsigned idx) const { return root_thread_id == idx; }
-
+  bool isRoot(const ZEvent *ev) const { return isRoot(ev->threadID()); }
 
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:

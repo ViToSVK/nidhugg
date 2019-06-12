@@ -108,7 +108,7 @@ bool ZAnnotation::locationHasSomeLock(const ZEvent *ev) const
 
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot) {
-  out << "Annotation+ {\n";
+  out << "Annotation: {\n";
   for (auto& an : annot) {
     out << an.first.to_string() << "  observes::  ";
     out << an.second.to_string();

@@ -280,6 +280,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     // Handle Spawn
     if (isSpawn(ev)) {
       proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
+      assert(basis.number_of_threads() > 0);
+      if (ev->fence && basis.number_of_threads() == 1) {
+        // Only one thread now, and everything there
+        // happens before this spawn event, so nothing
+        // in this thread has to be chrono ordered
+        cache.chrono.clear();
+      }
     }
     // Handle Buffer-Write
     if (isWriteB(ev)) {
@@ -338,6 +345,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       if (!cache.wm[ev->ml].count(ev->threadID()))
         cache.wm[ev->ml].emplace(ev->threadID(), std::vector<const ZEvent *>());
       cache.wm[ev->ml][ev->threadID()].push_back(ev);
+      // Cache - chrono
+      if (!basis.isRoot(ev)) {
+        if (!cache.chrono.count(ev->threadID()))
+          cache.chrono.emplace
+            (ev->threadID(), std::list<const ZEvent *>());
+        cache.chrono[ev->threadID()].push_back(ev);
+      }
     }
     // Handle Read
     if (isRead(ev)) {

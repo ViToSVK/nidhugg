@@ -46,6 +46,13 @@ class ZTrace {
             negative.empty() && graph.empty());
   }
 
+  bool respectsAnnotation() const;
+
+
+  /* *************************** */
+  /* HELPERS                     */
+  /* *************************** */
+
   std::list<const ZEvent *> getEventsToMutate() const {
     return graph.getEventsToMutate(annotation);
   }
@@ -54,7 +61,14 @@ class ZTrace {
     return graph.getObsCandidates(read, negative);
   }
 
-  bool respectsAnnotation() const;
+  const ZEvent *getEvent(const ZObs& obs) const {
+    return graph.getBasis().getEvent(obs);
+  }
+
+  bool isRoot(const ZEvent *ev) const {
+    return graph.getBasis().isRoot(ev);
+  }
+
 
   /* *************************** */
   /* CONSTRUCTORS                */

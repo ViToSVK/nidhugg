@@ -27,23 +27,24 @@ bool ZTrace::respectsAnnotation() const
     const ZEvent *ev = &evref;
     if (isRead(ev) && annotation.defines(ev->threadID(), ev->eventID())) {
       const ZObs& obs = annotation.getObs(ev);
-      const ZEvent *obsEv = (obs.thr == INT_MAX)
+      const ZEvent *obsB = (obs.thr == INT_MAX)
         ? graph.getBasis().initial() : graph.getBasis().getEvent(obs);
-      const ZEvent *obsM = (isInitial(obsEv))
-        ? graph.getBasis().initial() : &(trace.at(obsEv->write_other_trace_id));
-      assert(obsEv->value == obsM->value);
-      assert(isInitial(obsEv) || (isWriteB(obsEv) && isWriteM(obsM) &&
-                                  sameMl(obsEv, obsM) && sameMl(ev, obsEv)));
-      const ZEvent *realObservation = &(trace.at(ev->observed_trace_id));
+      const ZEvent *obsM = (isInitial(obsB))
+        ? graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
+      assert(obsB->value == obsM->value);
+      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
+      const ZEvent *realObservation = (ev->observed_trace_id == -1)
+        ? graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
 
-      if (realObservation != obsEv && realObservation != obsM) {
+      if (realObservation != obsB && realObservation != obsM) {
         dumpTrace(trace);
         graph.getPo().dump();
         annotation.dump();
         llvm::errs() << "This read         :::  ";
         ev->dump();
         llvm::errs() << "Should observeB   :::  ";
-        obsEv->dump();
+        obsB->dump();
         llvm::errs() << "Should observeM   :::  ";
         obsM->dump();
         llvm::errs() << "Actually observed :::  ";

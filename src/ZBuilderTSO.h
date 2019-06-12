@@ -39,6 +39,7 @@
 
 
 class ZBuilderTSO : public TSOTraceBuilder {
+  friend class ZExplorer;
 
  public:
 

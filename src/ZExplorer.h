@@ -32,9 +32,11 @@
 
 class ZExplorer {
 
-  ZBuilderTSO& originalTB;
+  const ZBuilderTSO& originalTB;
 
-  ZTrace *initial;
+  const ZTrace *initial;
+
+  bool info = true;
 
   class TraceExtension {
    public:
@@ -61,14 +63,28 @@ class ZExplorer {
   };
 
 
-
   /* *************************** */
   /* ALGORITHM                   */
   /* *************************** */
 
+ public:
+
+  bool explore();
+
+  void print_stats() const;
+
+ private:
+
+  bool exploreRec(const ZTrace& annTrace);
+
   bool mutateRead(const ZTrace& annTrace, const ZEvent *read);
 
   bool mutateLock(const ZTrace& annTrace, const ZEvent *lock);
+
+  bool chronological
+    (const ZTrace& annTrace, const ZEvent *readLock,
+     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+     bool mutationFollowsCurrentTrace);
 
   /*
   std::pair<bool, bool> // <error?, added_into_worklist?>
@@ -82,24 +98,16 @@ class ZExplorer {
 
   //TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
- public:
-
-  bool explore();
-
-  bool exploreRec(ZTrace& trace);
-
-  void print_stats();
 
   /* *************************** */
   /* CONSTRUCTOR                 */
   /* *************************** */
 
+ public:
+
   ~ZExplorer();
 
-  ZExplorer(std::vector<ZEvent>&& initial_trace,
-            bool somethingToAnnotate,
-            ZBuilderTSO& tb,
-            int star_root_index);
+  ZExplorer(ZBuilderTSO& tb);
 
  private:
 
@@ -117,27 +125,23 @@ class ZExplorer {
   unsigned interpreter_assume_blocked_thread = 0;
   // Number of 'full' traces ending in a deadlock
   unsigned executed_traces_full_deadlock = 0;
-  // Number of read-ordered partial orders
-  unsigned read_ordered_pos = 0;
-  // Number ofread-ordered partial orders with no mutation
+  // Number of annotated traces with no mutation
   // choices (eg all blocked by negative annotation)
-  unsigned read_ordered_pos_no_mut_choices = 0;
+  unsigned no_mut_choices = 0;
   // Number of mutations considered
   unsigned mutations_considered = 0;
-  // Closure of extension-ordered po failed
-  unsigned cl_ordering_failed = 0;
-  // Closure of extension-ordered po succeeded
-  unsigned cl_ordering_succeeded = 0;
-  // Closure of mutation-chosen po failed
-  unsigned cl_mutation_failed = 0;
-  // Closure of mutation-chosen po succeeded
-  unsigned cl_mutation_succeeded = 0;
+  // Closure of mutated PO (already chrono-ordered) failed
+  unsigned closure_failed = 0;
+  // Closure of mutated PO (already chrono-ordered) succeeded
+  unsigned closure_succeeded = 0;
   // Total time spent on copying
-  double time_graphcopy = 0;
-  // Total time spent on linearization and replaying
-  double time_replaying = 0;
-  // Total time spent on mazurkiewicz ordering
-  double time_maz = 0;
+  double time_copy = 0;
+  // Total time spent on linearization
+  double time_linearization = 0;
+  // Total time spent on interpreting
+  double time_interpreter = 0;
+  // Total time spent on chronological ordering
+  double time_chrono = 0;
   // Total time spent on closure
   double time_closure = 0;
 

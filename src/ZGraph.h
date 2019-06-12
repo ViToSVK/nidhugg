@@ -40,8 +40,12 @@ class ZGraph {
     std::unordered_map
       <const ZEvent *, const ZEvent *> readWB;
 
+    // Leaf ThrID -> memory-writes to chronologically order
+    std::unordered_map
+      <unsigned, std::list<const ZEvent *>> chrono;
+
     bool empty() const {
-      return (wm.empty() && readWB.empty());
+      return (wm.empty() && readWB.empty() && chrono.empty());
     }
   };
 

@@ -36,16 +36,13 @@ bool ZBuilderTSO::reset()
 
   // Construct the explorer with:
   // the initial trace, this original TB, the star_root_index
-  ZExplorer explorer = ZExplorer(std::move(prefix),
-                                 !somethingToAnnotate.empty(),
-                                 *this,
-                                 this->star_root_index);
+  ZExplorer explorer = ZExplorer(*this);
 
   // Call the main method
   bool error = explorer.explore();
 
   // Print the result statistics
-  // explorer.print_stats();
+  explorer.print_stats();
 
   return error;
 }

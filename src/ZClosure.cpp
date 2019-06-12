@@ -124,6 +124,7 @@ bool ZClosure::close
   }
 
   assert(!change);
+  //po.dump(); // Dump the closed PO if you want
   return true;
 }
 

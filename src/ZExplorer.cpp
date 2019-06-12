@@ -32,24 +32,20 @@ ZExplorer::~ZExplorer()
 }
 
 
-ZExplorer::ZExplorer
-(std::vector<ZEvent>&& initial_trace,
- bool somethingToAnnotate,
- ZBuilderTSO& tb,
- int star_root_index)
+ZExplorer::ZExplorer(ZBuilderTSO& tb)
   : originalTB(tb)
 {
   if (tb.someThreadAssumeBlocked)
     interpreter_assume_blocked_thread = 1;
 
-  if (!somethingToAnnotate)
+  if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(initial_trace), star_root_index);
+    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index);
 }
 
 
-void ZExplorer::print_stats()
+void ZExplorer::print_stats() const
 {
   std::setprecision(4);
   std::cout << "\n";
@@ -58,17 +54,15 @@ void ZExplorer::print_stats()
   std::cout << "Interpreter used to get a trace:  " << interpreter_used << "\n";
   std::cout << "IntTr with assume-blocked thread: " << interpreter_assume_blocked_thread << "\n";
   std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
-  std::cout << "Read-ordered partial orders:      " << read_ordered_pos << "\n";
-  std::cout << "RoPOs with no mutation choices:   " << read_ordered_pos_no_mut_choices << "\n";
+  std::cout << "Traces with no mutation choices:  " << no_mut_choices << "\n";
   std::cout << "Mutations considered:             " << mutations_considered << "\n";
-  std::cout << "Closure after ordering failed:    " << cl_ordering_failed << "\n";
-  std::cout << "Closure after ordering succeeded: " << cl_ordering_succeeded << "\n";
-  std::cout << "Closure after mutation failed:    " << cl_mutation_failed << "\n";
-  std::cout << "Closure after mutation succeeded: " << cl_mutation_succeeded << "\n";
-  std::cout << "Total time spent on copying:      " << time_graphcopy << "\n";
-  std::cout << "Total time spent on replaying:    " << time_replaying << "\n";
-  std::cout << "Total time spent on mazurkiewicz: " << time_maz << "\n";
-  std::cout << "Total time spent on closure:      " << time_closure << "\n";
+  std::cout << "Closure failed:                   " << closure_failed << "\n";
+  std::cout << "Closure succeeded:                " << closure_succeeded << "\n";
+  std::cout << "Time spent on copying:            " << time_copy << "\n";
+  std::cout << "Time spent on linearization:      " << time_linearization << "\n";
+  std::cout << "Time spent on interpreting:       " << time_interpreter << "\n";
+  std::cout << "Time spent on chronological:      " << time_chrono << "\n";
+  std::cout << "Time spent on closure:            " << time_closure << "\n";
   std::cout << "\n";
 
   // Change to false to test if assertions are on
@@ -90,11 +84,14 @@ bool ZExplorer::explore()
 }
 
 
-bool ZExplorer::exploreRec(ZTrace& annTrace)
+bool ZExplorer::exploreRec(const ZTrace& annTrace)
 {
   assert(annTrace.respectsAnnotation());
-  dumpTrace(annTrace.trace);
-  annTrace.graph.dump();
+  if (info) {
+    //dumpTrace(annTrace.trace);
+    annTrace.graph.dump();
+    llvm::errs() << "-------------------------\n\n";
+  }
 
   auto eventsToMutate = annTrace.getEventsToMutate();
   assert(!eventsToMutate.empty());
@@ -141,34 +138,55 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 {
   assert(isRead(read));
-  llvm::errs() << "\nRead to mutate:\n";
-  read->dump();
 
   auto obsCandidates = annTrace.getObsCandidates(read);
   if (obsCandidates.empty()) {
     // All candidates are ruled out by negative annotation
-    ++read_ordered_pos_no_mut_choices;
+    ++no_mut_choices;
     return false;
   }
 
   for (auto& observation : obsCandidates) {
-    //llvm::errs() << observation.to_string() << "\n";
-
     ++mutations_considered;
+
     ZAnnotation mutatedAnnotation(annTrace.annotation);
     mutatedAnnotation.add(read, observation);
     assert(mutatedAnnotation.size() == annTrace.annotation.size() + 1);
     auto mutatedPO = annTrace.graph.copyPO();
+
+    if (info) {
+      llvm::errs() << "Read to mutate:\n";
+      read->dump();
+      llvm::errs() << "Observation:\n" << observation.to_string() << "\n";
+      mutatedAnnotation.dump();
+    }
 
     auto init = std::clock();
     ZClosure preClosure(mutatedAnnotation, mutatedPO);
     preClosure.preClose(read, observation);
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-    mutatedAnnotation.dump();
-    //bool mutationFollowsCurrentTrace =
-    //  (nd->getEvent()->value == vciid_ann.second.value);
-    // TODO call chronological
+    bool mutationFollowsCurrentTrace = false;
+    if (observation.thr == INT_MAX) {
+      mutationFollowsCurrentTrace = //VC (read->value == 0);
+        (read->observed_trace_id == -1);
+    } else {
+      const ZEvent *obsB = annTrace.getEvent(observation);
+      assert(isWriteB(obsB) && isWriteM(obsB->write_other_ptr) &&
+             sameMl(read, obsB) && sameMl(read, obsB->write_other_ptr));
+      mutationFollowsCurrentTrace = //VC (read->value == obsB->value);
+        (read->observed_trace_id == obsB->traceID() ||
+         read->observed_trace_id == obsB->write_other_ptr->traceID());
+    }
+
+    bool error = chronological
+      (annTrace, read, std::move(mutatedAnnotation),
+       std::move(mutatedPO), mutationFollowsCurrentTrace);
+
+    if (error) {
+      assert(originalTB.error_trace);
+      return error;
+    }
   }
 
   return false;
@@ -197,11 +215,19 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     mutatedAnnotation.setLastLock(lock);
     auto mutatedPO = annTrace.graph.copyPO();
 
-    mutatedAnnotation.dump();
-    //bool mutationFollowsCurrentTrace =
-    //(nd->getEvent()->observed_id == -1);
-    // TODO call chronological
-    return false;
+    if (info) {
+      llvm::errs() << "Lock to mutate:\n";
+      lock->dump();
+      llvm::errs() << "Not locked before\n";
+      mutatedAnnotation.dump();
+    }
+
+    bool mutationFollowsCurrentTrace =
+      (lock->observed_trace_id == -1);
+
+    return chronological
+      (annTrace, lock, std::move(mutatedAnnotation),
+       std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
 
   // The lock has been touched before
@@ -215,7 +241,8 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   }
 
   // This lock is currently unlocked by lastUnlock
-  assert(lastUnlock && sameMl(lock, lastUnlock));
+  assert(lastUnlock && isUnlock(lastUnlock) &&
+         sameMl(lock, lastUnlock));
   annTrace.deadlocked = false;
 
   if (annTrace.negative.forbids(lock, lastUnlock)) {
@@ -229,17 +256,183 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   mutatedAnnotation.setLastLock(lock);
   auto mutatedPO = annTrace.graph.copyPO();
 
+  if (info) {
+    llvm::errs() << "Lock to mutate:\n";
+    lock->dump();
+    llvm::errs() << "Currently unlocked by:\n";
+    lastUnlock->dump();
+    mutatedAnnotation.dump();
+  }
+
   auto init = std::clock();
   ZClosure preClosure(mutatedAnnotation, mutatedPO);
   preClosure.preClose(lock, lastUnlock);
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-  mutatedAnnotation.dump();
-  //bool mutationFollowsCurrentTrace =
-  //(nd->getEvent()->observed_id == (int) lastunlocknd->getEvent()->id);
-  // TODO call chronological
-  return false;
+  bool mutationFollowsCurrentTrace =
+    (lock->observed_trace_id == lastUnlock->traceID());
+
+  return chronological
+    (annTrace, lock, std::move(mutatedAnnotation),
+     std::move(mutatedPO), mutationFollowsCurrentTrace);
 }
+
+
+/* *************************** */
+/* CHRONOLOGICAL               */
+/* *************************** */
+
+bool ZExplorer::chronological
+(const ZTrace& annTrace, const ZEvent *readLock,
+ ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+ bool mutationFollowsCurrentTrace)
+{
+  assert(isRead(readLock) || isLock(readLock));
+  int chronoThreads = annTrace.graph.getCache().chrono.size();
+  if (isRead(readLock) && !annTrace.isRoot(readLock) &&
+      !annTrace.graph.getCache().chrono.count(readLock->threadID()))
+    ++chronoThreads;
+
+  if (chronoThreads < 100) { // TODO: change to 2
+    // No chronological orderings are needed,
+    // we proceed with just one mutatedPO
+    auto init = std::clock();
+    ZClosure closure(mutatedAnnotation, mutatedPO);
+    bool closed = closure.close
+      (isLock(readLock) ? nullptr : readLock);
+    time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+    if (!closed) {
+      if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
+      ++closure_failed;
+      return false;
+    }
+
+    if (info) llvm::errs() << "Closure succeeded\n\n-----\n\n";
+    ++closure_succeeded;
+
+    return false; // TODO EXTEND
+  }
+
+  assert(false && "TODO: Chrono orderings");
+}
+
+
+
+/* *************************** */
+/* EXTEND AND ADD              */
+/* *************************** */
+/*
+std::pair<bool, bool>
+ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
+                         const ZAnnotation& mutatedAnnotation,
+                         const ZAnnotationNeg& negativeWriteMazBranch,
+                         unsigned processMutationPreference,
+                         bool mutationFollowsCurrentTrace)
+{
+  auto mutatedTrace = mutationFollowsCurrentTrace
+    ?reuseTrace(mutatedAnnotation)
+    :extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
+
+  executed_traces++;
+  if (mutatedTrace.hasError)
+    return {true, false}; // Found an error
+  if (mutatedTrace.hasAssumeBlockedThread) {
+    // This recursion subtree of the algorithm will only
+    // have traces that violate the same assume-condition
+    interpreter_assume_blocked_thread++;
+    //return false;
+  }
+  if (!mutatedTrace.somethingToAnnotate) {
+    // Maximal trace, do not add to worklist
+    //llvm::errs() << "********* FULL TRACE *********\n";
+    //mutatedAnnotation.dump();
+    //current->graph.to_dot(mutatedPo,"");
+    executed_traces_full++;
+    return {false, false};
+  }
+
+  clock_t init = std::clock();
+  assert(mutatedPo.first.get() && mutatedPo.second.get());
+  ZGraph mutatedGraph(current->graph,       // base for graph
+                             std::move(mutatedPo), // base for 'original' po
+                             mutatedTrace.trace,   // to extend the graph
+                             mutatedAnnotation);   // to extend the graph
+  assert(!mutatedPo.first.get() && !mutatedPo.second.get());
+  std::unique_ptr<ZTrace> mutatedZTrace
+    (new ZTrace(std::move(mutatedTrace.trace),
+                 mutatedAnnotation,
+                 negativeWriteMazBranch,
+                 std::move(mutatedGraph),
+                 processMutationPreference));
+  assert(mutatedTrace.empty() && mutatedGraph.empty());
+  time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+  worklist.push_front(std::move(mutatedZTrace));
+  assert(!mutatedZTrace.get());
+
+  return {false, true};
+}
+
+
+/* *************************** */
+/* REUSE TRACE                 */
+/* *************************** */
+/*
+ZExplorer::TraceExtension
+ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
+{
+  auto tr = std::vector<ZEvent>();
+  tr.reserve(current->trace.size());
+  bool somethingToAnnotate = false;
+
+
+  for (const ZEvent& ev : current->trace) {
+    if (!somethingToAnnotate) {
+      const Node *nd = (current->graph.hasNodeWithEvent(ev))
+        ?current->graph.getNode(ev):nullptr;
+      if (isRead(ev) && (!nd || !mutatedAnnotation.defines(nd)))
+        somethingToAnnotate = true;
+      else if (isLock(ev)) {
+        if (!nd ||
+            (nd->getEventID() == current->graph[ nd->getProcessID() ].size() - 1 &&
+             !mutatedAnnotation.isLastLock(nd)))
+          somethingToAnnotate = true;
+      }
+    }
+
+    tr.push_back(ev.copy(tr.size(), false));
+  }
+
+  return TraceExtension(std::move(tr), somethingToAnnotate);
+}
+
+
+/* *************************** */
+/* EXTEND TRACE                */
+/* *************************** */
+/*
+ZExplorer::TraceExtension
+ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
+{
+  clock_t init = std::clock();
+  ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(tr));
+  auto traceExtension = TraceExtension(TB.extendGivenTrace());
+  time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
+  interpreter_used++;
+
+  if (TB.has_error()) {
+    // ERROR FOUND
+    originalTB.error_trace = TB.get_trace();
+    traceExtension.hasError = true;
+  }
+
+  if (TB.someThreadAssumeBlocked)
+    traceExtension.hasAssumeBlockedThread = true;
+
+  return traceExtension;
+}
+*/
 
 
 
@@ -368,121 +561,5 @@ std::list<PartialOrder> ZExplorer::orderingsAfterMutationChoice
       current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true, po);
 
   return current->graph.dumpDoneWorklist();
-}
-
-
-
-/* *************************** */
-/* EXTEND AND ADD              */
-/* *************************** */
-/*
-std::pair<bool, bool>
-ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
-                         const ZAnnotation& mutatedAnnotation,
-                         const ZAnnotationNeg& negativeWriteMazBranch,
-                         unsigned processMutationPreference,
-                         bool mutationFollowsCurrentTrace)
-{
-  auto mutatedTrace = mutationFollowsCurrentTrace
-    ?reuseTrace(mutatedAnnotation)
-    :extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
-
-  executed_traces++;
-  if (mutatedTrace.hasError)
-    return {true, false}; // Found an error
-  if (mutatedTrace.hasAssumeBlockedThread) {
-    // This recursion subtree of the algorithm will only
-    // have traces that violate the same assume-condition
-    interpreter_assume_blocked_thread++;
-    //return false;
-  }
-  if (!mutatedTrace.somethingToAnnotate) {
-    // Maximal trace, do not add to worklist
-    //llvm::errs() << "********* FULL TRACE *********\n";
-    //mutatedAnnotation.dump();
-    //current->graph.to_dot(mutatedPo,"");
-    executed_traces_full++;
-    return {false, false};
-  }
-
-  clock_t init = std::clock();
-  assert(mutatedPo.first.get() && mutatedPo.second.get());
-  ZGraph mutatedGraph(current->graph,       // base for graph
-                             std::move(mutatedPo), // base for 'original' po
-                             mutatedTrace.trace,   // to extend the graph
-                             mutatedAnnotation);   // to extend the graph
-  assert(!mutatedPo.first.get() && !mutatedPo.second.get());
-  std::unique_ptr<ZTrace> mutatedZTrace
-    (new ZTrace(std::move(mutatedTrace.trace),
-                 mutatedAnnotation,
-                 negativeWriteMazBranch,
-                 std::move(mutatedGraph),
-                 processMutationPreference));
-  assert(mutatedTrace.empty() && mutatedGraph.empty());
-  time_graphcopy += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-  worklist.push_front(std::move(mutatedZTrace));
-  assert(!mutatedZTrace.get());
-
-  return {false, true};
-}
-
-
-/* *************************** */
-/* REUSE TRACE                 */
-/* *************************** */
-/*
-ZExplorer::TraceExtension
-ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
-{
-  auto tr = std::vector<ZEvent>();
-  tr.reserve(current->trace.size());
-  bool somethingToAnnotate = false;
-
-
-  for (const ZEvent& ev : current->trace) {
-    if (!somethingToAnnotate) {
-      const Node *nd = (current->graph.hasNodeWithEvent(ev))
-        ?current->graph.getNode(ev):nullptr;
-      if (isRead(ev) && (!nd || !mutatedAnnotation.defines(nd)))
-        somethingToAnnotate = true;
-      else if (isLock(ev)) {
-        if (!nd ||
-            (nd->getEventID() == current->graph[ nd->getProcessID() ].size() - 1 &&
-             !mutatedAnnotation.isLastLock(nd)))
-          somethingToAnnotate = true;
-      }
-    }
-
-    tr.push_back(ev.copy(tr.size(), false));
-  }
-
-  return TraceExtension(std::move(tr), somethingToAnnotate);
-}
-
-
-/* *************************** */
-/* EXTEND TRACE                */
-/* *************************** */
-/*
-ZExplorer::TraceExtension
-ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
-{
-  clock_t init = std::clock();
-  ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(tr));
-  auto traceExtension = TraceExtension(TB.extendGivenTrace());
-  time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
-  interpreter_used++;
-
-  if (TB.has_error()) {
-    // ERROR FOUND
-    originalTB.error_trace = TB.get_trace();
-    traceExtension.hasError = true;
-  }
-
-  if (TB.someThreadAssumeBlocked)
-    traceExtension.hasAssumeBlockedThread = true;
-
-  return traceExtension;
 }
 */
