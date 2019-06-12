@@ -560,51 +560,21 @@ int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPart
   assert(thr < basis.number_of_threads());
   assert(thr != read->threadID());
   assert(cache.wm.count(read->ml));
-  if (!cache.wm.at(read->ml).count(thr))
+
+  int aux = basis.auxForMl(read->ml, thr);
+  if (aux == -1) {
+    assert(!cache.wm.at(read->ml).count(thr));
     return -1;
-
-  const auto& writes = cache.wm.at(read->ml).at(thr);
-  if (writes.empty())
-    return -1;
-
-  int low = 0;
-  if (partial.hasEdge(read, writes[low]))
-    return -1;
-
-  int high = writes.size() - 1;
-  if (!partial.hasEdge(read, writes[high]))
-    return high;
-
-  assert(low < high);
-  if (low + 1 == high) {
-    assert(!partial.hasEdge(read, writes[low]) &&
-           partial.hasEdge(read, writes[high]));
-    return low;
   }
+  assert(aux == 0 || cache.wm.at(read->ml).count(thr));
 
-  // Low represents something that
-  // can possibly be the answer
-  // High represents something that
-  // is above the answer
-  // Do binary search
-  while (true) {
-    assert(low + 1 < high);
-    assert(!partial.hasEdge(read, writes[low]) &&
-           partial.hasEdge(read, writes[high]));
-    int mid = ((high - low) / 2) + low;
-    assert(low < mid && mid < high);
-
-    if (!partial.hasEdge(read, writes[mid]))
-      low = mid;
-    else
-      high = mid;
-
-    if (low + 1 == high) {
-      assert(!partial.hasEdge(read, writes[low]) &&
-             partial.hasEdge(read, writes[high]));
-      return low;
-    }
+  int su = partial.succ(read, thr, aux).second;
+  if (su >= (int) basis(thr, aux).size()) {
+    assert(su == INT_MAX);
+    su = (int) basis(thr, aux).size();
   }
+  // TailW index to cache.wm
+  return getTailWindex(read->ml, thr, su - 1);
 }
 
 
@@ -684,6 +654,7 @@ std::list<ZObs> ZGraph::getObsCandidates
       }
       // TailW index to cache.wm
       int wm_idx = getTailWindex(read->ml, tid, su - 1);
+      assert(wm_idx == getLatestNotAfterIndex(read, tid, po));
       while (wm_idx > -1) {
         const ZEvent *rem = cache.wm.at(read->ml).at(tid).at(wm_idx);
         assert(rem && isWriteM(rem) && sameMl(read, rem));
