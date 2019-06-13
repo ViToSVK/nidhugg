@@ -22,6 +22,9 @@
 #include "ZGraph.h"
 
 
+ZGraph ZBasis::graphDummy = ZGraph();
+
+
 // Empty
 ZBasis::ZBasis(const ZGraph& gr)
   : graph(gr),
@@ -32,8 +35,13 @@ ZBasis::ZBasis(const ZGraph& gr)
     proc_seq_to_thread_id(),
     event_to_position()
 {
-  assert(graph.empty());
+  assert(graph.empty() && empty());
 }
+
+
+// Empty
+ZBasis::ZBasis()
+  : ZBasis(ZBasis::graphDummy) {}
 
 
 // Initial
@@ -45,7 +53,9 @@ ZBasis::ZBasis(const ZGraph& gr, int root_thread_id)
     thread_aux_to_line_id(),
     proc_seq_to_thread_id(),
     event_to_position()
-{}
+{
+  assert(empty());
+}
 
 
 // When extending
@@ -260,6 +270,7 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
       return aux;
   }
   assert(false && "Unreachable");
+  return -1;
 }
 
 

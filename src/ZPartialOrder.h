@@ -28,7 +28,7 @@ class ZPartialOrder {
  public:
   // ZBASIS REFERENCE (given at constructor-time)
   const ZBasis& basis;  ////
-  typedef std::vector<std::vector<std::vector<int>>> ClockT;
+  static ZBasis basisDummy;
 
 
   // SUCCESSOR PREDECESSOR
@@ -45,6 +45,7 @@ class ZPartialOrder {
   // t_i[a] *HB* t_j[b]
   // bigger a => 'stronger' edge
   // smaller b => 'stronger' edge
+  typedef std::vector<std::vector<std::vector<int>>> ClockT;
  private:
   ClockT _succ;
   ClockT _pred;
@@ -76,15 +77,17 @@ class ZPartialOrder {
 
 
  public:
-  ZPartialOrder() = delete;
-  // Empty or Initial
+  // Initial
   ZPartialOrder(const ZBasis& basis);
+  // Empty
+  ZPartialOrder();
   // When extending
   ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis);
+  // Chrono orderings
+  ZPartialOrder(const ZPartialOrder& oth);
 
   ZPartialOrder(ZPartialOrder&& oth) = default;
   ZPartialOrder& operator=(ZPartialOrder&& oth) = delete;
-  ZPartialOrder(const ZPartialOrder& oth) = delete;
   ZPartialOrder& operator=(const ZPartialOrder& oth) = delete;
 
   bool empty() const {

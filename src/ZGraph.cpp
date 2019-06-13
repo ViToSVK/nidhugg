@@ -267,6 +267,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     ++cur_evidx[thraux];
 
     // Handle Fence
+    //
     if (ev->fence) {
       if (store_buffer.count(ev->threadID()))
         for (const auto& ml_last : last_mwrite[ev->threadID()]) {
@@ -277,7 +278,9 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
             po.addEdge(last, ev);
         }
     }
+
     // Handle Spawn
+    //
     if (isSpawn(ev)) {
       proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
       assert(basis.number_of_threads() > 0);
@@ -288,7 +291,9 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         cache.chrono.clear();
       }
     }
+
     // Handle Buffer-Write
+    //
     if (isWriteB(ev)) {
       assert(ev->auxID() == -1 && "Only real threads");
       // Store buffer
@@ -311,7 +316,9 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       last_bwrite[ev->threadID()].emplace_hint
         (it, ev->ml, ev);
     }
+
     // Handle Memory-Write
+    //
     if (isWriteM(ev)) {
       assert(ev->auxID() != -1 && "Only auxiliary threads");
       // Store buffer
@@ -353,12 +360,23 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         cache.chrono[ev->threadID()].push_back(ev);
       }
     }
+
     // Handle Read
+    //
     if (isRead(ev)) {
       // Check if nd is not annotated yet
       if (!annotationPtr || !(annotationPtr->defines(ev))) {
         // This will be the last node for the corresponding thread
         has_unannotated_read_or_lock.insert(ev->threadID());
+      } else {
+        assert(annotationPtr->defines(ev));
+        if (!basis.isRoot(ev)) {
+          // Cache - chronoAnnR
+          if (!cache.chronoAnnR.count(ev->threadID()))
+            cache.chronoAnnR.emplace
+              (ev->threadID(), std::list<const ZEvent *>());
+          cache.chronoAnnR[ev->threadID()].push_back(ev);
+        }
       }
       // Cache - wm
       if (!cache.wm.count(ev->ml))
@@ -374,7 +392,9 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       else
         cache.readWB.emplace(ev, nullptr);
     }
+
     // Handle Mutex events
+    //
     if (isMutexInit(ev)) {
       assert(!mutex_inits.count(ev->ml));
       mutex_inits.emplace(ev->ml, ev);
@@ -417,6 +437,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       }
       mutex_last[ev->ml][ev->threadID()] = ev;
     }
+
   } // end of loop for traversing trace and creating nodes
 
   basis.shrink();
@@ -784,254 +805,67 @@ std::list<ZObs> ZGraph::getObsCandidates
 }
 
 
-/*
-const Node * ZGraph::getTailWcandidate(const Node *nd, unsigned thr_id,
-                                              const PartialOrder& po) const
+std::vector<std::pair<const ZEvent *, const ZEvent *>>
+  ZGraph::chronoOrderPairs(const ZEvent *leafread) const
 {
-  assert(isRead(nd));
-  const ThreadPairsVclocks& succ = *(po.first);
+  bool isLR = (leafread && isRead(leafread) && !basis.isRoot(leafread));
+  assert(!leafread || isLR);
+  assert(cache.chrono.size() >= 2 ||
+         (cache.chrono.size() == 1 && isLR &&
+          !cache.chrono.count(leafread->threadID())));
+  std::vector<std::pair<const ZEvent *, const ZEvent *>> res;
 
-  // Get index where to start the search from
-  int ev_id = (nd->getProcessID() == thr_id) ? nd->getEventID() - 1
-            : succ[nd->getProcessID()][thr_id][nd->getEventID()] - 1;
-  if (ev_id == INT_MAX - 1)
-    ev_id = processes[thr_id].size() - 1;
-  assert(ev_id < (int) processes[thr_id].size());
-
-  if (ev_id == -1) // There are no writes in thr_id not happening after nd
-    return (nd->getProcessID() == thr_id)
-      ? initial_node : nullptr; // Initial node treated as from same thread
-
-  // TAIL WRITE CANDIDATES CACHE
-  // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
-  // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
-  // returns -1 if there is no such write
-
-  auto ml_cache = tw_candidate.find(nd->getEvent()->ml);
-  assert(ml_cache != tw_candidate.end()
-         && "Cache not set up for the ml of this read");
-  assert(thr_id < ml_cache->second.size() && ev_id >= 0 &&
-         ev_id < (int) ml_cache->second[thr_id].size());
-
-  // Use tail write candidates cache to get the result
-  int tw_evidx = ml_cache->second[thr_id][ev_id];
-  if (tw_evidx == -1)
-    return (nd->getProcessID() == thr_id)
-      ? initial_node : nullptr; // Initial node treated as from same thread
-  assert(tw_evidx >= 0 && tw_evidx <= ev_id);
-  const Node *result = processes[thr_id][tw_evidx];
-  assert(isWrite(result) && sameMl(result, nd));
-  return result;
-}
-
-std::pair<const Node *, std::unordered_set<const Node *>>
-ZGraph::getTailWrites(const Node *nd, const PartialOrder& po) const
-{
-  assert(isRead(nd));
-
-  // Get candidate for each thread
-  auto result = std::unordered_set<const Node *>();
-  for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id) {
-    const Node *twcand = getTailWcandidate(nd, thr_id, po);
-    if (twcand != nullptr)
-      result.emplace(twcand);
-  }
-
-  // Retain those not happening before another candidate
-  for (auto it = result.begin(); it != result.end(); ) {
-    const Node *twcand = *it;
-    bool tail = true;
-    for (const Node *twother : result)
-      if (twcand != twother && hasEdge(twcand, twother, po)) {
-        tail = false; // HB another candidate, so not tail
-        break;
-      }
-    if (!tail)
-      it = result.erase(it);
-    else
-      ++it;
-  }
-
-  // Return root tail write separately
-  const Node *rootTail = nullptr;
-  for (auto it = result.begin(); it != result.end(); ) {
-    if ((*it)->getProcessID() == starRoot() ||
-        (nd->getProcessID() == starRoot() && *it == initial_node)) {
-      assert(rootTail == nullptr);
-      rootTail = *it;
-      it = result.erase(it);
-    } else
-      ++it;
-  }
-
-  return {rootTail, result};
-}
-
-std::pair<const Node *, std::pair<int, int>>
-ZGraph::getHeadWcandidate(const Node *nd, unsigned thr_id, const PartialOrder& po) const
-{
-  // TAIL WRITE CANDIDATES CACHE
-  // [ml][tid][evid] returns idx of first event of thread-tid writing to ml
-  // starting from AND INCLUDING evid and going back - (evid, evid-1, .., 0)
-  // returns -1 if there is no such write
-
-  if (nd->getProcessID() == thr_id) {
-    // Looking for a HB candidate from the same thread
-    if (nd->getEventID() == 0)
-      return {initial_node, {0, -1}}; // Initial node treated as from same thread
-    // Use cache to get the candidate happening before nd
-    int ev_id = nd->getEventID() - 1;
-    auto ml_cache = tw_candidate.find(nd->getEvent()->ml);
-    assert(ml_cache != tw_candidate.end()
-           && "Cache not set up for the ml of this read");
-    assert(thr_id < ml_cache->second.size() && ev_id >= 0 &&
-           ev_id < (int) ml_cache->second[thr_id].size());
-    int tw_evidx = ml_cache->second[thr_id][ev_id];
-
-    if (tw_evidx == -1)
-      return {initial_node, {0, -1}}; // Initial node treated as from same thread
-    assert(tw_evidx >= 0 && tw_evidx <= ev_id);
-    const Node *before_nd = processes[thr_id][tw_evidx];
-    assert(isWrite(before_nd) && sameMl(before_nd, nd));
-    return {before_nd, {0, -1}};
-  }
-
-  // Looking for candidate from a different thread
-  const ThreadPairsVclocks& succ = *(po.first);
-  const ThreadPairsVclocks& pred = *(po.second);
-
-  // Search for a head write candidate happening before nd
-  const Node *before_nd = nullptr;
-  int ev_id = pred[nd->getProcessID()][thr_id][nd->getEventID()];
-  if (ev_id != -1) {
-    assert (ev_id >= 0 && ev_id < (int) processes[thr_id].size());
-    auto ml_cache = tw_candidate.find(nd->getEvent()->ml);
-    assert(ml_cache != tw_candidate.end()
-           && "Cache not set up for the ml of this read");
-    assert(thr_id < ml_cache->second.size() && ev_id >= 0 &&
-           ev_id < (int) ml_cache->second[thr_id].size());
-    int tw_evidx = ml_cache->second[thr_id][ev_id];
-
-    if (tw_evidx != -1) {
-      // Got a head write candidate that happens before nd
-      assert(tw_evidx >= 0 && tw_evidx <= ev_id);
-      before_nd = processes[thr_id][tw_evidx];
-      assert(isWrite(before_nd) && sameMl(before_nd, nd) &&
-             hasEdge(before_nd, nd, po));
-    }
-  }
-  // Return indices from-to for unordered head write candidate search
-  int limit = succ[nd->getProcessID()][thr_id][nd->getEventID()];
-  if (limit == INT_MAX)
-    limit = processes[thr_id].size();
-  return {before_nd, {ev_id+1, limit}};
-}
-
-std::pair<const Node *, std::unordered_set<const Node *>>
-ZGraph::getHeadWrites(const Node *nd, const PartialOrder& po) const
-{
-  assert(isRead(nd));
-
-  // Get before candidates and search indices for each thread
-  auto befores = std::vector<const Node *>();
-  befores.reserve(processes.size());
-  auto search = std::vector<std::pair<int,int>>();
-  search.reserve(processes.size());
-  for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id) {
-    auto before_search = getHeadWcandidate(nd, thr_id, po);
-    befores.push_back(before_search.first);
-    search.emplace_back(before_search.second.first,
-                        before_search.second.second);
-  }
-
-  // Delete befores that are covered by another before
-  for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id)
-    if (befores[thr_id] != nullptr) {
-      for (const Node *other_before : befores)
-        if (other_before != nullptr && other_before != befores[thr_id] &&
-            hasEdge(befores[thr_id], other_before, po)) {
-          assert(hasEdge(other_before, nd, po));
-          befores[thr_id] = nullptr;
-          break;
-        }
-    }
-
-  // All remaining befores are head writes
-  // Threads without before can have a head write
-  // that is unordered with nd, search for first
-  // one like that (it can't be covered by any before)
-  auto unords = std::vector<const Node *>(processes.size(), nullptr);
-  for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id)
-    if (befores[thr_id] == nullptr) {
-      // Search for an unordered head candidate
-      for (int unord_ev_id = search[thr_id].first;
-           unord_ev_id < search[thr_id].second; ++unord_ev_id) {
-        const Node *unord_nd = processes[thr_id][unord_ev_id];
-        if (isWrite(unord_nd) && sameMl(unord_nd, nd)) {
-          // Got a conflicting write unordered with nd, this is
-          // the only possible unord head candidate for this thread
-          assert(!areOrdered(nd, unord_nd, po));
-          #ifndef NDEBUG
-          // Assert it is not covered by any before
-          // (because otherwise it would HB nd)
-          for (const Node *before_nd : befores)
-            assert(before_nd == nullptr ||
-                   !hasEdge(unord_nd, before_nd, po));
-          #endif
-          unords[thr_id] = unord_nd;
-          break;
+  for (auto it1 = cache.chrono.begin(); it1 != cache.chrono.end(); ++it1) {
+    unsigned thr1 = it1->first;
+    // MW-MW
+    for (auto it2 = cache.chrono.begin(); it2 != it1; ++it2) {
+      unsigned thr2 = it2->first;
+      assert(thr1 != thr2 && !basis.isRoot(thr1) && !basis.isRoot(thr2));
+      // Get pairs thr1-thr2
+      for (const auto& ev1 : it1->second) {
+        assert(isWriteM(ev1) && ev1->threadID() == thr1);
+        for (const auto& ev2 : it2->second) {
+          assert(isWriteM(ev2) && ev2->threadID() == thr2);
+          // ev1-ev2
+          if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
+            res.emplace_back(ev1, ev2);
         }
       }
     }
-
-  // For every remaining unord: it is head write if
-  // no remaining before or unord happens before it
-  for (unsigned thr_id = 0; thr_id < processes.size(); ++thr_id)
-    if (unords[thr_id] != nullptr) {
-      bool head = true;
-      for (const Node *other_before : befores)
-        if (other_before != nullptr && hasEdge(other_before, unords[thr_id], po)) {
-          // this unord is not head, because other_before happens before it
-          head = false;
-          break;
-        }
-      if (head)
-        for (const Node *other_unord : unords)
-          if (other_unord != nullptr && other_unord != unords[thr_id] &&
-              hasEdge(other_unord, unords[thr_id], po)) {
-            // this unord is not head, because other_unord happens before it
-            head = false;
-            break;
+    // MW-leafread
+    if (isLR && thr1 != leafread->threadID()) { // in chronoPO read only with MW of other threads
+      for (const auto& ev1 : it1->second) {
+        assert(isWriteM(ev1) && ev1->threadID() == thr1);
+        // ev1-leafread
+        if (!po.areOrdered(ev1, leafread) && sameMl(ev1, leafread))
+          res.emplace_back(ev1, leafread);
+      }
+    }
+    // MW-oldAnnotatedRead
+    for (auto it2 = cache.chronoAnnR.begin(); it2 != cache.chronoAnnR.end(); ++it2) {
+      unsigned thr2 = it2->first;
+      assert(!basis.isRoot(thr1) && !basis.isRoot(thr2));
+      if (thr1 != thr2) { // in chronoPO read only with MW of other threads
+        // Get pairs thr1-thr2
+        for (const auto& ev1 : it1->second) {
+          assert(isWriteM(ev1) && ev1->threadID() == thr1);
+          for (const auto& ev2 : it2->second) {
+            assert(isRead(ev2) && ev2->threadID() == thr2);
+            // ev1-ev2
+            if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
+              res.emplace_back(ev1, ev2);
           }
-      if (!head)
-        unords[thr_id] = nullptr;
+        }
+      }
     }
+  }
 
-  // Return root head write separately
-  const Node *rootHead = nullptr;
-  auto result = std::unordered_set<const Node *>();
-  for (const Node *before : befores)
-    if (before != nullptr) {
-      if (before->getProcessID() == starRoot() ||
-          (nd->getProcessID() == starRoot() && before == initial_node)) {
-        assert(rootHead == nullptr);
-        rootHead = before;
-      } else
-        result.emplace(before);
-    }
-  for (const Node *unord : unords)
-    if (unord != nullptr) {
-      if (unord->getProcessID() == starRoot() ||
-          (nd->getProcessID() == starRoot() && unord == initial_node)) {
-        assert(rootHead == nullptr);
-        rootHead = unord;
-      } else
-        result.emplace(unord);
-    }
-
-  return {rootHead, result};
+  // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
+  return res;
 }
 
+
+/*
 bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
 {
   assert(isWrite(nd));

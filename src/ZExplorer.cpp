@@ -56,6 +56,7 @@ void ZExplorer::print_stats() const
   std::cout << "Full traces ending in a deadlock: " << executed_traces_full_deadlock << "\n";
   std::cout << "Traces with no mutation choices:  " << no_mut_choices << "\n";
   std::cout << "Mutations considered:             " << mutations_considered << "\n";
+  std::cout << "Leaf-chronological-POs:           " << leaf_chrono_pos << "\n";
   std::cout << "Closure failed:                   " << closure_failed << "\n";
   std::cout << "Closure succeeded:                " << closure_succeeded << "\n";
   std::cout << "Time spent on copying:            " << time_copy << "\n";
@@ -293,9 +294,19 @@ bool ZExplorer::chronological
       !annTrace.graph.getCache().chrono.count(readLock->threadID()))
     ++chronoThreads;
 
-  if (chronoThreads < 100) { // TODO: change to 2
+  if (chronoThreads < 2) {
     // No chronological orderings are needed,
     // we proceed with just one mutatedPO
+    ++leaf_chrono_pos;
+
+    // TODO: Optimization
+    // If we want r to observe remote goodwm
+    // and in trace r is before goodwm
+    // we can just delay thread of r
+    // such that in new trace
+    // badlocalwm -> goodwm -> r
+
+
     auto init = std::clock();
     ZClosure closure(mutatedAnnotation, mutatedPO);
     bool closed = closure.close
@@ -314,7 +325,56 @@ bool ZExplorer::chronological
     return false; // TODO EXTEND
   }
 
-  assert(false && "TODO: Chrono orderings");
+  auto toOrder = annTrace.graph.chronoOrderPairs
+    ((isRead(readLock) && !annTrace.isRoot(readLock))
+     ? readLock : nullptr);
+
+  // First - partial order
+  // Second - check toOrder pairs starting from this one
+  std::list<std::pair<ZPartialOrder, unsigned>> worklist;
+  worklist.emplace_front(std::move(mutatedPO), 0);
+  assert(mutatedPO.empty() && !worklist.empty() &&
+         !worklist.front().first.empty());
+
+  while (!worklist.empty()) {
+    // TODO Optimization: check if this mutation leads to full trace
+
+    // Recursively process one chronoPO branch
+    std::pair<ZPartialOrder, unsigned> current
+      (std::move(worklist.front()));
+    assert(!current.first.empty() && !worklist.empty() &&
+           worklist.front().first.empty());
+    worklist.pop_front();
+
+    while (current.second < toOrder.size()) {
+      auto ev1 = toOrder[current.second].first;
+      auto ev2 = toOrder[current.second].second;
+      // Order pair ev1-ev2
+      // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
+      if (!current.first.areOrdered(ev1, ev2)) {
+        // Create two cases with these orderings
+        worklist.emplace_front(current.first, // copy
+                               current.second + 1);
+        // Handle current: ev1 -> ev2
+        current.first.addEdge(ev1, ev2);
+        // Handle otherorder: ev2 -> ev1
+        worklist.front().first.addEdge(ev2, ev1);
+      }
+      current.second++;
+    }
+    assert(current.second == toOrder.size());
+    #ifndef NDEBUG
+    for (auto& pair : toOrder)
+      current.first.areOrdered(pair.first, pair.second);
+      // or-*one-read*-or-*both-mws-observable-in-po* condition
+    #endif
+    ++leaf_chrono_pos;
+
+    // TODO CLOSE+EXTEND
+  }
+  worklist.clear();
+
+  return false;
 }
 
 

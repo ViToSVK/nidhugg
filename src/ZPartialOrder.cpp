@@ -21,7 +21,10 @@
 #include "ZPartialOrder.h"
 
 
-// Empty or Initial
+ZBasis ZPartialOrder::basisDummy = ZBasis();
+
+
+// Initial
 ZPartialOrder::ZPartialOrder(const ZBasis& basis)
   : basis(basis),
     _succ(),
@@ -31,12 +34,22 @@ ZPartialOrder::ZPartialOrder(const ZBasis& basis)
 }
 
 
+// Empty
+ZPartialOrder::ZPartialOrder()
+  : ZPartialOrder(ZPartialOrder::basisDummy) {}
+
+
 // When extending
 ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis)
   : basis(basis),
     _succ(oth._succ),
     _pred(oth._pred)
 {}
+
+
+// Chrono orderings
+ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth)
+  : ZPartialOrder(oth, oth.basis) {}
 
 
 std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const

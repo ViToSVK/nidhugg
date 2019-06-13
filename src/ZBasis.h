@@ -50,7 +50,7 @@ class ZBasis {
  public:
   // ZGRAPH REFERENCE (given at constructor-time)
   const ZGraph& graph;  ////
-
+  static ZGraph graphDummy;
 
   // ROOT (retained accross recursion children)
  private:
@@ -115,6 +115,7 @@ class ZBasis {
  public:
   // Empty
   ZBasis(const ZGraph& gr);
+  ZBasis();
   // Initial
   ZBasis(const ZGraph& gr, int root_thread_id);
   // When extending
@@ -142,6 +143,5 @@ class ZBasis {
   typename LinesT::const_iterator end() const { return lines.end(); }
 
 };
-
 
 #endif // _Z_BASIS_H_

@@ -130,6 +130,8 @@ class ZExplorer {
   unsigned no_mut_choices = 0;
   // Number of mutations considered
   unsigned mutations_considered = 0;
+  // Number of leaf-chrono-POs
+  unsigned leaf_chrono_pos = 0;
   // Closure of mutated PO (already chrono-ordered) failed
   unsigned closure_failed = 0;
   // Closure of mutated PO (already chrono-ordered) succeeded
