@@ -86,6 +86,11 @@ class ZExplorer {
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
      bool mutationFollowsCurrentTrace);
 
+  bool closePO
+    (const ZTrace& annTrace, const ZEvent *readLock,
+     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+     bool mutationFollowsCurrentTrace);
+
   /*
   std::pair<bool, bool> // <error?, added_into_worklist?>
     extendAndAdd(PartialOrder&& mutatedPo,

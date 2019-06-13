@@ -866,189 +866,6 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
 
 
 /*
-bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
-{
-  assert(isWrite(nd));
-
-  auto itmlR = readsRoot.find(nd->getEvent()->ml);
-  if (itmlR != readsRoot.end())
-    for (const Node *rootRead : itmlR->second) {
-      bool observableBy = isObservableBy(nd, rootRead, po);
-      if (observableBy)
-        return true;
-    }
-
-  auto itmlN = readsNonroot.find(nd->getEvent()->ml);
-  if (itmlN != readsNonroot.end())
-    for (const Node *nonrootRead : itmlN->second) {
-      bool observableBy = isObservableBy(nd, nonrootRead, po);
-      if (observableBy)
-        return true;
-    }
-
-  return false;
-}
-
-bool ZGraph::isObservableBy(const Node *writend, const Node *readnd,
-                                   const PartialOrder& po) const
-{
-  assert(isWrite(writend) && isRead(readnd) &&
-         sameMl(writend, readnd));
-
-  if (hasEdge(readnd, writend, po)) {
-    // Trivially unobservable
-    return false;
-  }
-
-  if (!hasEdge(writend, readnd, po)) {
-    // Trivially observable
-    assert(!areOrdered(writend, readnd, po));
-    return true;
-  }
-
-  assert(hasEdge(writend, readnd, po));
-  // If a write happens before a read, it can be
-  // observable by this read only if it is head
-  auto heads = getHeadWrites(readnd, po);
-  if (heads.first && heads.first == writend)
-    return true;
-
-  if (heads.second.size() > 0)
-    for (const Node *nonrootHead : heads.second)
-      if (nonrootHead == writend)
-        return true;
-
-  return false;
-}
-
-void ZGraph::orderEventMaz(const ZEvent *ev1, const ZAnnotation& annotation,
-                                  bool newlyEverGoodWrite, const PartialOrder& po)
-{
-  assert(isWrite(ev1) || isRead(ev1));
-  auto it = event_to_node.find(ev1);
-  assert(it != event_to_node.end());
-  const Node *nd1 = it->second;
-  assert(nd1->getEvent() == ev1);
-  assert(nd1->getProcessID() != starRoot());
-
-  bool readOrEverGoodWrite = (isRead(ev1) || newlyEverGoodWrite ||
-                              annotation.isEverGood(nd1));
-
-  // Collect conflicting nonroot writes to order
-  auto itnsw = wNonrootUnord.find(ev1->ml);
-  assert(itnsw != wNonrootUnord.end());
-  auto toOrder = std::vector<const Node *>();
-  toOrder.reserve(itnsw->second.size());
-
-  for (auto& writend : itnsw->second) {
-    assert(writend->getProcessID() != starRoot());
-    if (nd1->getProcessID() != writend->getProcessID()) {
-      // If nd1 is a read, take all write candidates,
-      // otherwise take only candidates such that
-      // at least one of them is everGood
-      if (readOrEverGoodWrite || annotation.isEverGood(writend))
-        toOrder.push_back(writend);
-    }
-  }
-
-  // If ev1 is write, also collect
-  // conflicting annotated nonroot reads to order
-  if (isWrite(ev1)) {
-    auto itnsr = readsNonroot.find(ev1->ml);
-    if (itnsr != readsNonroot.end()) {
-      for (auto& readnd : itnsr->second)
-        if (nd1->getProcessID() != readnd->getProcessID()
-            && annotation.defines(readnd))
-          toOrder.push_back(readnd);
-    }
-  }
-
-  // Sort the vector so that the execution is deterministic
-  if (toOrder.size() > 1) {
-    auto comp = NodePtrComp();
-    #ifndef NDEBUG
-    for (auto it1 = toOrder.begin();
-         it1 != toOrder.end(); ++it1)
-      for (auto it2 = toOrder.begin();
-           it2 != it1; ++it2)
-        assert(comp(*it1, *it2) || comp(*it2, *it1));
-    #endif
-    std::sort(toOrder.begin(), toOrder.end(), comp);
-  }
-
-  // The nodes are collected, order them
-  for (auto it = toOrder.begin(); it != toOrder.end(); ++it) {
-    const Node *nd2 = *it;
-    assert(nd1->getProcessID() != nd2->getProcessID() &&
-           (isWrite(nd2) ||
-            (isRead(nd2) && annotation.defines(nd2))) &&
-           (!isRead(nd1) || !isRead(nd2)));
-
-    // Prepare worklist
-    worklist_ready.swap(worklist_done);
-    assert(worklist_done.empty());
-
-    if (worklist_ready.empty()) {
-      // So far we work only with one po - the argument
-      if (!areOrdered(nd1, nd2, po) &&
-          (isRead(nd1) || isRead(nd2) ||
-           (isObservable(nd1, po) && isObservable(nd2, po))
-          )) {
-        PartialOrder current = PartialOrder
-          (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
-           std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second))));
-        PartialOrder otherorder = PartialOrder
-          (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.first))),
-           std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(po.second))));
-        // Handle current: w1 -> w2
-        addEdge(nd1, nd2, current);
-        worklist_done.push_back(std::move(current));
-        assert(!current.first.get() &&
-               !current.second.get());
-        // Handle otherorder: w2 -> w1
-        addEdge(nd2, nd1, otherorder);
-        worklist_done.push_back(std::move(otherorder));
-        assert(!otherorder.first.get() &&
-               !otherorder.second.get());
-      }
-    } else {
-      while (!worklist_ready.empty()) {
-        PartialOrder current = std::move(worklist_ready.front());
-        assert(!worklist_ready.front().first.get() &&
-               !worklist_ready.front().second.get());
-        worklist_ready.pop_front();
-
-        if (!areOrdered(nd1, nd2, current) &&
-            (isRead(nd1) || isRead(nd2) ||
-             (isObservable(nd1, current) && isObservable(nd2, current))
-            )) {
-          // Unordered and either one of them read,
-          // or both writes that are observable
-          // Order these two
-          PartialOrder otherorder = PartialOrder
-            (std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.first))),
-             std::unique_ptr<ThreadPairsVclocks>(new ThreadPairsVclocks(*(current.second))));
-          // Handle current: w1 -> w2
-          addEdge(nd1, nd2, current);
-          worklist_done.push_back(std::move(current));
-          assert(!current.first.get() &&
-                 !current.second.get());
-          // Handle otherorder: w2 -> w1
-          addEdge(nd2, nd1, otherorder);
-          worklist_done.push_back(std::move(otherorder));
-          assert(!otherorder.first.get() &&
-                 !otherorder.second.get());
-        } else {
-          // These two do not have to be ordered
-          worklist_done.push_back(std::move(current));
-          assert(!current.first.get() &&
-                 !current.second.get());
-        }
-      }
-    }
-  }
-}
-
 std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
                                               const ZAnnotation& annotation) const
 {
@@ -1133,5 +950,61 @@ std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
   }
 
   return result;
+}
+
+
+bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
+{
+  assert(isWrite(nd));
+
+  auto itmlR = readsRoot.find(nd->getEvent()->ml);
+  if (itmlR != readsRoot.end())
+    for (const Node *rootRead : itmlR->second) {
+      bool observableBy = isObservableBy(nd, rootRead, po);
+      if (observableBy)
+        return true;
+    }
+
+  auto itmlN = readsNonroot.find(nd->getEvent()->ml);
+  if (itmlN != readsNonroot.end())
+    for (const Node *nonrootRead : itmlN->second) {
+      bool observableBy = isObservableBy(nd, nonrootRead, po);
+      if (observableBy)
+        return true;
+    }
+
+  return false;
+}
+
+bool ZGraph::isObservableBy(const Node *writend, const Node *readnd,
+                                   const PartialOrder& po) const
+{
+  assert(isWrite(writend) && isRead(readnd) &&
+         sameMl(writend, readnd));
+
+  if (hasEdge(readnd, writend, po)) {
+    // Trivially unobservable
+    return false;
+  }
+
+  if (!hasEdge(writend, readnd, po)) {
+    // Trivially observable
+    assert(!areOrdered(writend, readnd, po));
+    return true;
+  }
+
+  assert(hasEdge(writend, readnd, po));
+  // If a write happens before a read, it can be
+  // observable by this read only if it is head
+  auto heads = getHeadWrites(readnd, po);
+  if (heads.first && heads.first == writend)
+    return true;
+
+  if (heads.second.size() > 0)
+    for (const Node *nonrootHead : heads.second)
+      if (nonrootHead == writend)
+        return true;
+
+  return false;
 }
 */

@@ -299,35 +299,29 @@ bool ZExplorer::chronological
     // we proceed with just one mutatedPO
     ++leaf_chrono_pos;
 
-    // TODO: Optimization
+    // TODO Optimization:
     // If we want r to observe remote goodwm
     // and in trace r is before goodwm
     // we can just delay thread of r
     // such that in new trace
     // badlocalwm -> goodwm -> r
 
-
-    auto init = std::clock();
-    ZClosure closure(mutatedAnnotation, mutatedPO);
-    bool closed = closure.close
-      (isLock(readLock) ? nullptr : readLock);
-    time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-    if (!closed) {
-      if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
-      ++closure_failed;
-      return false;
-    }
-
-    if (info) llvm::errs() << "Closure succeeded\n\n-----\n\n";
-    ++closure_succeeded;
-
-    return false; // TODO EXTEND
+    return closePO
+      (annTrace, readLock, std::move(mutatedAnnotation),
+       std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
 
   auto toOrder = annTrace.graph.chronoOrderPairs
     ((isRead(readLock) && !annTrace.isRoot(readLock))
      ? readLock : nullptr);
+
+  if (toOrder.empty()) {
+    // Nothing to order
+    ++leaf_chrono_pos;
+    return closePO
+      (annTrace, readLock, std::move(mutatedAnnotation),
+       std::move(mutatedPO), mutationFollowsCurrentTrace);
+  }
 
   // First - partial order
   // Second - check toOrder pairs starting from this one
@@ -337,7 +331,8 @@ bool ZExplorer::chronological
          !worklist.front().first.empty());
 
   while (!worklist.empty()) {
-    // TODO Optimization: check if this mutation leads to full trace
+    // TODO Optimization: check if this mutation leads to
+    // full trace, if yes you can break from this loop
 
     // Recursively process one chronoPO branch
     std::pair<ZPartialOrder, unsigned> current
@@ -353,7 +348,7 @@ bool ZExplorer::chronological
       // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
       if (!current.first.areOrdered(ev1, ev2)) {
         // Create two cases with these orderings
-        worklist.emplace_front(current.first, // copy
+        worklist.emplace_front(ZPartialOrder(current.first), // copy
                                current.second + 1);
         // Handle current: ev1 -> ev2
         current.first.addEdge(ev1, ev2);
@@ -370,13 +365,50 @@ bool ZExplorer::chronological
     #endif
     ++leaf_chrono_pos;
 
-    // TODO CLOSE+EXTEND
+    bool error = closePO
+      (annTrace, readLock,
+       worklist.empty()
+       ? std::move(mutatedAnnotation) // move
+       : ZAnnotation(mutatedAnnotation), // copy
+       std::move(current.first), mutationFollowsCurrentTrace);
+
+    if (error) {
+      assert(originalTB.error_trace);
+      return error;
+    }
   }
   worklist.clear();
 
   return false;
 }
 
+
+/* *************************** */
+/* CLOSE PO                    */
+/* *************************** */
+
+bool ZExplorer::closePO
+(const ZTrace& annTrace, const ZEvent *readLock,
+ ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+ bool mutationFollowsCurrentTrace)
+{
+  auto init = std::clock();
+  ZClosure closure(mutatedAnnotation, mutatedPO);
+  bool closed = closure.close
+    (isLock(readLock) ? nullptr : readLock);
+  time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+
+  if (!closed) {
+    if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
+    ++closure_failed;
+    return false;
+  }
+
+  if (info) llvm::errs() << "Closure succeeded\n\n-----\n\n";
+  ++closure_succeeded;
+
+  return false; // TODO EXTEND
+}
 
 
 /* *************************** */
