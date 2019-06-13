@@ -25,6 +25,21 @@
 #include "ZHelpers.h"
 
 
+ZExplorer::TraceExtension::TraceExtension
+(std::vector<ZEvent>&& extension, bool someToAnn, bool assumeBlocked)
+  : trace(std::move(extension)), somethingToAnnotate(someToAnn),
+    hasAssumeBlockedThread(assumeBlocked), hasError(false)
+{
+  assert(extension.empty());
+}
+
+
+ZExplorer::TraceExtension::TraceExtension
+(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn)
+  : TraceExtension(std::move(extension_someToAnn.first),
+                   extension_someToAnn.second, false) {}
+
+
 ZExplorer::~ZExplorer()
 {
   delete initial;
@@ -41,7 +56,8 @@ ZExplorer::ZExplorer(ZBuilderTSO& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index);
+    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index,
+                         tb.someThreadAssumeBlocked);
 }
 
 
@@ -470,25 +486,25 @@ ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
 /* *************************** */
 /* REUSE TRACE                 */
 /* *************************** */
-/*
+
 ZExplorer::TraceExtension
-ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
+ZExplorer::reuseTrace
+(const ZTrace& annTrace, const ZAnnotation& mutatedAnnotation)
 {
-  auto tr = std::vector<ZEvent>();
-  tr.reserve(current->trace.size());
+  std::vector<ZEvent> tr;
+  tr.reserve(annTrace.trace.size());
   bool somethingToAnnotate = false;
 
-
-  for (const ZEvent& ev : current->trace) {
+  for (const ZEvent& ev : annTrace.trace) {
     if (!somethingToAnnotate) {
-      const Node *nd = (current->graph.hasNodeWithEvent(ev))
-        ?current->graph.getNode(ev):nullptr;
-      if (isRead(ev) && (!nd || !mutatedAnnotation.defines(nd)))
+      if (isRead(ev) && (!mutatedAnnotation.defines(&ev)))
         somethingToAnnotate = true;
       else if (isLock(ev)) {
-        if (!nd ||
-            (nd->getEventID() == current->graph[ nd->getProcessID() ].size() - 1 &&
-             !mutatedAnnotation.isLastLock(nd)))
+        if (!annTrace.graph.getBasis().hasEvent(&ev))
+          somethingToAnnotate = true;
+        else if (ev.eventID() == // last in its thraux
+                 (annTrace.graph.getBasis())(ev.threadID(), ev.auxID()).size() - 1
+                 && !mutatedAnnotation.isLastLock(&ev))
           somethingToAnnotate = true;
       }
     }
@@ -496,21 +512,22 @@ ZExplorer::reuseTrace(const ZAnnotation& mutatedAnnotation)
     tr.push_back(ev.copy(tr.size(), false));
   }
 
-  return TraceExtension(std::move(tr), somethingToAnnotate);
+  return TraceExtension(std::move(tr), somethingToAnnotate,
+                        annTrace.assumeblocked);
 }
 
 
 /* *************************** */
 /* EXTEND TRACE                */
 /* *************************** */
-/*
+
 ZExplorer::TraceExtension
 ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 {
   clock_t init = std::clock();
   ZBuilderTSO TB(originalTB.config, originalTB.M, std::move(tr));
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
-  time_replaying += (double)(clock() - init)/CLOCKS_PER_SEC;
+  time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
   interpreter_used++;
 
   if (TB.has_error()) {
@@ -524,37 +541,15 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 
   return traceExtension;
 }
-*/
+
 
 
 
 /*
 
-  if (!withoutMutation.closed) {
-    // This ordering of extension events
-    // makes the original annotation unrealizable
-    // therefore no need to try any mutations
-    ++cl_ordering_failed;
-    assert(!haveOriginal && "current->trace is one witness");
-    extendedPOs.front().first.reset();
-    extendedPOs.front().second.reset();
-    extendedPOs.pop_front();
-    continue;
-  }
-
-  ++cl_ordering_succeeded;
-  //llvm::errs() << "********* EXTENSION *********\n";
-  //current->graph.to_dot(po, "");
-
   std::vector<unsigned> processLengths = current->graph.getProcessLengths();
   auto negativeWriteMazBranch = ZAnnotationNeg(current->negative);
   negativeWriteMazBranch.update(nd, processLengths);
-
-  // Orderings of the read just before mutating it
-  clock_t init = std::clock();
-  std::list<PartialOrder> readOrderedPOs = orderingsReadToBeMutated(po, nd);
-  time_maz += (double)(clock() - init)/CLOCKS_PER_SEC;
-
 
   auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
                                       negativeWriteMazBranch, nd->getProcessID(),
@@ -580,78 +575,4 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
                                         negativeWriteMazBranch, nd->getProcessID(),
                                         mutationFollowsCurrentTrace);
     return error_addedToWL.first;
-
-
-
-/* *************************** */
-/* EXTENSION EVENTS ORDERINGS  */
-/* *************************** */
-/*
-std::list<PartialOrder> ZExplorer::orderingsAfterExtension()
-{
-  assert(current.get());
-  current->graph.initWorklist();
-
-  if (current->graph.lessThanTwoLeavesWithRorW())
-    return current->graph.dumpDoneWorklist();
-
-  // Go through all nonroot writes
-  for (unsigned trace_idx = 0;
-       trace_idx < current->trace.size(); ++trace_idx) {
-    const ZEvent& ev = current->trace[trace_idx];
-    if (current->graph.hasNodeWithEvent(ev)) {
-      const Node *nd = current->graph.getNode(ev);
-      if (isWrite(ev) && nd->getProcessID() != current->graph.starRoot()) {
-        // Order with all nonroot annotated reads,
-        // and with all nonroot writes such that:
-        // 1) at least one is everGood
-        // 2) both are observable
-        current->graph.orderEventMaz(&ev, current->annotation, false,
-                                     current->graph.getOriginal());
-      }
-    }
-  }
-
-  return current->graph.dumpDoneWorklist();
-}
-
-std::list<PartialOrder> ZExplorer::orderingsReadToBeMutated(const PartialOrder& po, const Node * nd)
-{
-  assert(isRead(nd));
-  assert(current.get());
-  assert(!current->annotation.defines(nd));
-  current->graph.initWorklist();
-
-  if (current->graph.lessThanTwoLeavesWithRorW())
-    return current->graph.dumpDoneWorklist();
-
-  // If the read is nonroot,
-  // order it with all nonroot writes
-  if (nd->getProcessID() != current->graph.starRoot())
-    current->graph.orderEventMaz(nd->getEvent(), current->annotation,
-                                 false, po);
-
-  return current->graph.dumpDoneWorklist();
-}
-
-std::list<PartialOrder> ZExplorer::orderingsAfterMutationChoice
-(const PartialOrder& po, const std::vector<const Node *> newEverGood)
-{
-  assert(current.get());
-  // We have to create a po copy here since we try a mutation on it
-  current->graph.initWorklist(po);
-
-  if (current->graph.lessThanTwoLeavesWithRorW())
-    return current->graph.dumpDoneWorklist();
-
-  // After mutation choice, some nonrootwrites
-  // become everGood, so they are from now required
-  // to be ordered with other nonroot writes which
-  // are notEverGood (if both are observable)
-  for (auto& newEGnd : newEverGood)
-    if (newEGnd->getProcessID() != current->graph.starRoot())
-      current->graph.orderEventMaz(newEGnd->getEvent(), current->annotation, true, po);
-
-  return current->graph.dumpDoneWorklist();
-}
 */

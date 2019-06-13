@@ -37,8 +37,10 @@ class ZTrace {
 
   ZGraph graph;
 
-  // Whether this trace is not full but no mutation is
-  // possible (i.e. deadlocked). We'll count it as full
+  // Whether trace has an assume-blocked thread
+  bool assumeblocked;
+  // Whether this annotated trace is not full but no mutation
+  // is possible (i.e. deadlocked). We'll count it as full
   mutable bool deadlocked;
 
   bool empty() const {
@@ -81,11 +83,12 @@ class ZTrace {
       };
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-         int star_root_index)
+         int star_root_index, bool assumeblocked)
   : trace(std::move(initial_trace)),
     annotation(),
     negative(),
     graph(this->trace, star_root_index),
+    assumeblocked(assumeblocked),
     deadlocked(false)
       {};
 
@@ -93,12 +96,14 @@ class ZTrace {
          const ZAnnotation& new_annotation,
          const ZAnnotationNeg& new_negative,
          const ZGraph& old_graph,
-         ZPartialOrder&& new_po)
+         ZPartialOrder&& new_po,
+         bool assumeblocked)
   : trace(std::move(new_trace)),
     annotation(new_annotation),
     negative(new_negative),
     graph(old_graph, std::move(new_po),
           this->trace, this->annotation),
+    assumeblocked(assumeblocked),
     deadlocked(false)
       {};
 

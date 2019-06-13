@@ -32,7 +32,7 @@
 
 class ZExplorer {
 
-  const ZBuilderTSO& originalTB;
+  ZBuilderTSO& originalTB;
 
   const ZTrace *initial;
 
@@ -40,26 +40,17 @@ class ZExplorer {
 
   class TraceExtension {
    public:
-    TraceExtension(std::vector<ZEvent>&& extension, bool someToAnn)
-      : trace(std::move(extension)),
-      somethingToAnnotate(someToAnn),
-      hasError(false), hasAssumeBlockedThread(false)
-      {
-        assert(extension.empty());
-      }
+    TraceExtension(std::vector<ZEvent>&& extension,
+                 bool someToAnn, bool assumeBlocked);
 
-    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn)
-      : TraceExtension(std::move(extension_someToAnn.first),
-                       extension_someToAnn.second) {}
+    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn);
 
-    bool empty() const {
-      return (trace.empty());
-    }
+    bool empty() const { return (trace.empty()); }
 
     std::vector<ZEvent> trace;
     bool somethingToAnnotate;
-    bool hasError;
     bool hasAssumeBlockedThread;
+    bool hasError;
   };
 
 
@@ -99,9 +90,10 @@ class ZExplorer {
                  unsigned processMutationPreference,
                  bool mutationFollowsCurrentTrace);
   */
-  //TraceExtension reuseTrace(const ZAnnotation& mutatedAnnotation);
+  TraceExtension reuseTrace(const ZTrace& annTrace,
+                            const ZAnnotation& mutatedAnnotation);
 
-  //TraceExtension extendTrace(std::vector<ZEvent>&& tr);
+  TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
 
   /* *************************** */
