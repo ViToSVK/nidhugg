@@ -865,13 +865,13 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
 }
 
 
-/*
-std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
-                                              const ZAnnotation& annotation) const
-{
-  auto result = std::vector<ZEvent>();
-  result.reserve(nodes_size());
 
+std::vector<ZEvent> ZGraph::linearize
+(const ZPartialOrder& po, const ZAnnotation& annotation) const
+{
+  std::vector<ZEvent> result;
+  result.reserve(basis.events_size());
+  /*
   auto current = std::vector<unsigned>(processes.size(), 0);
   auto until = std::vector<unsigned>(processes.size(), 0);
   for (unsigned i=0; i<processes.size(); ++i) {
@@ -948,11 +948,11 @@ std::vector<ZEvent> ZGraph::linearize(const PartialOrder& po,
     } else
       done = true;
   }
-
+*/
   return result;
 }
 
-
+/*
 bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
 {
   assert(isWrite(nd));

@@ -87,7 +87,7 @@ class ZBasis {
  public:
   bool hasThreadAux(std::pair<unsigned, int> ids) const;
   bool hasThreadAux(unsigned thread_id, int aux_id) const;
-  std::unordered_map<std::pair<unsigned, int>, unsigned> line_sizes() const;
+  std::vector<unsigned> real_sizes() const;
   unsigned number_of_threads() const;
   // All auxiliary indices for thread_id in the basis
   const std::set<int>& auxes(unsigned thread_id) const;

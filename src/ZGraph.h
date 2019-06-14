@@ -147,8 +147,8 @@ class ZGraph {
     chronoOrderPairs(const ZEvent *leafread) const;
 
   // Linearizes a partial order
-  //std::vector<ZEvent> linearize(const PartialOrder& po,
-  //const ZAnnotation& annotation) const;
+  std::vector<ZEvent> linearize
+    (const ZPartialOrder& po, const ZAnnotation& annotation) const;
 
   void dump() const { po.dump(); }
 

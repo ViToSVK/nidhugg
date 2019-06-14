@@ -85,11 +85,10 @@ class ZTrace {
   ZTrace(std::vector<ZEvent>&& initial_trace,
          int star_root_index, bool assumeblocked);
 
-  ZTrace(const ZTrace& annTrace,
+  ZTrace(const ZTrace& parentTrace,
          std::vector<ZEvent>&& new_trace,
-         const ZAnnotation& new_annotation,
-         const ZAnnotationNeg& new_negative,
-         const ZGraph& old_graph,
+         ZAnnotation&& new_annotation,
+         ZAnnotationNeg&& new_negative,
          ZPartialOrder&& new_po,
          bool assumeblocked);
 

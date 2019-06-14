@@ -220,14 +220,11 @@ bool ZBasis::hasThreadAux(unsigned thread_id, int aux_id) const
 }
 
 
-std::unordered_map<std::pair<unsigned, int>, unsigned> ZBasis::line_sizes() const
+std::vector<unsigned> ZBasis::real_sizes() const
 {
-  auto res = std::unordered_map<std::pair<unsigned, int>, unsigned>();
-  for (const auto& thaux_line : thread_aux_to_line_id) {
-    auto thaux = thaux_line.first;
-    unsigned size = (*this)(thaux).size();
-    res.emplace(thaux, size);
-  }
+  std::vector<unsigned> res;
+  for (unsigned thr = 0; thr < number_of_threads(); ++thr)
+    res.push_back((*this)(thr, -1).size());
   return res;
 }
 

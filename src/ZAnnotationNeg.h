@@ -57,7 +57,7 @@ class ZAnnotationNeg {
             >= writeev->eventID());
   }
 
-  void update(const ZEvent *readev, const std::vector<unsigned>& newneg) {
+  void update(const ZEvent *readev, std::vector<unsigned>&& newneg) {
     assert(isRead(readev) || isLock(readev));
     auto key = ZObs(readev->threadID(), readev->eventID());
     auto it = mapping.find(key);

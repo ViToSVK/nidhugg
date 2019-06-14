@@ -36,7 +36,7 @@ class ZExplorer {
 
   const ZTrace *initial;
 
-  bool info = true;
+  bool info = false;
 
   class TraceExtension {
    public:
@@ -82,15 +82,12 @@ class ZExplorer {
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
      bool mutationFollowsCurrentTrace);
 
-  /*
-  std::pair<bool, bool> // <error?, added_into_worklist?>
-    extendAndAdd(PartialOrder&& mutatedPo,
-                 const ZAnnotation& mutatedAnnotation,
-                 const ZAnnotationNeg& negativeWriteMazBranch,
-                 unsigned processMutationPreference,
-                 bool mutationFollowsCurrentTrace);
-  */
-  TraceExtension reuseTrace(const ZTrace& annTrace,
+  bool extendAndRecur
+    (const ZTrace& parentTrace, const ZEvent *readLock,
+     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+     bool mutationFollowsCurrentTrace);
+
+  TraceExtension reuseTrace(const ZTrace& parentTrace,
                             const ZAnnotation& mutatedAnnotation);
 
   TraceExtension extendTrace(std::vector<ZEvent>&& tr);
@@ -122,8 +119,8 @@ class ZExplorer {
   unsigned executed_traces = 1;
   // Number of times we used the interpreter to get a trace
   unsigned interpreter_used = 1;
-  // Number of interpreter-executed traces with some thread assume-blocked
-  unsigned interpreter_assume_blocked_thread = 0;
+  // Number of executed traces with some thread assume-blocked
+  unsigned assume_blocked_thread = 0;
   // Number of 'full' traces ending in a deadlock
   unsigned executed_traces_full_deadlock = 0;
   // Number of annotated traces with no mutation

@@ -43,16 +43,15 @@ ZTrace::ZTrace
 ZTrace::ZTrace
 (const ZTrace& parentTrace,
  std::vector<ZEvent>&& new_trace,
- const ZAnnotation& new_annotation,
- const ZAnnotationNeg& new_negative,
- const ZGraph& old_graph,
+ ZAnnotation&& new_annotation,
+ ZAnnotationNeg&& new_negative,
  ZPartialOrder&& new_po,
  bool assumeblocked)
   : parent(&parentTrace),
     trace(std::move(new_trace)),
-    annotation(new_annotation),
-    negative(new_negative),
-    graph(old_graph, std::move(new_po),
+    annotation(std::move(new_annotation)),
+    negative(std::move(new_negative)),
+    graph(parentTrace.graph, std::move(new_po),
           this->trace, this->annotation),
     assumeblocked(assumeblocked),
     deadlocked(false)
