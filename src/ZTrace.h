@@ -36,7 +36,7 @@ class ZTrace {
   const std::vector<ZEvent> trace;
 
   const ZAnnotation annotation;
-  const ZAnnotationNeg negative;
+  ZAnnotationNeg negative;
 
   ZGraph graph;
 
@@ -88,7 +88,6 @@ class ZTrace {
   ZTrace(const ZTrace& parentTrace,
          std::vector<ZEvent>&& new_trace,
          ZAnnotation&& new_annotation,
-         ZAnnotationNeg&& new_negative,
          ZPartialOrder&& new_po,
          bool assumeblocked);
 

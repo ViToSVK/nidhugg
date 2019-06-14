@@ -221,11 +221,13 @@ bool ZBasis::hasThreadAux(unsigned thread_id, int aux_id) const
 }
 
 
-std::vector<unsigned> ZBasis::real_sizes() const
+std::vector<unsigned> ZBasis::real_sizes_minus_one() const
 {
   std::vector<unsigned> res;
-  for (unsigned thr = 0; thr < number_of_threads(); ++thr)
-    res.push_back((*this)(thr, -1).size());
+  for (unsigned thr = 0; thr < number_of_threads(); ++thr) {
+    assert(!(*this)(thr, -1).empty());
+    res.push_back((*this)(thr, -1).size() - 1);
+  }
   return res;
 }
 

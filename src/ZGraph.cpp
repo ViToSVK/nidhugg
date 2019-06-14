@@ -733,6 +733,7 @@ std::list<ZObs> ZGraph::getObsCandidates
            localB->threadID() == read->threadID() &&
            localB->auxID() == -1 &&
            localB->eventID() < read->eventID());
+    const ZEvent *localM = localB->write_other_ptr;
     // Update cover caused by localB
     for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
       if (covthr != localB->threadID()) {
@@ -745,14 +746,14 @@ std::list<ZObs> ZGraph::getObsCandidates
         }
       }
     }
-    // Delete remotes that happen after localM
-    const ZEvent *localM = localB->write_other_ptr;
+    // Delete remotes that happen *before* localM
+    // (no chance for them, those after localM are safe)
     assert(isWriteM(localM) && sameMl(localB, localM) &&
            po.hasEdge(localB, localM));
     for (auto it = notCovered.begin(); it != notCovered.end(); ) {
       const ZEvent *rem = *it;
       assert(isWriteM(rem) && !po.areOrdered(read, rem));
-      if (po.hasEdge(localM, rem))
+      if (po.hasEdge(rem, localM))
         it = notCovered.erase(it);
       else
         ++it;
@@ -760,13 +761,22 @@ std::list<ZObs> ZGraph::getObsCandidates
     for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
       const ZEvent *rem = *it;
       assert(isWriteM(rem) && po.hasEdge(rem, read));
-      if (po.hasEdge(localM, rem))
+      if (po.hasEdge(rem, localM))
         it = mayBeCovered.erase(it);
       else
         ++it;
     }
-    // Add obs if not forbidden
-    if (!negative.forbids(read, localB))
+    // Check if not covered by some remote
+    bool localCovered = false;
+    for (const auto& rem : mayBeCovered) {
+      assert(isWriteM(rem) && po.hasEdge(rem, read));
+      if (po.hasEdge(localM, rem)) {
+        localCovered = true;
+        break;
+      }
+    }
+    // Add obs if not covered and not forbidden
+    if (!localCovered && !negative.forbids(read, localB))
       res.emplace_back(localB);
   } else {
     // No local write for read

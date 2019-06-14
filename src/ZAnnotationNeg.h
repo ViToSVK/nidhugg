@@ -34,51 +34,28 @@ class ZAnnotationNeg {
   ZAnnotationNeg& operator=(const ZAnnotationNeg&) = delete;
   ZAnnotationNeg& operator=(ZAnnotationNeg&& a) = delete;
 
-  bool forbidsInitialEvent(const ZEvent *readev) const {
-    assert(isRead(readev) || isLock(readev));
-    auto key = ZObs(readev->threadID(), readev->eventID());
-    return mapping.count(key);
-  }
+  bool forbidsInitialEvent(const ZEvent *readev) const;
 
-  bool forbids(const ZEvent *readev, const ZEvent *writeev) const {
-    assert(writeev && !isInitial(writeev) &&
-           "Call the special function for init event");
-    assert((isRead(readev) && isWriteB(writeev)) ||
-           (isLock(readev) && isUnlock(writeev)));
-    assert(readev->auxID() == -1 && writeev->auxID() == -1);
-    auto key = ZObs(readev->threadID(), readev->eventID());
-    auto it = mapping.find(key);
-    if (it == mapping.end())
-      return false;
-    if (writeev->threadID() >= it->second.size())
-      return false;
+  bool forbids(const ZEvent *readev, const ZEvent *writeev) const;
 
-    return (it->second[writeev->threadID()]
-            >= writeev->eventID());
-  }
-
-  void update(const ZEvent *readev, std::vector<unsigned>&& newneg) {
-    assert(isRead(readev) || isLock(readev));
-    auto key = ZObs(readev->threadID(), readev->eventID());
-    auto it = mapping.find(key);
-    if (it == mapping.end())
-      mapping.emplace_hint(it, key, newneg);
-    else {
-      assert(it->second.size() <= newneg.size());
-      it->second.reserve(newneg.size());
-      for (unsigned i = 0; i < newneg.size(); ++i)
-        if (i < it->second.size()) {
-          assert(it->second[i] <= newneg[i]);
-          it->second[i] = newneg[i];
-        } else
-          it->second.push_back(newneg[i]);
-    }
-  }
+  void update(const ZEvent *readev, std::vector<unsigned>&& newneg);
 
   bool empty() const { return mapping.empty(); }
 
+  std::string to_string() const;
+  void dump() const;
+
+  using MappingT = std::map<ZObs, std::vector<unsigned>>;
+  typedef MappingT::iterator iterator;
+  typedef MappingT::const_iterator const_iterator;
+
+  iterator begin() { return mapping.begin(); }
+  const_iterator begin() const { return mapping.begin(); }
+  iterator end() { return mapping.end(); }
+  const_iterator end() const { return mapping.end(); }
+
  private:
-  std::unordered_map<ZObs, std::vector<unsigned>> mapping;
+  MappingT mapping;
 
 };
 

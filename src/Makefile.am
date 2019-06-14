@@ -41,7 +41,7 @@ libnidhugg_a_SOURCES = \
   ZEvent.cpp ZEvent.h \
   ZHelpers.h \
   ZAnnotation.cpp ZAnnotation.h \
-  ZAnnotationNeg.h \
+  ZAnnotationNeg.cpp ZAnnotationNeg.h \
   ZTrace.cpp ZTrace.h \
   ZBasis.cpp ZBasis.h \
   ZPartialOrder.cpp ZPartialOrder.h \

@@ -34,9 +34,9 @@ class ZExplorer {
 
   ZBuilderTSO& originalTB;
 
-  const ZTrace *initial;
+  ZTrace * initial;
 
-  bool info = true;
+  bool info = false;
 
   class TraceExtension {
    public:
@@ -66,7 +66,7 @@ class ZExplorer {
 
  private:
 
-  bool exploreRec(const ZTrace& annTrace);
+  bool exploreRec(ZTrace& annTrace);
 
   bool mutateRead(const ZTrace& annTrace, const ZEvent *read);
 
@@ -83,9 +83,8 @@ class ZExplorer {
      bool mutationFollowsCurrentTrace);
 
   bool extendAndRecur
-    (const ZTrace& parentTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace);
+    (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
+     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace);
 
   TraceExtension reuseTrace(const ZTrace& parentTrace,
                             const ZAnnotation& mutatedAnnotation);

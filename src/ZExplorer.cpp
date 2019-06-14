@@ -101,11 +101,11 @@ bool ZExplorer::explore()
 }
 
 
-bool ZExplorer::exploreRec(const ZTrace& annTrace)
+bool ZExplorer::exploreRec(ZTrace& annTrace)
 {
   if (info) {
     //dumpTrace(annTrace.trace);
-    //annTrace.graph.dump();
+    annTrace.graph.dump();
     //llvm::errs() << "-------------------------\n\n";
   }
 
@@ -133,6 +133,8 @@ bool ZExplorer::exploreRec(const ZTrace& annTrace)
         return error;
       }
     }
+    annTrace.negative.update
+      (ev, annTrace.graph.getBasis().real_sizes_minus_one());
   }
 
   // Done with this recursion node
@@ -159,6 +161,13 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
   if (obsCandidates.empty()) {
     // All candidates are ruled out by negative annotation
     ++no_mut_choices;
+    if (info) {
+      llvm::errs() << "Read to mutate:\n";
+      read->dump();
+      llvm::errs() << "All candidates forbidden\n";
+      annTrace.annotation.dump();
+      annTrace.negative.dump();
+    }
     return false;
   }
 
@@ -175,6 +184,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
       read->dump();
       llvm::errs() << "Observation:\n" << observation.to_string() << "\n";
       mutatedAnnotation.dump();
+      annTrace.negative.dump();
     }
 
     auto init = std::clock();
@@ -236,6 +246,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
       lock->dump();
       llvm::errs() << "Not locked before\n";
       mutatedAnnotation.dump();
+      annTrace.negative.dump();
     }
 
     bool mutationFollowsCurrentTrace =
@@ -278,6 +289,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     llvm::errs() << "Currently unlocked by:\n";
     lastUnlock->dump();
     mutatedAnnotation.dump();
+    annTrace.negative.dump();
   }
 
   auto init = std::clock();
@@ -425,7 +437,7 @@ bool ZExplorer::closePO
   ++closure_succeeded;
 
   return extendAndRecur
-    (annTrace, readLock, std::move(mutatedAnnotation),
+    (annTrace, std::move(mutatedAnnotation),
      std::move(mutatedPO), mutationFollowsCurrentTrace);
 }
 
@@ -435,11 +447,9 @@ bool ZExplorer::closePO
 /* *************************** */
 
 bool ZExplorer::extendAndRecur
-(const ZTrace& parentTrace, const ZEvent *readLock,
- ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace)
+(const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
+ ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
 {
-  assert(isRead(readLock) || isLock(readLock));
   /*
   auto mutatedTrace = mutationFollowsCurrentTrace
     ? reuseTrace(parentTrace, mutatedAnnotation)
@@ -475,20 +485,15 @@ bool ZExplorer::extendAndRecur
   }
 
   init = std::clock();
-  ZAnnotationNeg mutatedNeg(parentTrace.negative);
-  mutatedNeg.update
-    (readLock, parentTrace.graph.getBasis().real_sizes());
-  assert(!mutatedTrace.empty() && !mutatedPO.empty() &&
-         !mutatedNeg.empty());
+  assert(!mutatedTrace.empty() && !mutatedPO.empty());
   ZTrace mutatedZTrace
     (parentTrace,
      std::move(mutatedTrace.trace),
      std::move(mutatedAnnotation),
-     std::move(mutatedNeg),
      std::move(mutatedPO),
      mutatedTrace.hasAssumeBlockedThread);
   assert(mutatedTrace.empty() && mutatedPO.empty() &&
-         mutatedAnnotation.empty() && mutatedNeg.empty());
+         mutatedAnnotation.empty());
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   return exploreRec(mutatedZTrace);
