@@ -73,7 +73,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
     ml(oth.ml),
     value(oth.value),
     _thread_id(1337), /*set at PObuild time*/
-    _aux_id(oth.cpid.get_aux_index()),
+    _aux_id(oth._aux_id),
     _event_id(oth._event_id),
     _trace_id(trace_id),
     observed_trace_id(-1),

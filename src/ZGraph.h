@@ -66,7 +66,7 @@ class ZGraph {
   }
 
   ZPartialOrder copyPO() const {
-    return ZPartialOrder(po, basis);
+    return ZPartialOrder(po);
   }
 
 

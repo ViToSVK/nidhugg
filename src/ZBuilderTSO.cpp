@@ -109,12 +109,12 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
            threads[p].executed_instructions + 1 && "Inconsistent scheduling");
     assert(replay_trace[prefix_idx].eventID() ==
            threads[p].executed_events && "Inconsistent scheduling");
-
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
                         threads[p].cpid,
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
+    prefix[prefix_idx].aux_invisible = replay_trace[prefix_idx].aux_invisible;
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     ++threads[p].executed_instructions;
@@ -130,9 +130,11 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     // Handle when next instruction is an invisible one
     // coming from an auxiliary thread
     if (p % 2 == 0 &&
-        replay_trace[prefix_idx].aux_invisible.count(prefix[prefix_idx].size)) {
+        prefix[prefix_idx].aux_invisible.count
+        (prefix[prefix_idx].size)) {
       p++;
-      assert(p == replay_trace[prefix_idx].aux_invisible[prefix[prefix_idx].size]);
+      assert(p == prefix[prefix_idx].aux_invisible
+             [prefix[prefix_idx].size]);
     }
     ++threads[p].executed_instructions;
   }
@@ -142,9 +144,11 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   // Handle when next instruction is an invisible one
   // coming from an auxiliary thread
   if (p % 2 == 0 &&
-      replay_trace[prefix_idx].aux_invisible.count(prefix[prefix_idx].size)) {
+      prefix[prefix_idx].aux_invisible.count
+      (prefix[prefix_idx].size)) {
     p++;
-    assert(p == replay_trace[prefix_idx].aux_invisible[prefix[prefix_idx].size]);
+    assert(p == prefix[prefix_idx].aux_invisible
+           [prefix[prefix_idx].size]);
   }
   assert(threads[p].available);
 

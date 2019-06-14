@@ -36,7 +36,7 @@ class ZExplorer {
 
   const ZTrace *initial;
 
-  bool info = false;
+  bool info = true;
 
   class TraceExtension {
    public:

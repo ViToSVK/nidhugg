@@ -65,6 +65,7 @@ ZBasis::ZBasis(const ZBasis& oth, const ZGraph& gr)
     init(ZEvent(true)),
     lines(oth.lines),
     thread_aux_to_line_id(oth.thread_aux_to_line_id),
+    threads_auxes(oth.threads_auxes),
     proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
     event_to_position(oth.event_to_position)
 {}

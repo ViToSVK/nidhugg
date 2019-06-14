@@ -127,9 +127,11 @@ class ZEvent {
             eventID() == oth.eventID());
   }
 
-  bool operator<(const ZEvent& oth) const {
-    return std::tie(_thread_id, _aux_id, _event_id)
-      < std::tie(oth._thread_id, oth._aux_id, oth._event_id);
+  bool operator<(const ZEvent& oth) const { // Aux first
+    int maux = - _aux_id;
+    int othMaux = - oth._aux_id;
+    return std::tie(_thread_id, maux, _event_id)
+      < std::tie(oth._thread_id, othMaux, oth._event_id);
   }
 
   std::string to_string(bool write_cpid) const;
@@ -139,7 +141,7 @@ class ZEvent {
 
 class ZEventPtrComp {
  public:
-  bool operator() (const ZEvent *e1, const ZEvent *e2) {
+  bool operator() (const ZEvent *e1, const ZEvent *e2) const {
     return (e1->operator<(*e2));
   }
 };

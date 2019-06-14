@@ -80,7 +80,7 @@ namespace std {
 class ZAnnotation {
  public:
 
-  using MappingT = std::unordered_map<ZObs, ZObs>;
+  using MappingT = std::map<ZObs, ZObs>;
   using LastLockT = std::unordered_map<SymAddrSize, ZObs>;
 
  private:

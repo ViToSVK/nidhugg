@@ -82,7 +82,7 @@ class ZPartialOrder {
   // Empty
   ZPartialOrder();
   // When extending
-  ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis);
+  ZPartialOrder(ZPartialOrder&& oth, const ZBasis& basis);
   // Chrono orderings
   ZPartialOrder(const ZPartialOrder& oth);
 

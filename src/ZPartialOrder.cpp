@@ -40,16 +40,19 @@ ZPartialOrder::ZPartialOrder()
 
 
 // When extending
-ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth, const ZBasis& basis)
+ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZBasis& basis)
   : basis(basis),
-    _succ(oth._succ),
-    _pred(oth._pred)
+    _succ(std::move(oth._succ)),
+    _pred(std::move(oth._pred))
 {}
 
 
 // Chrono orderings
 ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth)
-  : ZPartialOrder(oth, oth.basis) {}
+  : basis(oth.basis),
+    _succ(oth._succ),
+    _pred(oth._pred)
+{}
 
 
 std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const

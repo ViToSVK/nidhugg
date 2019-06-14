@@ -105,8 +105,8 @@ bool ZExplorer::exploreRec(const ZTrace& annTrace)
 {
   if (info) {
     //dumpTrace(annTrace.trace);
-    annTrace.graph.dump();
-    llvm::errs() << "-------------------------\n\n";
+    //annTrace.graph.dump();
+    //llvm::errs() << "-------------------------\n\n";
   }
 
   auto eventsToMutate = annTrace.getEventsToMutate();
@@ -350,6 +350,7 @@ bool ZExplorer::chronological
     // full trace, if yes you can break from this loop
 
     // Recursively process one chronoPO branch
+    auto init = std::clock();
     std::pair<ZPartialOrder, unsigned> current
       (std::move(worklist.front()));
     assert(!current.first.empty() && !worklist.empty() &&
@@ -379,6 +380,7 @@ bool ZExplorer::chronological
       // or-*one-read*-or-*both-mws-observable-in-po* condition
     #endif
     ++leaf_chrono_pos;
+    time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool error = closePO
       (annTrace, readLock,
@@ -414,12 +416,12 @@ bool ZExplorer::closePO
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (!closed) {
-    if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
+    //if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
     ++closure_failed;
     return false;
   }
 
-  if (info) llvm::errs() << "Closure succeeded\n\n-----\n\n";
+  //if (info) llvm::errs() << "Closure succeeded\n\n";
   ++closure_succeeded;
 
   return extendAndRecur
@@ -438,9 +440,17 @@ bool ZExplorer::extendAndRecur
  bool mutationFollowsCurrentTrace)
 {
   assert(isRead(readLock) || isLock(readLock));
+  /*
   auto mutatedTrace = mutationFollowsCurrentTrace
     ? reuseTrace(parentTrace, mutatedAnnotation)
     : extendTrace(parentTrace.graph.linearize(mutatedPO, mutatedAnnotation));
+  */
+  clock_t init = std::clock();
+  auto linear = parentTrace.graph.linearize(mutatedPO, mutatedAnnotation);
+  time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+  auto mutatedTrace = extendTrace(std::move(linear));
+
+  // if (info) dumpTrace(mutatedTrace.trace);
 
   assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, parentTrace));
 
@@ -458,19 +468,18 @@ bool ZExplorer::extendAndRecur
   if (!mutatedTrace.somethingToAnnotate) {
     // Maximal trace
     executed_traces_full++;
+    if (info) llvm::errs() << "FULL\n";
     // TODO Optimization:
     // Note in explorer that mutation produces max-trace
     return false;
   }
 
-  clock_t init = std::clock();
+  init = std::clock();
   ZAnnotationNeg mutatedNeg(parentTrace.negative);
-  if (isRead(readLock)) {
-    mutatedNeg.update
-      (readLock, parentTrace.graph.getBasis().real_sizes());
-  }
+  mutatedNeg.update
+    (readLock, parentTrace.graph.getBasis().real_sizes());
   assert(!mutatedTrace.empty() && !mutatedPO.empty() &&
-         !mutatedAnnotation.empty() && !mutatedNeg.empty());
+         !mutatedNeg.empty());
   ZTrace mutatedZTrace
     (parentTrace,
      std::move(mutatedTrace.trace),

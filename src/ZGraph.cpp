@@ -61,16 +61,17 @@ ZGraph::ZGraph(ZGraph&& oth)
 
 // Partial order that will be moved as original
 // Trace and annotation that will extend this copy of the graph
-ZGraph::ZGraph(const ZGraph& oth,
-       ZPartialOrder&& po,
-       const std::vector<ZEvent>& trace,
-       const ZAnnotation& annotation)
+ZGraph::ZGraph
+(const ZGraph& oth,
+ ZPartialOrder&& po,
+ const std::vector<ZEvent>& trace,
+ const ZAnnotation& annotation)
   : basis(oth.basis, *this),
-    po(po, this->basis),
+    po(std::move(po), this->basis),
     cache()
 {
-  assert(&(basis.graph) == this);
-  assert(&(po.basis) == &basis);
+  assert(&(this->basis.graph) == this);
+  assert(&(this->po.basis) == &(this->basis));
   traceToPO(trace, &annotation);
 }
 
@@ -242,6 +243,10 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       po.addLine(ev);
     }
 
+    if (!cur_evidx.count(thraux)) {
+      assert(ev->eventID() == 0);
+      cur_evidx.emplace(thraux, 0);
+    }
     unsigned ev_idx = cur_evidx[thraux];
 
     assert(ev->eventID() == ev_idx);
@@ -867,88 +872,115 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
 
 
 std::vector<ZEvent> ZGraph::linearize
-(const ZPartialOrder& po, const ZAnnotation& annotation) const
+(const ZPartialOrder& partial, const ZAnnotation& annotation) const
 {
   std::vector<ZEvent> result;
   result.reserve(basis.events_size());
-  /*
-  auto current = std::vector<unsigned>(processes.size(), 0);
-  auto until = std::vector<unsigned>(processes.size(), 0);
-  for (unsigned i=0; i<processes.size(); ++i) {
-    const Node * last_nd_i = processes[i][ processes[i].size() - 1];
-    if ((isRead(last_nd_i) && !annotation.defines(last_nd_i)) ||
-        (isLock(last_nd_i) && !annotation.isLastLock(last_nd_i))) {
-      // These nodes should be 'rediscovered' by the
-      // TraceBuilder as something to annotate
-      // Also locks can't be force-replayed if the
-      // location is already held
-      until[i] = processes[i].size() - 1;
-    } else
-      until[i] = processes[i].size();
-  }
-  ThreadPairsVclocks& pred = *(po.second);
+
+  std::unordered_map<std::pair<unsigned, int>, unsigned>
+    current, until;
+
+  for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
+    for (int aux : basis.auxes(thr)) {
+      current.emplace(std::pair<unsigned, int>(thr, aux), 0);
+      assert(!basis(thr, aux).empty());
+      auto lastEv = basis(thr, aux)[basis(thr, aux).size() - 1];
+      if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
+          (isLock(lastEv) && !annotation.isLastLock(lastEv))) {
+        // These events should be 'rediscovered' by the
+        // TraceBuilder as something to annotate
+        // Also locks can't be force-replayed if the
+        // location is already held
+        until.emplace(std::pair<unsigned, int>(thr, aux),
+                      basis(thr, aux).size() - 1);
+      } else
+        until.emplace(std::pair<unsigned, int>(thr, aux),
+                      basis(thr, aux).size());
+    }
 
   bool done = false;
   while (!done) {
-    // Star-root process makes one step,
+    // Root thread makes one step,
     // and before that step, all steps
-    // of other processes that have
-    // to HB because of 'po' are made
-    auto requirements = std::map<unsigned, unsigned>();
-    if (current[starRoot()] == until[starRoot()]) {
-      // Star-root process finished, let all other processes finish
-      for (unsigned i=0; i<processes.size(); ++i)
-        if (i != starRoot() && current[i] < until[i])
-          requirements.emplace(i, until[i]);
-    } else {
-      // Star-root process has not finished yet
-      // Collect info of what needs to HB the next star-root step
-      for (unsigned i=0; i<processes.size(); ++i)
-        if (i != starRoot()) {
-          int ipred = pred[starRoot()][i][ current[starRoot()] ] + 1;
-          if (ipred > (int) current[i]) {
-            requirements.emplace(i, ipred);
-          }
-        }
+    // of other thraux that have
+    // to HB because of 'partial' are made
+
+    // First pick proper root event to make a step
+    const ZEvent *rootEv = nullptr;
+    auto auxes = basis.auxes(basis.root());
+    for (auto auxit = auxes.rbegin(); auxit != auxes.rend(); ++auxit) {
+      std::pair<unsigned, int> thau(basis.root(), *auxit);
+      if (current[thau] < until[thau]) {
+        auto rAux = basis(thau)[current[thau]];
+        if (!rootEv || partial.hasEdge(rAux, rootEv))
+          rootEv = rAux;
+      }
     }
 
-    auto reqNodes = std::unordered_set<const Node *>();
+    // Collect requirements before root event can proceed
+    std::unordered_map<std::pair<unsigned, int>, unsigned>
+      requirements;
+    if (!rootEv) {
+      // Root thread is finished, let all other threads finish
+      for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
+        for (int aux : basis.auxes(thr)) {
+          std::pair<unsigned, int> thau(thr, aux);
+          if (!basis.isRoot(thr) && current[thau] < until[thau])
+            requirements.emplace(thau, until[thau]);
+        }
+    } else {
+      // Root thread has not finished yet
+      // Collect info what needs to HB the next Root step
+      for (unsigned thr=0; thr<basis.number_of_threads(); ++thr) {
+        if (!basis.isRoot(thr)) {
+          for (int aux : basis.auxes(thr)) {
+            std::pair<unsigned, int> thau(thr, aux);
+            int id = partial.pred(rootEv, thr, aux).second;
+            assert(id + 1 <= (int) until[thau]);
+            if (id + 1 > (int) current[thau])
+              requirements.emplace(thau, id + 1);
+          }
+        }
+      }
+    }
+
+    std::set<const ZEvent *, ZEventPtrComp> reqEv;
     for (auto& rq : requirements) {
       assert(current[rq.first] < rq.second);
       assert(rq.second <= until[rq.first]);
-      reqNodes.insert(processes[rq.first][ current[rq.first] ]);
+      reqEv.insert(basis(rq.first)[current[rq.first]]);
     }
-    while (!reqNodes.empty()) {
-      // Find (an arbitrary) head of reqNodes
-      auto it = reqNodes.begin();
-      assert(it != reqNodes.end());
-      const Node *headnd = *it;
-      ++it;
-      while (it != reqNodes.end()) {
-        if (hasEdge(*it, headnd, po))
-          headnd = *it;
-        ++it;
+    while (!reqEv.empty()) {
+      // Find (an arbitrary) head of reqEv
+      const ZEvent *headEv = nullptr;
+      for (const auto& rqEv : reqEv) {
+        if (!headEv || partial.hasEdge(rqEv, headEv))
+          headEv = rqEv;
       }
       // Perform the head, replace in reqNodes with its
       // thread successor (if that one is also required)
-      result.push_back(headnd->getEvent()->copy(result.size(), true));
-      unsigned tid = headnd->getProcessID();
-      ++current[tid];
-      assert(reqNodes.count(headnd));
-      reqNodes.erase(headnd);
-      if (current[tid] < requirements[tid])
-        reqNodes.insert(processes[tid][ current[tid] ]);
+      result.push_back(headEv->copy(result.size(), true));
+      std::pair<unsigned, int> thau
+        (headEv->threadID(), headEv->auxID());
+      ++current[thau];
+      assert(current[thau] <= until[thau]);
+      assert(reqEv.count(headEv));
+      reqEv.erase(headEv);
+      if (current[thau] < requirements[thau])
+        reqEv.insert(basis(thau)[current[thau]]);
     }
 
-    if (current[starRoot()] < until[starRoot()]) {
-      // Perform one step of the star-root process
-      const Node * rootnd = processes[starRoot()][ current[starRoot()] ];
-      result.push_back(rootnd->getEvent()->copy(result.size(), true));
-      ++current[starRoot()];
+    if (rootEv) {
+      // Perform root event
+      result.push_back(rootEv->copy(result.size(), true));
+      std::pair<unsigned, int> thau
+        (rootEv->threadID(), rootEv->auxID());
+      ++current[thau];
+      assert(current[thau] <= until[thau]);
     } else
       done = true;
   }
-*/
+
   return result;
 }
 
