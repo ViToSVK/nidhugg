@@ -28,6 +28,9 @@
 
 
 class ZTrace {
+ private:
+  const ZTrace *parent;
+
  public:
 
   const std::vector<ZEvent> trace;
@@ -47,6 +50,9 @@ class ZTrace {
     return (trace.empty() && annotation.empty() &&
             negative.empty() && graph.empty());
   }
+
+  std::string to_string(unsigned depth) const;
+  void dump() const;
 
 
   /* *************************** */
@@ -74,36 +80,18 @@ class ZTrace {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ZTrace()
-    : trace(), annotation(), negative(), graph(), deadlocked(false)
-      {
-        assert(empty());
-      };
+  ZTrace();
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-         int star_root_index, bool assumeblocked)
-  : trace(std::move(initial_trace)),
-    annotation(),
-    negative(),
-    graph(this->trace, star_root_index),
-    assumeblocked(assumeblocked),
-    deadlocked(false)
-      {};
+         int star_root_index, bool assumeblocked);
 
-  ZTrace(std::vector<ZEvent>&& new_trace,
+  ZTrace(const ZTrace& annTrace,
+         std::vector<ZEvent>&& new_trace,
          const ZAnnotation& new_annotation,
          const ZAnnotationNeg& new_negative,
          const ZGraph& old_graph,
          ZPartialOrder&& new_po,
-         bool assumeblocked)
-  : trace(std::move(new_trace)),
-    annotation(new_annotation),
-    negative(new_negative),
-    graph(old_graph, std::move(new_po),
-          this->trace, this->annotation),
-    assumeblocked(assumeblocked),
-    deadlocked(false)
-      {};
+         bool assumeblocked);
 
   ZTrace(ZTrace&& tr) = default;
   ZTrace& operator=(ZTrace&& tr) = delete;

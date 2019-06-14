@@ -97,7 +97,7 @@ class ZExplorer {
 
   bool respectsAnnotation(const std::vector<ZEvent>& trace,
                           const ZAnnotation& annotation,
-                          const ZGraph& graph) const;
+                          const ZTrace& parentTrace) const;
 
 
   /* *************************** */

@@ -106,6 +106,7 @@ class ZAnnotation {
   iterator end() { return mapping.end(); }
   const_iterator end() const { return mapping.end(); }
 
+  std::string to_string() const;
   void dump() const;
 
 

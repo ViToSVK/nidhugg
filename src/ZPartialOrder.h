@@ -99,6 +99,7 @@ class ZPartialOrder {
     return _succ.size();
   }
 
+  std::string to_string() const;
   void dump() const;
 };
 

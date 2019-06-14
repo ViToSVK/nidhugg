@@ -547,25 +547,25 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 bool ZExplorer::respectsAnnotation
 (const std::vector<ZEvent>& trace,
  const ZAnnotation& annotation,
- const ZGraph& graph) const
+ const ZTrace& parentTrace) const
 {
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
     if (isRead(ev) && annotation.defines(ev->threadID(), ev->eventID())) {
       const ZObs& obs = annotation.getObs(ev);
       const ZEvent *obsB = (obs.thr == INT_MAX)
-        ? graph.getBasis().initial() : graph.getBasis().getEvent(obs);
+        ? parentTrace.graph.getBasis().initial() : parentTrace.graph.getBasis().getEvent(obs);
       const ZEvent *obsM = (isInitial(obsB))
-        ? graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
+        ? parentTrace.graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
       assert(obsB->value == obsM->value);
       assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
                                  sameMl(obsB, obsM) && sameMl(ev, obsB)));
       const ZEvent *realObservation = (ev->observed_trace_id == -1)
-        ? graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
+        ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
 
       if (realObservation != obsB && realObservation != obsM) {
+        parentTrace.dump();
         dumpTrace(trace);
-        graph.getPo().dump();
         annotation.dump();
         llvm::errs() << "This read         :::  ";
         ev->dump();

@@ -330,7 +330,7 @@ void ZPartialOrder::shrink()
 }
 
 
-void ZPartialOrder::dump() const
+std::string ZPartialOrder::to_string() const
 {
   std::stringstream res;
 
@@ -422,5 +422,11 @@ void ZPartialOrder::dump() const
 
   res << "}\n\n";
 
-  llvm::errs() << res.str();
+  return res.str();
+}
+
+
+void ZPartialOrder::dump() const
+{
+  llvm::errs() << to_string();
 }
