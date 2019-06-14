@@ -95,6 +95,10 @@ class ZExplorer {
 
   TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
+  bool respectsAnnotation(const std::vector<ZEvent>& trace,
+                          const ZAnnotation& annotation,
+                          const ZGraph& graph) const;
+
 
   /* *************************** */
   /* CONSTRUCTOR                 */

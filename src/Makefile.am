@@ -42,7 +42,7 @@ libnidhugg_a_SOURCES = \
   ZHelpers.h \
   ZAnnotation.cpp ZAnnotation.h \
   ZAnnotationNeg.h \
-  ZTrace.cpp ZTrace.h \
+  ZTrace.h \
   ZBasis.cpp ZBasis.h \
   ZPartialOrder.cpp ZPartialOrder.h \
   ZGraph.cpp ZGraph.h \

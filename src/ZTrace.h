@@ -48,8 +48,6 @@ class ZTrace {
             negative.empty() && graph.empty());
   }
 
-  bool respectsAnnotation() const;
-
 
   /* *************************** */
   /* HELPERS                     */

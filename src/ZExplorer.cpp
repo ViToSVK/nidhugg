@@ -103,7 +103,6 @@ bool ZExplorer::explore()
 
 bool ZExplorer::exploreRec(const ZTrace& annTrace)
 {
-  assert(annTrace.respectsAnnotation());
   if (info) {
     //dumpTrace(annTrace.trace);
     annTrace.graph.dump();
@@ -442,6 +441,8 @@ ZExplorer::extendAndAdd(PartialOrder&& mutatedPo,
     ?reuseTrace(mutatedAnnotation)
     :extendTrace(current->graph.linearize(mutatedPo, mutatedAnnotation));
 
+  assert(respectsAnnotation(mutatedTrace, mutatedAnnotation, annTrace.graph));
+
   executed_traces++;
   if (mutatedTrace.hasError)
     return {true, false}; // Found an error
@@ -543,7 +544,44 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 }
 
 
+bool ZExplorer::respectsAnnotation
+(const std::vector<ZEvent>& trace,
+ const ZAnnotation& annotation,
+ const ZGraph& graph) const
+{
+  for (const ZEvent& evref: trace) {
+    const ZEvent *ev = &evref;
+    if (isRead(ev) && annotation.defines(ev->threadID(), ev->eventID())) {
+      const ZObs& obs = annotation.getObs(ev);
+      const ZEvent *obsB = (obs.thr == INT_MAX)
+        ? graph.getBasis().initial() : graph.getBasis().getEvent(obs);
+      const ZEvent *obsM = (isInitial(obsB))
+        ? graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
+      assert(obsB->value == obsM->value);
+      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
+      const ZEvent *realObservation = (ev->observed_trace_id == -1)
+        ? graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
 
+      if (realObservation != obsB && realObservation != obsM) {
+        dumpTrace(trace);
+        graph.getPo().dump();
+        annotation.dump();
+        llvm::errs() << "This read         :::  ";
+        ev->dump();
+        llvm::errs() << "Should observeB   :::  ";
+        obsB->dump();
+        llvm::errs() << "Should observeM   :::  ";
+        obsM->dump();
+        llvm::errs() << "Actually observed :::  ";
+        realObservation->dump();
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
 
 /*
 
