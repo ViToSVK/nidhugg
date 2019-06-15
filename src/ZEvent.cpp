@@ -97,7 +97,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
 }
 
 
-std::string ZEvent::to_string(bool write_cpid = true) const
+std::string ZEvent::to_string(bool write_cpid) const
 {
   if (this->kind == ZEvent::Kind::INITIAL)
     return "-1_<>_[INT_MAX,-1,INT_MAX] initial_event";
@@ -167,4 +167,5 @@ void dumpTrace(const std::vector<ZEvent>& trace)
   llvm::errs() << "TRACE::: " << trace.size() << " EVENTS\n";
   for (const auto& ev : trace)
     ev.dump();
+  llvm::errs() << "\n";
 }

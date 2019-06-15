@@ -134,7 +134,7 @@ class ZEvent {
       < std::tie(oth._thread_id, othMaux, oth._event_id);
   }
 
-  std::string to_string(bool write_cpid) const;
+  std::string to_string(bool write_cpid = true) const;
   void dump() const;
 };
 

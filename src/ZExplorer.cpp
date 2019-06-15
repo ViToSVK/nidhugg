@@ -106,6 +106,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
   if (info) {
     //dumpTrace(annTrace.trace);
     annTrace.graph.dump();
+    annTrace.annotation.dump();
     //llvm::errs() << "-------------------------\n\n";
   }
 
@@ -478,7 +479,10 @@ bool ZExplorer::extendAndRecur
   if (!mutatedTrace.somethingToAnnotate) {
     // Maximal trace
     executed_traces_full++;
-    if (info) llvm::errs() << "FULL\n";
+    if (info) {
+      llvm::errs() << "FULL\n";
+      //mutatedAnnotation.dump();
+    }
     // TODO Optimization:
     // Note in explorer that mutation produces max-trace
     return false;
@@ -569,37 +573,52 @@ bool ZExplorer::respectsAnnotation
  const ZAnnotation& annotation,
  const ZTrace& parentTrace) const
 {
+  std::unordered_map<ZObs, unsigned> bw_pos;
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
-    if (isRead(ev) && annotation.defines(ev->threadID(), ev->eventID())) {
-      const ZObs& obs = annotation.getObs(ev);
-      const ZEvent *obsB = (obs.thr == INT_MAX)
-        ? parentTrace.graph.getBasis().initial() : parentTrace.graph.getBasis().getEvent(obs);
-      const ZEvent *obsM = (isInitial(obsB))
-        ? parentTrace.graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
-      assert(obsB->value == obsM->value);
-      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
-                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
-      const ZEvent *realObservation = (ev->observed_trace_id == -1)
-        ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
-
-      if (realObservation != obsB && realObservation != obsM) {
-        parentTrace.dump();
-        dumpTrace(trace);
-        annotation.dump();
-        llvm::errs() << "This read         :::  ";
-        ev->dump();
-        llvm::errs() << "Should observeB   :::  ";
-        obsB->dump();
-        llvm::errs() << "Should observeM   :::  ";
-        obsM->dump();
-        llvm::errs() << "Actually observed :::  ";
-        realObservation->dump();
-        return false;
+    if (isWriteB(ev)) {
+      // ev->threadID() not set, have to get it
+      unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+      if (thrid != 1337)
+        bw_pos.emplace(ZObs(thrid, ev->eventID()), ev->traceID());
+    }
+  }
+  for (const ZEvent& evref: trace) {
+    const ZEvent *ev = &evref;
+    if (isRead(ev)) {
+      // ev->threadID() not set, have to get it
+      unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+      if (annotation.defines(thrid, ev->eventID())) {
+        const ZObs& obs = annotation.getObs(thrid, ev->eventID());
+        const ZEvent *obsB = parentTrace.graph.getBasis().initial();
+        if (obs.thr != INT_MAX) {
+          assert(bw_pos.count(obs));
+          obsB = &(trace.at(bw_pos.at(obs)));
+        }
+        const ZEvent *obsM = (isInitial(obsB))
+          ? parentTrace.graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
+        assert(obsB->value == obsM->value);
+        assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+                                   sameMl(obsB, obsM) && sameMl(ev, obsB)));
+        const ZEvent *realObservation = (ev->observed_trace_id == -1)
+          ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
+        if (realObservation != obsB && realObservation != obsM) {
+          parentTrace.dump();
+          dumpTrace(trace);
+          annotation.dump();
+          llvm::errs() << "This read         :::  ";
+          ev->dump();
+          llvm::errs() << "Should observeB   :::  ";
+          obsB->dump();
+          llvm::errs() << "Should observeM   :::  ";
+          obsM->dump();
+          llvm::errs() << "Actually observed :::  ";
+          realObservation->dump();
+          return false;
+        }
       }
     }
   }
-
   return true;
 }
 

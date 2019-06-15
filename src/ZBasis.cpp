@@ -295,6 +295,23 @@ std::pair<unsigned, bool> ZBasis::getThreadID(const ZEvent *ev)
 }
 
 
+unsigned ZBasis::getThreadIDnoAdd(const std::vector<int>& proc_seq) const
+{
+  auto it = proc_seq_to_thread_id.find(proc_seq);
+  if (it == proc_seq_to_thread_id.end())
+    return 1337;
+  else
+    return it->second;
+}
+
+
+unsigned ZBasis::getThreadIDnoAdd(const ZEvent * ev) const
+{
+  assert(!isInitial(ev) && "Called for initial event");
+  return getThreadIDnoAdd(ev->cpid.get_proc_seq());
+}
+
+
 bool ZBasis::hasEvent(const ZEvent *ev) const
 {
   if (ev == initial())

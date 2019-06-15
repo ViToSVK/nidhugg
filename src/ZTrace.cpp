@@ -64,7 +64,7 @@ std::string ZTrace::to_string(unsigned depth = 2) const
   if (!parent) {
     res << "########################\n"
         << "#     INITIAL TRACE    #\n"
-        << "########################\n\n";
+        << "########################\n";
   } else if (depth > 0) {
     res << parent->to_string(depth-1);
   }

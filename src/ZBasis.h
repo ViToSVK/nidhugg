@@ -103,6 +103,8 @@ class ZBasis {
   // <threadID, added_with_this_call?>
   std::pair<unsigned, bool> getThreadID(const std::vector<int>& proc_seq);
   std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
+  unsigned getThreadIDnoAdd(const std::vector<int>& proc_seq) const;
+  unsigned getThreadIDnoAdd(const ZEvent * ev) const;
 
 
   // EVENT->POSITION (changed at recursion child with new ZEvent pointers from new trace)
