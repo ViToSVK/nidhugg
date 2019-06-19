@@ -57,11 +57,11 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 	// Optimization idea if obs different thread then only once this function could be called
 	// as no memory write will be added in between other rules
 	// To do so we can call it preclose and then in rules don't call again
-	
+
 	// Without optimization
 	auto write = getObs(obs);
 	auto write_memory = write.second;
-	// Idea: Iterate on all (but self) threads and get memory pred of r 
+	// Idea: Iterate on all (but self) threads and get memory pred of r
 	// add cond that writeM occur after aboce memory write
 	unsigned totThreads =  ba.number_of_threads();
 	unsigned readThread = read->threadID();
@@ -76,7 +76,8 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 				if(memory_pred){	// not nullptr
 					assert(isWriteM(memory_pred));
 					if(memory_pred != write_memory){ 	// skipping self
-						if(po.hasEdge(write_memory,memory_pred)) return {true,false}; // Already reverse edge
+						if(!write_memory || po.hasEdge(write_memory,memory_pred)) return {true,false}; // Already reverse edge
+            assert(isWriteM(write_memory));
 						if(!po.hasEdge(memory_pred,write_memory)){
 							po.addEdge(memory_pred,write_memory);
 							change = true;
@@ -127,13 +128,13 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 				auto res = cache.wm.at(read->ml).at(i)[mid];
 				assert(isWriteM(res) && sameMl(res, read) &&
 				    res->threadID() == i && res->auxID() != -1);
-				if(po.hasEdge(write_memory,res)) r=mid;
+				if(!write_memory || po.hasEdge(write_memory,res)) r=mid;
 				else l=mid+1;
 			} // after the loop, l = r = x
 			auto res = cache.wm.at(read->ml).at(i)[l];
 			assert(isWriteM(res) && sameMl(res, read) &&
 				    res->threadID() == i && res->auxID() != -1);
-			if(po.hasEdge(write_memory,res)){
+			if(!write_memory || po.hasEdge(write_memory,res)){
 				if(po.hasEdge(res,read)) return {true,false}; // Already reverse edge
 				if(!po.hasEdge(read,res)){
 					po.addEdge(read,res);
@@ -142,8 +143,9 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 			}
 		}
 	}
-	if(writeThread == INT_MAX) return {false, change};
-	// For write Thread 
+	if(writeThread == INT_MAX || writeThread == readThread) return {false, change};
+  assert(isWriteM(write_memory));
+	// For write Thread
 	int lastBefore = gr.getLatestNotAfterIndex(read,writeThread,po);	// {0,1,..,lastBefore} in cache at same ml with r </ wM
 	if(lastBefore != -1){
 		auto cache = gr.getCache();
@@ -271,7 +273,7 @@ void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv){
 
 
 void ZClosure::preClose(const ZEvent *ev, const ZObs& obs){
-  if (obs.thr == INT_MAX) { 
+  if (obs.thr == INT_MAX) {
   	// Handle initial-event observation separately
   	// No need to do for rule 1
   }else{
