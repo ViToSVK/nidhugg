@@ -991,6 +991,7 @@ std::vector<ZEvent> ZGraph::linearize
       done = true;
   }
 
+  //dumpTrace(result);
   return result;
 }
 
