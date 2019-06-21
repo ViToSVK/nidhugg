@@ -98,6 +98,12 @@ void ZInterpreterTSO::runAux(int proc, int aux) {
   void *ref = tso_threads[proc].store_buffer.front().first;
   const SymData &blk = tso_threads[proc].store_buffer.front().second;
 
+  // We consider all Stack writes as invisible and atomic,
+  // hence we do not put them into the store buffer
+  assert((blk.get_ref().addr.block.is_global() ||
+          blk.get_ref().addr.block.is_heap()) &&
+         "No Stack writes are allowed in the store buffer");
+
   TB.atomic_store(blk);
 
   assert(!DryRun); /**/
@@ -255,19 +261,21 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
   const SymAddrSize& ml = sd.get_ref();
   // Stores to local memory on stack may not conflict
   if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
-     0 <= AtomicFunctionCall){
+     0 <= AtomicFunctionCall ||
+     (!ml.addr.block.is_global() && !ml.addr.block.is_heap())) {
     /* Atomic store */
+    /* We consider all Stack writes as invisible and atomic */
     if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-      llvm::errs() << "Interpreter: No support for Atomic store\n";
+      llvm::errs() << "Interpreter: No support for visible Atomic store\n";
       abort(); /**/
-      //TB.atomic_store(sd);
     }
-    assert(tso_threads[CurrentThread].store_buffer.empty());
+    //assert(tso_threads[CurrentThread].store_buffer.empty());
     assert(!DryRun); /**/
     CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
-  }else{
+  } else {
     /* Store to buffer */
     // Storing value Val.IntVal.getSExtValue()
+    assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
     TB.store(sd, (int) Val.IntVal.getSExtValue());
     assert(!DryRun); /**/
     tso_threads[CurrentThread].store_buffer.emplace_back(Ptr, std::move(sd));

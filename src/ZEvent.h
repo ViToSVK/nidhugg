@@ -118,8 +118,6 @@ class ZEvent {
   /* Sequential number (within the thread) of the LAST instruction in this event
    * The first instruction of the thread is number 1 !!! */
   unsigned instruction_order;
-  /* Invisible instructions done on an auxiliary thread */
-  std::unordered_map<int, unsigned> aux_invisible;
 
   bool operator==(const ZEvent& oth) const {
     return (threadID() == oth.threadID() &&

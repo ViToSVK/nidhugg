@@ -63,7 +63,7 @@ ZExplorer::ZExplorer(ZBuilderTSO& tb)
 
 void ZExplorer::print_stats() const
 {
-  std::setprecision(4);
+  std::setprecision(3);
   std::cout << "\n";
   std::cout << "Fully executed traces:             " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:   " << executed_traces << "\n";
@@ -75,6 +75,7 @@ void ZExplorer::print_stats() const
   std::cout << "Leaf-chronological-POs:            " << leaf_chrono_pos << "\n";
   std::cout << "Closure failed:                    " << closure_failed << "\n";
   std::cout << "Closure succeeded:                 " << closure_succeeded << "\n";
+  std::cout << std::setprecision(2);
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
@@ -576,9 +577,10 @@ bool ZExplorer::respectsAnnotation
   std::unordered_map<ZObs, unsigned> bw_pos;
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
-    if (isWriteB(ev)) {
-      // ev->threadID() not set, have to get it
-      unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+    // ev->threadID() not set, have to get it
+    unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+    ev->_thread_id = thrid;
+    if (isWriteB(ev) && thrid != 1337) {
       if (thrid != 1337)
         bw_pos.emplace(ZObs(thrid, ev->eventID()), ev->traceID());
     }
@@ -619,6 +621,9 @@ bool ZExplorer::respectsAnnotation
       }
     }
   }
+  // Unset thread-id, let Graph take care of it
+  for (const ZEvent& evref: trace)
+    evref._thread_id = 1337;
   return true;
 }
 

@@ -114,7 +114,6 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
-    prefix[prefix_idx].aux_invisible = replay_trace[prefix_idx].aux_invisible;
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     assert(prefix.back().traceID() == (int) prefix.size() - 1);
@@ -129,15 +128,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
 
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[prefix_idx].iid.get_pid();
-  // Handle when next instruction is an invisible one
-  // coming from an auxiliary thread
-  if (p % 2 == 0 &&
-      prefix[prefix_idx].aux_invisible.count
-      (prefix[prefix_idx].size)) {
-    p++;
-    assert(p == prefix[prefix_idx].aux_invisible
-           [prefix[prefix_idx].size]);
-  }
+  // Mark that thread p executes a new instruction
   ++threads[p].executed_instructions;
   assert(threads[p].available);
 
@@ -147,8 +138,6 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   // threads[p].event_indices.push_back(prefix_idx);
   // But I don't know why here, I would suspect to
   // run this only when we have a new event
-  // Mark that thread p executes a new instruction
-  // ++threads[p].executed_instructions;
 
   bool ret = schedule_thread(proc, aux, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
@@ -308,17 +297,20 @@ void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
   curn.may_conflict = true;
   if (ml) curn.ml = *ml;
 
-  /*
-  if (sch_replay) {
-    llvm::errs() << "\nmayConflict: prefix_idx = " << prefix_idx << "\n";
-    replay_trace[prefix_idx].dump();
-    prefix[prefix_idx].dump();
-  }
-  */
-
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
                      replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
+  if (!consistent) {
+    llvm::errs() << "TRACE_TO_REPLAY\n";
+    dumpTrace(replay_trace);
+    llvm::errs() << "\nACTUALLY_REPLAYED\n";
+    dumpTrace(prefix);
+    llvm::errs() << "Problematic event (didn't go any further):\n";
+    llvm::errs() << "TRACE_TO_REPLAY[" << prefix_idx << "]   ::: ";
+    replay_trace[prefix_idx].dump();
+    llvm::errs() << "ACTUALLY_REPLAYED[" << prefix_idx << "] ::: ";
+    prefix[prefix_idx].dump();
+  }
   assert(consistent);
   #endif
 }
@@ -345,11 +337,11 @@ void ZBuilderTSO::spawn()
   assert(curnode().iid.get_pid() % 2 == 0);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::SPAWN;
-  mayConflict();
   // store the CPid of the new thread
   IPid parent_ipid = curnode().iid.get_pid();
   CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
   curnode().childs_cpid = child_cpid;
+  mayConflict();
 
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
@@ -388,8 +380,8 @@ void ZBuilderTSO::join(int tgt_proc)
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::JOIN;
-  mayConflict();
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
+  mayConflict();
 }
 
 
@@ -407,37 +399,38 @@ void ZBuilderTSO::store(const SymData &sd, int val)
 
   const SymAddrSize& ml = sd.get_ref();
   // Stores to local memory on stack may not conflict
+  assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
+
   // Global stores happening with just one thread existing may not conflict
   // but we have to record them as such anyway to keep track of them
-  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-    //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
-    assert(curnode().kind == ZEvent::Kind::DUMMY);
-    curnode().kind = ZEvent::Kind::WRITEB;
-    mayConflict(&ml);
-    curnode().value = val;
 
-    // Enqueue the update into visible store queue
-    if (!visibleStoreQueue.count(p))
-      visibleStoreQueue.emplace(p, std::vector<int>());
-    visibleStoreQueue[p].push_back(prefix_idx);
-  }
+  //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::WRITEB;
+  curnode().value = val;
+  mayConflict(&ml);
+
+  // Enqueue the update into visible store queue
+  if (!visibleStoreQueue.count(p))
+    visibleStoreQueue.emplace(p, std::vector<int>());
+  visibleStoreQueue[p].push_back(prefix_idx);
 }
 
 
 void ZBuilderTSO::atomic_store(const SymData &sd)
 {
   assert(!dryrun);
-  assert((curnode().iid.get_pid() % 2 == 1 ||
-          (sch_replay && !sch_extend &&
-           replay_trace[prefix_idx].aux_invisible.count(curnode().size))) &&
-         "Only auxiliary threads can perform memory-writes");
 
   unsigned auxp = curnode().iid.get_pid();
-  if (auxp % 2 != 1)
-    auxp = replay_trace[prefix_idx].aux_invisible[curnode().size];
-  assert(auxp % 2 == 1);
+  assert(auxp % 2 == 1 && "Only auxiliary threads can perform memory-writes");
   unsigned realp = auxp - 1;
   assert(auxp > realp && auxp == realp + 1);
+
+  const SymAddrSize& ml = sd.get_ref();
+  // We consider all Stack writes as invisible and atomic,
+  // hence we do not put them into the store buffer
+  assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
+         "No Stack writes are allowed in the store buffer");
 
   // Remove pending store from buffer
   for(unsigned i=0; i<threads[realp].store_buffer.size()-1; ++i) {
@@ -448,64 +441,30 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
     threads[auxp].available = false;
   }
 
-  const SymAddrSize& ml = sd.get_ref();
-  if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-    //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
-    assert(curnode().kind == ZEvent::Kind::DUMMY);
-    curnode().kind = ZEvent::Kind::WRITEM;
-    mayConflict(&ml);
+  //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  curnode().kind = ZEvent::Kind::WRITEM;
+  mayConflict(&ml);
 
-    // Locate corresponding buffer-write
-    assert(visibleStoreQueue.count(realp) && !visibleStoreQueue[realp].empty());
-    curnode().write_other_trace_id = visibleStoreQueue[realp].front();
-    assert(curnode().write_other_trace_id >= 0 &&
-           curnode().write_other_trace_id <= (int) prefix.size() - 2);
-    assert(prefix[curnode().write_other_trace_id].kind == ZEvent::Kind::WRITEB);
-    assert(prefix[curnode().write_other_trace_id].ml == ml &&
-           "Inconsistent memory locations");
-    curnode().value = prefix[curnode().write_other_trace_id].value;
-    assert(prefix[curnode().write_other_trace_id].write_other_trace_id == -1);
-    prefix[curnode().write_other_trace_id].write_other_trace_id = prefix_idx;
+  // Locate corresponding buffer-write
+  assert(visibleStoreQueue.count(realp) && !visibleStoreQueue[realp].empty());
+  curnode().write_other_trace_id = visibleStoreQueue[realp].front();
+  assert(curnode().write_other_trace_id >= 0 &&
+         curnode().write_other_trace_id <= (int) prefix.size() - 2);
+  assert(prefix[curnode().write_other_trace_id].kind == ZEvent::Kind::WRITEB);
+  assert(prefix[curnode().write_other_trace_id].ml == ml &&
+         "Inconsistent memory locations");
+  curnode().value = prefix[curnode().write_other_trace_id].value;
+  assert(prefix[curnode().write_other_trace_id].write_other_trace_id == -1);
+  prefix[curnode().write_other_trace_id].write_other_trace_id = prefix_idx;
 
-    // Dequeue oldest update from queue
-    for(unsigned i=0; i<visibleStoreQueue[realp].size()-1; ++i){
-      visibleStoreQueue[realp][i] = visibleStoreQueue[realp][i+1];
-    }
-    visibleStoreQueue[realp].pop_back();
-
-    lastWrite[ml] = prefix_idx;
-  } else if (sch_extend) {
-    assert(curnode().iid.get_pid() == (int) auxp);
-    if (curnode().size == 1 && !curnode().may_conflict && prefix_idx > 0 &&
-        prefix[prefix_idx - 1].iid.get_pid() == (int) realp &&
-        !prefix[prefix_idx - 1].may_conflict &&
-        prefix[prefix_idx - 1].kind == ZEvent::Kind::DUMMY) {
-      // This is a single invisible auxiliary instruction,
-      // previous event is invisible and belongs to
-      // the corresponding real thread
-      // We squash these two events together
-
-      // Do not do this: --threads[auxp].executed_instructions;
-      // Unmark ownership of this new event
-      assert((int) threads[auxp].event_indices.back() == prefix_idx);
-      threads[auxp].event_indices.pop_back();
-      --threads[auxp].executed_events; //
-      // Delete this new event
-      prefix.pop_back();
-      --prefix_idx;
-
-      assert(curnode().iid.get_pid() == (int) realp &&
-             !curnode().may_conflict &&
-             curnode().kind == ZEvent::Kind::DUMMY);
-      // We extend the now-current event
-      assert(prefix_idx == (int) (prefix.size() - 1));
-      ++prefix[prefix_idx].size;
-      // We add that this instruction actually belongs
-      // to its auxiliary thread, to keep track of it
-      assert(!curnode().aux_invisible.count(curnode().size));
-      curnode().aux_invisible.emplace(curnode().size, auxp);
-    }
+  // Dequeue oldest update from queue
+  for(unsigned i=0; i<visibleStoreQueue[realp].size()-1; ++i){
+    visibleStoreQueue[realp][i] = visibleStoreQueue[realp][i+1];
   }
+  visibleStoreQueue[realp].pop_back();
+
+  lastWrite[ml] = prefix_idx;
 }
 
 

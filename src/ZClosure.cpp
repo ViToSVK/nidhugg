@@ -52,7 +52,7 @@ std::pair<bool, bool> ZClosure::ruleOne(const ZEvent *read, const ZObs& obs){
 
 // first) true iff impossible
 // second) true iff something changed
-# warning Initial event is not special case right?
+//# warning Initial event is not special case right?
 std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 	// Optimization idea if obs different thread then only once this function could be called
 	// as no memory write will be added in between other rules
@@ -98,7 +98,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 			}
 		}
 	}
-	std::cout<<"Rule2 "<<change<<"\n";
+	//std::cout<<"Rule2 "<<change<<"\n";
 	//po.dump();
 	return {false, change}; // done, no change
 }
@@ -149,8 +149,8 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 				auto res = cache.wm.at(read->ml).at(i)[l];
 				assert(isWriteM(res) && sameMl(res, read) &&
 					    res->threadID() == i && res->auxID() != -1);
-				res->dump();
-				std::cout<<i<<" "<<std::endl;
+				//res->dump();
+				//std::cout<<i<<" "<<std::endl;
 				if(po.hasEdge(write_memory,res)){
 					if(po.hasEdge(res,read)) return {true,false}; // Already reverse edge
 					if(!po.hasEdge(read,res)){
@@ -198,7 +198,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 			}
 		}
 	}
-	std::cout<<"Rule3 "<<change<<"\n";
+	//std::cout<<"Rule3 "<<change<<"\n";
 	// po.dump();
 	return {false, change}; // done, no change
 }
@@ -251,8 +251,8 @@ bool ZClosure::close(const ZEvent *newread){
       if (res.second) change = true;
     }
   }
-  po.dump();
-  an.dump();
+  //po.dump();
+  //an.dump();
   assert(!change);
   return true;
 }
@@ -296,11 +296,10 @@ void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv){
 
 void ZClosure::preClose(const ZEvent *ev, const ZObs& obs){
   if (obs.thr == INT_MAX) {
-  	std::cout<<" fuckit\n";
   	// Handle initial-event observation separately
   	// No need to do for rule 1
   }else{
   	preClose(ev, po.basis.getEvent(obs));
   }
- // po.dump();
+  // po.dump();
 }

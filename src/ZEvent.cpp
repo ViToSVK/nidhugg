@@ -42,8 +42,7 @@ ZEvent::ZEvent
     size(1),
     md(nullptr),
     may_conflict(false),
-    instruction_order(instruction_order),
-    aux_invisible()
+    instruction_order(instruction_order)
 {
   assert(iid.get_pid() >= 0);
 }
@@ -84,8 +83,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
     size(oth.size), /*guide interpreter*/
     md(nullptr),
     may_conflict(oth.may_conflict),
-    instruction_order(oth.instruction_order), /*guide interpreter*/
-    aux_invisible(oth.aux_invisible) /*guide interpreter*/
+    instruction_order(oth.instruction_order) /*guide interpreter*/
 {
   assert(iid.get_pid() >= 0);
   if (!blank) {
