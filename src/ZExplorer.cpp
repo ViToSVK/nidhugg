@@ -581,18 +581,14 @@ bool ZExplorer::respectsAnnotation
     // ev->threadID() not set, have to get it
     unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
     ev->_thread_id = thrid;
-    if (isWriteB(ev) && thrid != 1337) {
-      if (thrid != 1337)
-        bw_pos.emplace(ZObs(thrid, ev->eventID()), ev->traceID());
-    }
+    if (isWriteB(ev) && thrid != 1337)
+      bw_pos.emplace(ZObs(thrid, ev->eventID()), ev->traceID());
   }
-  for (const ZEvent& evref: trace) {
+  for (const ZEvent& evref : trace) {
     const ZEvent *ev = &evref;
     if (isRead(ev)) {
-      // ev->threadID() not set, have to get it
-      unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
-      if (annotation.defines(thrid, ev->eventID())) {
-        const ZObs& obs = annotation.getObs(thrid, ev->eventID());
+      if (annotation.defines(ev->threadID(), ev->eventID())) {
+        const ZObs& obs = annotation.getObs(ev->threadID(), ev->eventID());
         const ZEvent *obsB = parentTrace.graph.getBasis().initial();
         if (obs.thr != INT_MAX) {
           assert(bw_pos.count(obs));
@@ -607,8 +603,11 @@ bool ZExplorer::respectsAnnotation
           ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
         if (realObservation != obsB && realObservation != obsM) {
           parentTrace.dump();
+          llvm::errs() << "Closed annotated partial order\n";
           mutatedPO.dump();
+          llvm::errs() << "Extension\n";
           dumpTrace(trace);
+          llvm::errs() << "Full annotation that should be respected\n";
           annotation.dump();
           llvm::errs() << "This read         :::  ";
           ev->dump();
@@ -624,7 +623,7 @@ bool ZExplorer::respectsAnnotation
     }
   }
   // Unset thread-id, let Graph take care of it
-  for (const ZEvent& evref: trace)
+  for (const ZEvent& evref : trace)
     evref._thread_id = 1337;
   return true;
 }
@@ -636,8 +635,99 @@ bool ZExplorer::linearizationRespectsAnn
  const ZPartialOrder& mutatedPO,
  const ZTrace& parentTrace) const
 {
-  return true;
+  // Trace index of the last write happening in the given location
+  std::unordered_map<SymAddrSize, int> lastWrite;
+  // ThreadID -> ML -> Writes in store queue of thr for ml
+  std::unordered_map
+    <int, std::unordered_map
+     <SymAddrSize, std::list<int>>> storeQueue;
+  // Real observation in trace
+  std::unordered_map<int, int> realObs;
+  // BufferWrite -> pos
+  std::unordered_map<ZObs, unsigned> bw_pos;
+  // BufferWrite -> MemoryWrite
+  std::unordered_map<int, int> buf_mem;
 
+  assert(!trace.empty());
+  for (unsigned i=0; i<trace.size(); ++i) {
+    const ZEvent *ev = &(trace.at(i));
+    ev->_thread_id = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+    assert(ev->threadID() < 1337);
+
+    if (isWriteB(ev)) {
+      bw_pos.emplace(ZObs(ev->threadID(), ev->eventID()), i);
+      if (!storeQueue.count(ev->threadID()))
+        storeQueue.emplace
+          (ev->threadID(), std::unordered_map<SymAddrSize, std::list<int>>());
+      if (!storeQueue.at(ev->threadID()).count(ev->ml))
+        storeQueue.at(ev->threadID()).emplace
+          (ev->ml, std::list<int>());
+      storeQueue.at(ev->threadID()).at(ev->ml).push_back(i);
+    }
+
+    if (isWriteM(ev)) {
+      lastWrite[ev->ml] = i;
+      assert(!storeQueue.at(ev->threadID()).at(ev->ml).empty());
+      buf_mem.emplace(storeQueue.at(ev->threadID()).at(ev->ml).front(), i);
+      storeQueue.at(ev->threadID()).at(ev->ml).pop_front();
+    }
+
+    if (isRead(ev)) {
+      if (storeQueue.count(ev->threadID()) &&
+          storeQueue.at(ev->threadID()).count(ev->ml) &&
+          !storeQueue.at(ev->threadID()).at(ev->ml).empty())
+        realObs.emplace(i, storeQueue.at(ev->threadID()).at(ev->ml).back());
+      else if (lastWrite.count(ev->ml))
+        realObs.emplace(i, lastWrite.at(ev->ml));
+      else
+        realObs.emplace(i, -1);
+    }
+  }
+
+  for (unsigned i=0; i<trace.size(); ++i) {
+    const ZEvent *ev = &(trace.at(i));
+    if (isRead(ev)) {
+      assert(annotation.defines(ev->threadID(), ev->eventID()));
+      const ZObs& obs = annotation.getObs(ev->threadID(), ev->eventID());
+      const ZEvent *obsB = parentTrace.graph.getBasis().initial();
+      if (obs.thr != INT_MAX) {
+        assert(bw_pos.count(obs));
+        obsB = &(trace.at(bw_pos.at(obs)));
+        assert(isWriteB(obsB));
+      }
+      const ZEvent *obsM = (isInitial(obsB))
+        ? parentTrace.graph.getBasis().initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
+      assert(obsB->value == obsM->value);
+      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
+      const ZEvent *realObservation = (realObs.at(i) == -1)
+        ? parentTrace.graph.getBasis().initial() : &(trace.at(realObs.at(i)));
+      if (realObservation != obsB && realObservation != obsM) {
+        parentTrace.dump();
+        llvm::errs() << "Closed annotated partial order\n";
+        mutatedPO.dump();
+        llvm::errs() << "Linearization\n";
+        dumpTrace(trace);
+        llvm::errs() << "Full annotation that should be respected\n";
+        annotation.dump();
+        llvm::errs() << "This read         :::  ";
+        ev->dump();
+        llvm::errs() << "Should observeB   :::  ";
+        obsB->dump();
+        llvm::errs() << "Should observeM   :::  ";
+        obsM->dump();
+        llvm::errs() << "Actually observed :::  ";
+        realObservation->dump();
+        return false;
+      }
+    }
+  }
+
+  // Unset thread-id, let Graph take care of it
+  for (const ZEvent& evref : trace)
+    evref._thread_id = 1337;
+
+  return true;
 }
 
 

@@ -70,7 +70,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
     childs_cpid(oth.childs_cpid),
     fence(oth.fence),
     ml(oth.ml),
-    value(oth.value),
+    value(-47),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id(oth._aux_id),
     _event_id(oth._event_id),
@@ -91,6 +91,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
     // as we are reusing the whole trace
     observed_trace_id = oth.observed_trace_id;
     write_other_trace_id = oth.write_other_trace_id;
+    value = oth.value;
   }
 }
 
