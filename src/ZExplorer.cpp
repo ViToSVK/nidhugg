@@ -460,11 +460,11 @@ bool ZExplorer::extendAndRecur
   clock_t init = std::clock();
   auto linear = parentTrace.graph.linearize(mutatedPO, mutatedAnnotation);
   time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+  assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
+
   auto mutatedTrace = extendTrace(std::move(linear));
-
   // if (info) dumpTrace(mutatedTrace.trace);
-
-  assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, parentTrace));
+  assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
 
   executed_traces++;
   if (mutatedTrace.hasError) {
@@ -572,6 +572,7 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 bool ZExplorer::respectsAnnotation
 (const std::vector<ZEvent>& trace,
  const ZAnnotation& annotation,
+ const ZPartialOrder& mutatedPO,
  const ZTrace& parentTrace) const
 {
   std::unordered_map<ZObs, unsigned> bw_pos;
@@ -606,6 +607,7 @@ bool ZExplorer::respectsAnnotation
           ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
         if (realObservation != obsB && realObservation != obsM) {
           parentTrace.dump();
+          mutatedPO.dump();
           dumpTrace(trace);
           annotation.dump();
           llvm::errs() << "This read         :::  ";
@@ -626,6 +628,18 @@ bool ZExplorer::respectsAnnotation
     evref._thread_id = 1337;
   return true;
 }
+
+
+bool ZExplorer::linearizationRespectsAnn
+(const std::vector<ZEvent>& trace,
+ const ZAnnotation& annotation,
+ const ZPartialOrder& mutatedPO,
+ const ZTrace& parentTrace) const
+{
+  return true;
+
+}
+
 
 /*
 

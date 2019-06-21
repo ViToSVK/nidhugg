@@ -93,7 +93,13 @@ class ZExplorer {
 
   bool respectsAnnotation(const std::vector<ZEvent>& trace,
                           const ZAnnotation& annotation,
+                          const ZPartialOrder& mutatedPO,
                           const ZTrace& parentTrace) const;
+
+  bool linearizationRespectsAnn(const std::vector<ZEvent>& trace,
+                                const ZAnnotation& annotation,
+                                const ZPartialOrder& mutatedPO,
+                                const ZTrace& parentTrace) const;
 
 
   /* *************************** */
