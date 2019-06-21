@@ -45,7 +45,7 @@ static void SetValue(llvm::Value *V, llvm::GenericValue Val, llvm::ExecutionCont
 
 
 ZInterpreterTSO::ZInterpreterTSO(llvm::Module *M, ZBuilderTSO &TB,
-                             const Configuration &conf)
+                                 const Configuration &conf)
   : TSOInterpreter(M,TB,conf), TB(TB) {}
 
 
@@ -53,8 +53,8 @@ ZInterpreterTSO::~ZInterpreterTSO() {}
 
 
 llvm::ExecutionEngine *ZInterpreterTSO::create(llvm::Module *M, ZBuilderTSO &TB,
-                                              const Configuration &conf,
-                                              std::string *ErrorStr) {
+                                               const Configuration &conf,
+                                               std::string *ErrorStr) {
 #ifdef LLVM_MODULE_MATERIALIZE_ALL_PERMANENTLY_ERRORCODE_BOOL
   if(std::error_code EC = M->materializeAllPermanently()){
     // We got an error, just return 0
@@ -105,7 +105,7 @@ void ZInterpreterTSO::runAux(int proc, int aux) {
   if(!CheckedMemCpy((uint8_t*)ref,(uint8_t*)blk.get_block(),blk.get_ref().size)) {
     llvm::errs() << "Interpreter: CheckedMemCpy failed during store-update\n";
     abort(); /**/
-  };
+  }
 
   for(unsigned i = 0; i < tso_threads[proc].store_buffer.size()-1; ++i){
     tso_threads[proc].store_buffer[i] = tso_threads[proc].store_buffer[i+1];
@@ -247,7 +247,9 @@ void ZInterpreterTSO::visitLoadInst(llvm::LoadInst &I){
 void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
   llvm::ExecutionContext &SF = ECStack()->back();
   llvm::GenericValue Val = getOperandValue(I.getOperand(0), SF);
-  llvm::GenericValue *Ptr = (llvm::GenericValue *)GVTOP(getOperandValue(I.getPointerOperand(), SF));
+  llvm::GenericValue *Ptr = (llvm::GenericValue *)GVTOP
+    (getOperandValue(I.getPointerOperand(), SF));
+
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
 
   const SymAddrSize& ml = sd.get_ref();

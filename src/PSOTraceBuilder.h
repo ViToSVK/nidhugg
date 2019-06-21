@@ -140,6 +140,9 @@ protected:
      * thread.
      */
     VClock<IPid> clock;
+    /* Number of events executed in this process.
+    */
+    unsigned executed_events = 0;
     /* The IPid of the parent thread of this thread. "Parent" is here
      * interpreted in the same way as in the context of CPids.
      */

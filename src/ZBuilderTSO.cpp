@@ -117,7 +117,6 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     prefix[prefix_idx].aux_invisible = replay_trace[prefix_idx].aux_invisible;
     // Mark that thread executes a new event
     ++threads[p].executed_events;
-    ++threads[p].executed_instructions;
     assert(prefix.back().traceID() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
@@ -126,17 +125,6 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     ++prefix[prefix_idx].size;
     assert(replay_trace[prefix_idx].size >=
            prefix[prefix_idx].size && "Inconsistent scheduling");
-    unsigned p = replay_trace[prefix_idx].iid.get_pid();
-    // Handle when next instruction is an invisible one
-    // coming from an auxiliary thread
-    if (p % 2 == 0 &&
-        prefix[prefix_idx].aux_invisible.count
-        (prefix[prefix_idx].size)) {
-      p++;
-      assert(p == prefix[prefix_idx].aux_invisible
-             [prefix[prefix_idx].size]);
-    }
-    ++threads[p].executed_instructions;
   }
 
   assert((unsigned) prefix_idx < replay_trace.size());
@@ -150,6 +138,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     assert(p == prefix[prefix_idx].aux_invisible
            [prefix[prefix_idx].size]);
   }
+  ++threads[p].executed_instructions;
   assert(threads[p].available);
 
   // Here used to be:
@@ -318,6 +307,14 @@ void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
   auto& curn = curnode();
   curn.may_conflict = true;
   if (ml) curn.ml = *ml;
+
+  /*
+  if (sch_replay) {
+    llvm::errs() << "\nmayConflict: prefix_idx = " << prefix_idx << "\n";
+    replay_trace[prefix_idx].dump();
+    prefix[prefix_idx].dump();
+  }
+  */
 
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
