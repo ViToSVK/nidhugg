@@ -217,7 +217,9 @@ class ZBuilderTSO : public TSOTraceBuilder {
     abort();
   }
   virtual void full_memory_conflict() {
-    llvm::errs() << "Builder: No support for full memory conflict\n";
+    llvm::errs() << "Builder: No support for full memory conflict: "
+      << "(i) Do not assign to multiple variables in one command, "
+      << "(ii) Do not use printf\n";
     abort();
   }
 

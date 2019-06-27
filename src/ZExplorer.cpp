@@ -75,13 +75,13 @@ void ZExplorer::print_stats() const
   std::cout << "Leaf-chronological-POs:            " << leaf_chrono_pos << "\n";
   std::cout << "Closure failed:                    " << closure_failed << "\n";
   std::cout << "Closure succeeded:                 " << closure_succeeded << "\n";
-  std::cout << std::setprecision(2);
+  std::cout << std::setprecision(2) << std::fixed;
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on chronological:       " << time_chrono << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
-  std::cout << "\n";
+  std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
   // To disable assertions (i.e. build as Release),
@@ -458,7 +458,7 @@ bool ZExplorer::extendAndRecur
     : extendTrace(parentTrace.graph.linearize(mutatedPO, mutatedAnnotation));
   */
   clock_t init = std::clock();
-  auto linear = parentTrace.graph.linearize(mutatedPO, mutatedAnnotation);
+  auto linear = parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation);
   time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
   assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
 

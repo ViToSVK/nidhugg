@@ -362,7 +362,7 @@ void ZBuilderTSO::join(int tgt_proc)
     // Some invisible instructions happened before the
     // join instruction, we split this into two events
     unsigned p = curnode().iid.get_pid();
-    --prefix[prefix_idx].size; // Substract the join instruction
+    --prefix[prefix_idx].size; // Subtract the join instruction
     // Create a new event with only the join instruction
     ++prefix_idx;
     // Mark that thread p owns the new event

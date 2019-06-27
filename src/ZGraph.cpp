@@ -881,17 +881,20 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
 
 
 
-std::vector<ZEvent> ZGraph::linearize
+std::vector<ZEvent> ZGraph::linearizeTSO
 (const ZPartialOrder& partial, const ZAnnotation& annotation) const
 {
+  assert(basis.auxes(basis.root()).size() <= 2 && "TSO");
+
   std::vector<ZEvent> result;
-  result.reserve(basis.events_size());
+  unsigned resultsize = 0;
 
   std::unordered_map<std::pair<unsigned, int>, unsigned>
     current, until;
 
   for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
     for (int aux : basis.auxes(thr)) {
+      assert(aux <= 0);
       current.emplace(std::pair<unsigned, int>(thr, aux), 0);
       assert(!basis(thr, aux).empty());
       auto lastEv = basis(thr, aux)[basis(thr, aux).size() - 1];
@@ -903,92 +906,145 @@ std::vector<ZEvent> ZGraph::linearize
         // location is already held
         until.emplace(std::pair<unsigned, int>(thr, aux),
                       basis(thr, aux).size() - 1);
-      } else
+        resultsize += basis(thr, aux).size() - 1;
+      } else {
         until.emplace(std::pair<unsigned, int>(thr, aux),
                       basis(thr, aux).size());
+        resultsize += basis(thr, aux).size();
+      }
     }
+  result.reserve(resultsize);
+
+  assert(basis.hasThreadAux(basis.root(), -1));
+  bool rootBufferExists =
+    basis.hasThreadAux(basis.root(), 0);
 
   bool done = false;
   while (!done) {
-    // Root thread makes one step,
-    // and before that step, all steps
-    // of other thraux that have
-    // to HB because of 'partial' are made
+    std::list<const ZEvent *> leaves, laux;
 
-    // First pick proper root event to make a step
-    const ZEvent *rootEv = nullptr;
-    auto auxes = basis.auxes(basis.root());
-    for (auto auxit = auxes.rbegin(); auxit != auxes.rend(); ++auxit) {
-      std::pair<unsigned, int> thau(basis.root(), *auxit);
-      if (current[thau] < until[thau]) {
-        auto rAux = basis(thau)[current[thau]];
-        if (!rootEv || partial.hasEdge(rAux, rootEv))
-          rootEv = rAux;
-      }
-    }
-
-    // Collect requirements before root event can proceed
-    std::unordered_map<std::pair<unsigned, int>, unsigned>
-      requirements;
-    if (!rootEv) {
-      // Root thread is finished, let all other threads finish
-      for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
+    for (unsigned thr=0; thr<basis.number_of_threads(); ++thr) {
+      if (!basis.isRoot(thr)) {
         for (int aux : basis.auxes(thr)) {
           std::pair<unsigned, int> thau(thr, aux);
-          if (!basis.isRoot(thr) && current[thau] < until[thau])
-            requirements.emplace(thau, until[thau]);
-        }
-    } else {
-      // Root thread has not finished yet
-      // Collect info what needs to HB the next Root step
-      for (unsigned thr=0; thr<basis.number_of_threads(); ++thr) {
-        if (!basis.isRoot(thr)) {
-          for (int aux : basis.auxes(thr)) {
-            std::pair<unsigned, int> thau(thr, aux);
-            int id = partial.pred(rootEv, thr, aux).second;
-            assert(id + 1 <= (int) until[thau]);
-            if (id + 1 > (int) current[thau])
-              requirements.emplace(thau, id + 1);
+          if (current[thau] < until[thau]) {
+            auto ev = basis(thau)[current[thau]];
+            if (aux == -1)
+              leaves.push_back(ev);
+            else {
+              assert(aux == 0);
+              laux.push_front(ev);
+            }
           }
         }
       }
     }
+    for (const auto& la : laux)
+      leaves.push_front(la);
 
-    std::set<const ZEvent *, ZEventPtrComp> reqEv;
-    for (auto& rq : requirements) {
-      assert(current[rq.first] < rq.second);
-      assert(rq.second <= until[rq.first]);
-      reqEv.insert(basis(rq.first)[current[rq.first]]);
-    }
-    while (!reqEv.empty()) {
-      // Find (an arbitrary) head of reqEv
-      const ZEvent *headEv = nullptr;
-      for (const auto& rqEv : reqEv) {
-        if (!headEv || partial.hasEdge(rqEv, headEv))
-          headEv = rqEv;
+    // Some leaf thread makes one step,
+    // and before that step, all steps
+    // of other thraux that have
+    // to HB because of 'partial' are made
+
+    const ZEvent *noreq = nullptr;
+    const ZEvent *minreq = nullptr;
+    int req = INT_MAX;
+
+    for (const auto& lev : leaves) {
+      // Is lev minimal from leaves?
+      bool minimal = true;
+      for (const auto& loth : leaves) {
+        if (lev != loth && partial.hasEdge(loth, lev)) {
+          minimal = false;
+          break;
+        }
       }
-      // Perform the head, replace in reqNodes with its
-      // thread successor (if that one is also required)
-      result.push_back(headEv->copy(result.size(), true));
-      std::pair<unsigned, int> thau
-        (headEv->threadID(), headEv->auxID());
-      ++current[thau];
-      assert(current[thau] <= until[thau]);
-      assert(reqEv.count(headEv));
-      reqEv.erase(headEv);
-      if (current[thau] < requirements[thau])
-        reqEv.insert(basis(thau)[current[thau]]);
+
+      if (!minimal)
+        continue;
+
+      assert(minimal);
+      // Collect info what root buffer needs to HB this event
+      if (!rootBufferExists) {
+        // No root buffer events, we have a no-requirement event
+        noreq = lev;
+        break;
+      } else {
+        std::pair<unsigned, int> rootthau(basis.root(), 0);
+        int id = partial.pred(lev, basis.root(), 0).second;
+        assert(id + 1 <= (int) until[rootthau]);
+        if (id < (int) current[rootthau]) {
+          // We have a no-requirement event
+          noreq = lev;
+          break;
+        } else if (id < req) {
+          // We have a new minimal-requirement event
+          minreq = lev;
+          req = id;
+        }
+      }
     }
 
-    if (rootEv) {
-      // Perform root event
-      result.push_back(rootEv->copy(result.size(), true));
-      std::pair<unsigned, int> thau
-        (rootEv->threadID(), rootEv->auxID());
-      ++current[thau];
-      assert(current[thau] <= until[thau]);
-    } else
-      done = true;
+    if (noreq || !rootBufferExists) {
+      // There are be only rootMain requirements
+      std::pair<unsigned, int> rootthau(basis.root(), -1);
+      int id = !noreq ? until[rootthau] - 1
+        : partial.pred(noreq, basis.root(), -1).second;
+      assert(id + 1 <= (int) until[rootthau]);
+      while (id >= (int) current[rootthau]) {
+        const ZEvent *rMain = basis(rootthau)[current[rootthau]];
+        result.push_back(rMain->copy(result.size(), true));
+        ++current[rootthau];
+      }
+      if (noreq) {
+        result.push_back(noreq->copy(result.size(), true));
+        std::pair<unsigned, int> leafthau(noreq->threadID(), noreq->auxID());
+        assert(basis.hasThreadAux(leafthau) && current.count(leafthau));
+        ++current[leafthau];
+      } else {
+        // Leaves are finished and there is no rootBuffer
+        assert(!noreq && !minreq && !rootBufferExists && leaves.empty());
+        assert(result.size() == resultsize);
+        done = true;
+      }
+    } else {
+      // There are rootMain and rootBuffer requirements
+      assert(!noreq && rootBufferExists && (minreq || leaves.empty()));
+      std::pair<unsigned, int> rMainThau(basis.root(), -1);
+      std::pair<unsigned, int> rBufferThau(basis.root(), 0);
+      int rMainId = !minreq ? until[rMainThau] - 1
+        : partial.pred(minreq, basis.root(), -1).second;
+      assert(rMainId + 1 <= (int) until[rMainThau]);
+      int rBuffferId = !minreq ? until[rBufferThau] - 1
+        : partial.pred(minreq, basis.root(), 0).second;
+      assert(rBuffferId + 1 <= (int) until[rBufferThau]);
+      while (rMainId >= (int) current[rMainThau] ||
+             rBuffferId >= (int) current[rBufferThau]) {
+        const ZEvent * rMain = rMainId >= (int) current[rMainThau]
+          ? basis(rMainThau)[current[rMainThau]] : nullptr;
+        const ZEvent * rBuffer = rBuffferId >= (int) current[rBufferThau]
+          ? basis(rBufferThau)[current[rBufferThau]] : nullptr;
+        assert(rMain || rBuffer);
+        if (rBuffer && (!rMain || !partial.hasEdge(rMain, rBuffer))) {
+          result.push_back(rBuffer->copy(result.size(), true));
+          ++current[rBufferThau];
+        } else {
+          result.push_back(rMain->copy(result.size(), true));
+          ++current[rMainThau];
+        }
+      }
+      if (minreq) {
+        result.push_back(minreq->copy(result.size(), true));
+        std::pair<unsigned, int> leafthau(minreq->threadID(), minreq->auxID());
+        assert(basis.hasThreadAux(leafthau) && current.count(leafthau));
+        ++current[leafthau];
+      } else {
+        // Finished
+        assert(result.size() == resultsize);
+        done = true;
+      }
+    }
   }
 
   //dumpTrace(result);
