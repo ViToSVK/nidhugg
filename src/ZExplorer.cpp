@@ -196,15 +196,15 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 
     bool mutationFollowsCurrentTrace = false;
     if (observation.thr == INT_MAX) {
-      mutationFollowsCurrentTrace = //VC (read->value == 0);
-        (read->observed_trace_id == -1);
+      mutationFollowsCurrentTrace = (read->value == 0);
+      // DC (read->observed_trace_id == -1);
     } else {
       const ZEvent *obsB = annTrace.getEvent(observation);
       assert(isWriteB(obsB) && isWriteM(obsB->write_other_ptr) &&
              sameMl(read, obsB) && sameMl(read, obsB->write_other_ptr));
-      mutationFollowsCurrentTrace = //VC (read->value == obsB->value);
-        (read->observed_trace_id == obsB->traceID() ||
-         read->observed_trace_id == obsB->write_other_ptr->traceID());
+      mutationFollowsCurrentTrace = (read->value == obsB->value);
+      // DC (read->observed_trace_id == obsB->traceID() ||
+      // DC  read->observed_trace_id == obsB->write_other_ptr->traceID());
     }
 
     bool error = chronological
@@ -452,19 +452,19 @@ bool ZExplorer::extendAndRecur
 (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
  ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
 {
-  /*
-  auto mutatedTrace = mutationFollowsCurrentTrace
-    ? reuseTrace(parentTrace, mutatedAnnotation)
-    : extendTrace(parentTrace.graph.linearize(mutatedPO, mutatedAnnotation));
-  */
-  clock_t init = std::clock();
-  auto linear = parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation);
-  time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
-  assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
+  TraceExtension mutatedTrace;
+  if (mutationFollowsCurrentTrace)
+    mutatedTrace = reuseTrace(parentTrace, mutatedAnnotation);
+  else {
+    clock_t init = std::clock();
+    auto linear = parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation);
+    time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+    assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
 
-  auto mutatedTrace = extendTrace(std::move(linear));
-  // if (info) dumpTrace(mutatedTrace.trace);
-  assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
+    mutatedTrace = extendTrace(std::move(linear));
+    // if (info) dumpTrace(mutatedTrace.trace);
+    assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
+  }
 
   executed_traces++;
   if (mutatedTrace.hasError) {
@@ -489,7 +489,7 @@ bool ZExplorer::extendAndRecur
     return false;
   }
 
-  init = std::clock();
+  clock_t init = std::clock();
   assert(!mutatedTrace.empty() && !mutatedPO.empty());
   ZTrace mutatedZTrace
     (parentTrace,
@@ -575,6 +575,7 @@ bool ZExplorer::respectsAnnotation
  const ZPartialOrder& mutatedPO,
  const ZTrace& parentTrace) const
 {
+  assert(!trace.empty());
   std::unordered_map<ZObs, unsigned> bw_pos;
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
@@ -635,6 +636,7 @@ bool ZExplorer::linearizationRespectsAnn
  const ZPartialOrder& mutatedPO,
  const ZTrace& parentTrace) const
 {
+  assert(!trace.empty());
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
   // ThreadID -> ML -> Writes in store queue of thr for ml

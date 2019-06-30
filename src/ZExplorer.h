@@ -40,6 +40,7 @@ class ZExplorer {
 
   class TraceExtension {
    public:
+    TraceExtension() = default;
     TraceExtension(std::vector<ZEvent>&& extension,
                  bool someToAnn, bool assumeBlocked);
 
