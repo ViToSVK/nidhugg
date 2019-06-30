@@ -75,12 +75,16 @@ void ZExplorer::print_stats() const
   std::cout << "Leaf-chronological-POs:            " << leaf_chrono_pos << "\n";
   std::cout << "Closure failed:                    " << closure_failed << "\n";
   std::cout << "Closure succeeded:                 " << closure_succeeded << "\n";
+  std::cout << "Closure succ -- no added edge:     " << closure_no_edge << "\n";
+  std::cout << "Closure succ -- total added edges: " << closure_edges << "\n";
+  std::cout << "Closure succ -- total iterations:  " << closure_iter << "\n";
   std::cout << std::setprecision(2) << std::fixed;
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on chronological:       " << time_chrono << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
+  std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
@@ -427,7 +431,8 @@ bool ZExplorer::closePO
   ZClosure closure(mutatedAnnotation, mutatedPO);
   bool closed = closure.close
     (isLock(readLock) ? nullptr : readLock);
-  time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
+  double time = (double)(clock() - init)/CLOCKS_PER_SEC;
+  time_closure += time;
 
   if (!closed) {
     //if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
@@ -437,6 +442,12 @@ bool ZExplorer::closePO
 
   //if (info) llvm::errs() << "Closure succeeded\n\n";
   ++closure_succeeded;
+  if (closure.added_edges == 0) {
+    closure_no_edge++;
+    time_closure_no_edge += time;
+  }
+  closure_edges += closure.added_edges;
+  closure_iter += closure.iterations;
 
   return extendAndRecur
     (annTrace, std::move(mutatedAnnotation),

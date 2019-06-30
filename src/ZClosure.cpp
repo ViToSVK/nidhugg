@@ -81,6 +81,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
         			if(!po.hasEdge(memory_pred,write_memory)){
 						po.addEdge(memory_pred,write_memory);
 						change = true;
+						added_edges++;
 					}
 				}
 			}
@@ -156,6 +157,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 					if(!po.hasEdge(read,res)){
 						po.addEdge(read,res);
 						change = true;
+						added_edges++;
 					}
 				}
 			}else{	// initial obs
@@ -166,6 +168,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs){
 				if(!po.hasEdge(read,res)){
 					po.addEdge(read,res);
 					change = true;
+					added_edges++;
 				}
 			}
 		}
@@ -236,6 +239,7 @@ bool ZClosure::close(const ZEvent *newread){
 
   bool change = true;
   while (change) {
+    iterations++;
     change = false;
     for (const auto& read_obs : an) {
       auto read = ba.getEvent(read_obs.first.thr, -1, read_obs.first.ev);

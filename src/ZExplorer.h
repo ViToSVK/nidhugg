@@ -140,6 +140,12 @@ class ZExplorer {
   unsigned closure_failed = 0;
   // Closure of mutated PO (already chrono-ordered) succeeded
   unsigned closure_succeeded = 0;
+  // Succeeded closure without any added edge
+  unsigned closure_no_edge = 0;
+  // Added edges during succeeded closures
+  unsigned closure_edges = 0;
+  // Outer-loop iterations of succeeded closures
+  unsigned closure_iter = 0;
   // Total time spent on copying
   double time_copy = 0;
   // Total time spent on linearization
@@ -150,6 +156,8 @@ class ZExplorer {
   double time_chrono = 0;
   // Total time spent on closure
   double time_closure = 0;
+  // Total time spent on closure succ no edge
+  double time_closure_no_edge = 0;
 
 };
 

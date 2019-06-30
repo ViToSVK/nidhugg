@@ -71,6 +71,10 @@ class ZClosure {
   const ZBasis& ba;
 
   ZPartialOrder& po;
+
+  unsigned added_edges = 0;
+
+  unsigned iterations = 0;
 };
 
 #endif // __Z_CLOSURE_H__
