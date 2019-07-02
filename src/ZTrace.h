@@ -83,7 +83,7 @@ class ZTrace {
   ZTrace();
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-         int star_root_index, bool assumeblocked);
+         int star_root_index, bool assumeblocked, bool tso);
 
   ZTrace(const ZTrace& parentTrace,
          std::vector<ZEvent>&& new_trace,

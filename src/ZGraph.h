@@ -29,6 +29,8 @@
 
 class ZGraph {
  public:
+  const bool tso;
+
   class Cache {
   public:
     // ML -> thr -> thread-ordered memory-writes
@@ -78,7 +80,7 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::vector<ZEvent>& trace, int star_root_index);
+  ZGraph(const std::vector<ZEvent>& trace, int star_root_index, bool tso);
   // Moving
   ZGraph(ZGraph&& oth);
 

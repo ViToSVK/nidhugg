@@ -42,6 +42,7 @@ public:
     PSO,
     TSO,
     DCTSO, // data centric TSO
+    DCPSO, // data centric PSO
   };
   enum DPORAlgorithm{
     SOURCE,

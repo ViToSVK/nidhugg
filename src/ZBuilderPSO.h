@@ -18,26 +18,27 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __Z_BUILDER_TSO_H__
-#define __Z_BUILDER_TSO_H__
+#ifndef __Z_BUILDER_PSO_H__
+#define __Z_BUILDER_PSO_H__
 
 #include <iostream>
 #include <config.h>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <list>
 #include <llvm/IR/Instructions.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
 
 #include "Debug.h"
 #include "DPORDriver.h"
-#include "TSOTraceBuilder.h"
+#include "PSOTraceBuilder.h"
 #include "Trace.h"
 #include "ZEvent.h"
 
 
-class ZBuilderTSO : public TSOTraceBuilder {
+class ZBuilderPSO : public PSOTraceBuilder {
   friend class ZExplorer;
 
   /* *************************** */
@@ -84,8 +85,12 @@ class ZBuilderTSO : public TSOTraceBuilder {
   void add_failed_lock_attempts();
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
-  // Ipid -> Trace indices of writes in store queue of thread Ipid
-  std::unordered_map<int, std::vector<int>> visibleStoreQueue;
+  // Ipid -> Ml -> Trace indices of writes in store queue of Ipid and Ml
+  std::unordered_map
+  <int, std::unordered_map
+   <SymAddrSize, std::list<int>>> visibleStoreQueue;
+  // Was something spawned (i.e. do we have at least two threads)?
+  bool spawned_something = false;
 
 
   ZEvent& curnode() {
@@ -112,13 +117,13 @@ class ZBuilderTSO : public TSOTraceBuilder {
   /* *************************** */
 
   // Use at the very beginning to get an initial trace
-  ZBuilderTSO(const Configuration &conf, llvm::Module *m,
+  ZBuilderPSO(const Configuration &conf, llvm::Module *m,
               unsigned s_r_i);
 
   // Use when you want to do the following:
   // (step1) replay the trace tr
   // (step2) get a maximal extension
-  ZBuilderTSO(const Configuration &conf, llvm::Module *m,
+  ZBuilderPSO(const Configuration &conf, llvm::Module *m,
               std::vector<ZEvent>&& tr);
 
   /* *************************** */
@@ -193,9 +198,7 @@ class ZBuilderTSO : public TSOTraceBuilder {
     abort();
   }
   virtual void full_memory_conflict() {
-    llvm::errs() << "Builder: No support for full memory conflict: "
-      << "(i) Do not assign to multiple variables in one command, "
-      << "(ii) Do not use printf\n";
+    llvm::errs() << "Builder: No support for full memory conflict\n";
     abort();
   }
 
@@ -215,4 +218,4 @@ class ZBuilderTSO : public TSOTraceBuilder {
 
 };
 
-#endif // __Z_BUILDER_TSO_H__
+#endif // __Z_BUILDER_PSO_H__

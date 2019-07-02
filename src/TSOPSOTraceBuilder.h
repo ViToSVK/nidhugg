@@ -217,6 +217,8 @@ public:
   virtual void executing_instruction(const llvm::Instruction *Instr) {}
 
   bool someThreadAssumeBlocked = false;
+  const Configuration * config;
+  llvm::Module * M;
 };
 
 #endif

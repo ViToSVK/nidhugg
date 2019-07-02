@@ -32,6 +32,8 @@
 #include "TSOTraceBuilder.h"
 #include "ZInterpreterTSO.h"
 #include "ZBuilderTSO.h"
+#include "ZInterpreterPSO.h"
+#include "ZBuilderPSO.h"
 
 #include <fstream>
 #include <stdexcept>
@@ -118,6 +120,9 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(llvm::Module *mod, Tr
     break;
   case Configuration::DCTSO:
     EE = ZInterpreterTSO::create(mod,static_cast<ZBuilderTSO&>(TB),conf,&ErrorMsg);
+    break;
+  case Configuration::DCPSO:
+    EE = ZInterpreterPSO::create(mod,static_cast<ZBuilderPSO&>(TB),conf,&ErrorMsg);
     break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
@@ -217,7 +222,10 @@ DPORDriver::Result DPORDriver::run(){
     TB = new POWERTraceBuilder(conf);
     break;
   case Configuration::DCTSO:
-    TB = new ZBuilderTSO(conf, mod, 1, true, false);
+    TB = new ZBuilderTSO(conf, mod, 1);
+    break;
+  case Configuration::DCPSO:
+    TB = new ZBuilderPSO(conf, mod, 1);
     break;
   case Configuration::MM_UNDEF:
     throw std::logic_error("DPORDriver: No memory model is specified.");
@@ -236,7 +244,8 @@ DPORDriver::Result DPORDriver::run(){
   int computation_count = 0;
   int estimate = 1;
 
-  if (conf.memory_model == Configuration::DCTSO) {
+  if (conf.memory_model == Configuration::DCTSO ||
+      conf.memory_model == Configuration::DCPSO) {
 		run_once(*TB);
 		bool has_error = TB->reset();
 		if (has_error) {

@@ -27,7 +27,7 @@
 
 // Empty
 ZGraph::ZGraph()
-  : basis(*this), po(this->basis), cache()
+  : tso(true), basis(*this), po(this->basis), cache()
 {
   assert(&(basis.graph) == this);
   assert(&(po.basis) == &basis);
@@ -36,8 +36,9 @@ ZGraph::ZGraph()
 
 
 // Initial
-ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index)
-  : basis(*this, star_root_index),
+ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index, bool tso)
+  : tso(tso),
+    basis(*this, star_root_index),
     po(this->basis),
     cache()
 {
@@ -51,7 +52,8 @@ ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index)
 
 // Moving
 ZGraph::ZGraph(ZGraph&& oth)
-  : basis(std::move(oth.basis)),
+  : tso(oth.tso),
+    basis(std::move(oth.basis)),
     po(std::move(oth.po)),
     cache(std::move(oth.cache))
 {
@@ -66,7 +68,8 @@ ZGraph::ZGraph
  ZPartialOrder&& po,
  const std::vector<ZEvent>& trace,
  const ZAnnotation& annotation)
-  : basis(oth.basis, *this),
+  : tso(oth.tso),
+    basis(oth.basis, *this),
     po(std::move(po), this->basis),
     cache()
 {

@@ -26,17 +26,19 @@
 #include <time.h>
 
 #include "ZBuilderTSO.h"
+#include "ZBuilderPSO.h"
 #include "ZTrace.h"
 #include "ZClosure.h"
 
 
 class ZExplorer {
 
-  ZBuilderTSO& originalTB;
+  TSOPSOTraceBuilder * originalTB = nullptr;
 
   ZTrace * initial;
 
   bool info = false;
+  const bool tso;
 
   class TraceExtension {
    public:
@@ -112,6 +114,7 @@ class ZExplorer {
   ~ZExplorer();
 
   ZExplorer(ZBuilderTSO& tb);
+  ZExplorer(ZBuilderPSO& tb);
 
  private:
 

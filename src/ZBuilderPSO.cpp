@@ -20,14 +20,14 @@
 
 #include "Debug.h"
 #include "ZTrace.h"
-#include "ZBuilderTSO.h"
+#include "ZBuilderPSO.h"
 #include "ZExplorer.h"
 
 
 // Use at the very beginning to get an initial trace
-ZBuilderTSO::ZBuilderTSO
+ZBuilderPSO::ZBuilderPSO
 (const Configuration &conf, llvm::Module *m, unsigned s_r_i)
-  : TSOTraceBuilder(conf),
+  : PSOTraceBuilder(conf),
     sch_replay(false), sch_extend(true),
     star_root_index(s_r_i)
 {
@@ -40,9 +40,9 @@ ZBuilderTSO::ZBuilderTSO
 // Use when you want to do the following:
 // (step1) replay the trace tr
 // (step2) get a maximal extension
-ZBuilderTSO::ZBuilderTSO
+ZBuilderPSO::ZBuilderPSO
 (const Configuration &conf, llvm::Module *m, std::vector<ZEvent>&& tr)
-  : TSOTraceBuilder(conf),
+  : PSOTraceBuilder(conf),
     sch_replay(true), sch_extend(false),
     replay_trace(std::move(tr))
 {
@@ -52,7 +52,7 @@ ZBuilderTSO::ZBuilderTSO
 }
 
 
-bool ZBuilderTSO::reset()
+bool ZBuilderPSO::reset()
 {
   if (this->has_error()) {
     this->error_trace = this->get_trace();
@@ -81,7 +81,7 @@ bool ZBuilderTSO::reset()
 /* *************************** */
 
 
-bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
+bool ZBuilderPSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 {
   // Not using these arguments
   *dryrun = false;
@@ -98,7 +98,7 @@ bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 }
 
 
-bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
+bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
 {
   assert(!replay_trace.empty());
   assert(prefix_idx < (int) replay_trace.size());
@@ -130,16 +130,15 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     // scan r_t down and swap p with p' in all found events
     assert(replay_trace[prefix_idx].cpid ==
            threads[p].cpid && "IPID<->CPID correspondence has changed");
-    // Mark that thread p owns the new event
-    threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    assert(replay_trace[prefix_idx].instruction_order ==
-           threads[p].executed_instructions + 1 && "Inconsistent scheduling");
+    assert(replay_trace[prefix_idx].instruction_order == (unsigned)
+           threads[p].clock[p] + 1 && "Inconsistent scheduling");
     assert(replay_trace[prefix_idx].eventID() ==
            threads[p].executed_events && "Inconsistent scheduling");
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+    // ++threads[p].clock[p]; Do it later after this block
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p] + 1),
                         threads[p].cpid,
-                        threads[p].executed_instructions + 1, // +1 so that first will be 1
+                        threads[p].clock[p] + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
     // Mark that thread executes a new event
@@ -157,15 +156,8 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[prefix_idx].iid.get_pid();
   // Mark that thread p executes a new instruction
-  ++threads[p].executed_instructions;
+  ++threads[p].clock[p];
   assert(threads[p].available);
-
-  // Here used to be:
-  // ++threads[p].clock[p];
-  // After refactoring, it should be:
-  // threads[p].event_indices.push_back(prefix_idx);
-  // But I don't know why here, I would suspect to
-  // run this only when we have a new event
 
   bool ret = schedule_thread(proc, aux, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
@@ -174,11 +166,10 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
 }
 
 
-bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
+bool ZBuilderPSO::schedule_arbitrarily(int *proc, int *aux)
 {
   assert(!sch_replay && sch_extend);
 
-  assert(threads.size() % 2 == 0);
   // We prefer scheduling threads that have not yet
   // seen a new unannotated event; this improves
   // chances that new unannotated reads observe in
@@ -186,28 +177,26 @@ bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
   // include in our partial order
   // Further we prefer auxiliary before real threads
 
-  const unsigned sz = threads.size();
-  unsigned p;
-  if (somethingToAnnotate.size() < (threads.size() / 2)) {
-    for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
-      if (!somethingToAnnotate.count(p - 1))
-        if (schedule_thread(proc, aux, p))
-          return true;
-    }
-    for (p = 0; p < sz; p += 2) { // Loop through real threads
-      if (!somethingToAnnotate.count(p))
-        if (schedule_thread(proc, aux, p))
-          return true;
-    }
+  for(int p_aux : available_auxs){ // Loop through auxiliary threads
+    assert(p_aux >= 0);
+    if (!somethingToAnnotate.count(threads[p_aux].proc))
+      if (schedule_thread(proc, aux, (unsigned) p_aux))
+        return true;
   }
-
-  for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
-    if (schedule_thread(proc, aux, p))
+  for(int p_real : available_threads){ // Loop through real threads
+    assert(p_real >= 0);
+    if (!somethingToAnnotate.count(threads[p_real].proc))
+      if (schedule_thread(proc, aux, (unsigned) p_real))
+        return true;
+  }
+  for(int p_aux : available_auxs){ // Loop through auxiliary threads
+    assert(p_aux >= 0);
+    if (schedule_thread(proc, aux, (unsigned) p_aux))
       return true;
   }
-
-  for (p = 0; p < sz; p += 2) { // Loop through real threads
-    if (schedule_thread(proc, aux, p))
+  for(int p_real : available_threads){ // Loop through real threads
+    assert(p_real >= 0);
+    if (schedule_thread(proc, aux, (unsigned) p_real))
       return true;
   }
 
@@ -218,10 +207,11 @@ bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
 
 
 // Schedule the next instruction to be the next instruction from thread p
-bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
+bool ZBuilderPSO::schedule_thread(int *proc, int *aux, unsigned p)
 {
   if (threads[p].available && !threads[p].sleeping &&
-      (conf.max_search_depth < 0 || threads[p].last_event_index() < conf.max_search_depth)) {
+      (conf.max_search_depth < 0 || threads[p].clock[p] < conf.max_search_depth) &&
+      (!threads[p].cpid.is_auxiliary() || is_aux_at_head(p))) {
 
     if (sch_extend) {
       update_prefix(p);
@@ -230,8 +220,9 @@ bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
     }
 
     // set the scheduled thread and aux
-    *proc = p/2;
-    *aux = (p % 2) - 1; // -1 for real, 0 for auxiliary
+    *proc = threads[p].proc;
+    *aux = (threads[p].cpid.is_auxiliary())
+      ? threads[p].cpid.get_aux_index() : -1;
 
     return true;
   }
@@ -241,15 +232,10 @@ bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
 
 
 // Used only when we are not replaying replay_trace
-void ZBuilderTSO::update_prefix(unsigned p)
+void ZBuilderPSO::update_prefix(unsigned p)
 {
-  // Here used to be:
-  // ++threads[p].clock[p];
-  // After refactoring, it should be:
-  // threads[p].event_indices.push_back(prefix_idx);
-  // But I don't know why here, I would suspect to
-  // run this only when we have a new event
-  ++threads[p].executed_instructions;
+  assert(!sch_replay && sch_extend);
+  ++threads[p].clock[p];
 
   if (prefix_idx != -1 && (int) p == curnode().iid.get_pid() &&
       !curnode().may_conflict) {
@@ -262,12 +248,10 @@ void ZBuilderTSO::update_prefix(unsigned p)
   } else {
     // Because one of 1)2)3) doesn't hold, we create a new event
     ++prefix_idx;
-    // Mark that thread p owns the new event
-    threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].executed_instructions, // first will be 1
+                        threads[p].clock[p], // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -282,26 +266,23 @@ void ZBuilderTSO::update_prefix(unsigned p)
 /* ******************************************************* */
 
 
-void ZBuilderTSO::refuse_schedule()
+void ZBuilderPSO::refuse_schedule()
 {
   //llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
   assert(!prefix.back().may_conflict);
 
   unsigned p = curnode().iid.get_pid();
-  assert(p % 2 == 0 && "Only real threads can be refused");
+  assert(!threads[p].cpid.is_auxiliary() && "Only real threads can be refused");
 
   // Here used to be:
   // --threads[p].event_indices[p];
 
-  --threads[p].executed_instructions; //
+  --threads[p].clock[p]; //
 
   if (curnode().size == 1) {
     // Refused instruction wanted to create a new event,
     // therefore this entire event needs to be deleted
-    // Unmark ownership of this new event
-    assert((int) threads[p].event_indices.back() == prefix_idx);
-    threads[p].event_indices.pop_back();
     --threads[p].executed_events; //
     // Delete this new event
     prefix.pop_back();
@@ -315,11 +296,11 @@ void ZBuilderTSO::refuse_schedule()
 
   // Mark this thread as unavailable since its next instruction
   // is the one we tried to schedule now, and it got refused
-  mark_unavailable(p/2, -1);
+  mark_unavailable_ipid(p);
 }
 
 
-void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
+void ZBuilderPSO::mayConflict(const SymAddrSize *ml)
 {
   auto& curn = curnode();
   curn.may_conflict = true;
@@ -344,13 +325,13 @@ void ZBuilderTSO::mayConflict(const SymAddrSize *ml)
 }
 
 
-void ZBuilderTSO::metadata(const llvm::MDNode *md)
+void ZBuilderPSO::metadata(const llvm::MDNode *md)
 {
   if (md) curnode().md = md;
 }
 
 
-IID<CPid> ZBuilderTSO::get_iid() const
+IID<CPid> ZBuilderPSO::get_iid() const
 {
   IPid pid = curnode().iid.get_pid();
   int idx = curnode().iid.get_index();
@@ -358,30 +339,38 @@ IID<CPid> ZBuilderTSO::get_iid() const
 }
 
 
-void ZBuilderTSO::spawn()
+void ZBuilderPSO::spawn()
 {
   //llvm::errs() << " SPAWN";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  IPid parent_ipid = curnode().iid.get_pid();
+  assert(!threads[parent_ipid].cpid.is_auxiliary());
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::SPAWN;
-  // store the CPid of the new thread
-  IPid parent_ipid = curnode().iid.get_pid();
-  CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
-  curnode().childs_cpid = child_cpid;
   mayConflict();
 
-  threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
-  threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
-  threads.back().available = false; // New thread starts with an empty store buffer
+  IPid child_ipid = threads.size();
+  CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
+  curnode().childs_cpid = child_cpid;
+  int proc = 0;
+  for(unsigned i = 0; i < threads.size(); ++i){
+    proc = std::max(proc,threads[i].proc+1);
+  }
+
+  proc_to_ipid.push_back(child_ipid);
+  threads.push_back(Thread(proc,child_cpid,threads[parent_ipid].clock,parent_ipid));
+  mark_available_ipid(child_ipid);
+  spawned_something = true;
 }
 
 
-void ZBuilderTSO::join(int tgt_proc)
+void ZBuilderPSO::join(int tgt_proc)
 {
   //llvm::errs() << " JOIN";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(0 <= tgt_proc && tgt_proc < int(proc_to_ipid.size()));
+  unsigned p = curnode().iid.get_pid();
+  assert(!threads[p].cpid.is_auxiliary());
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   // We make sure that every join is an event with exactly
   // one instruction - only the join instruction itself
@@ -393,12 +382,10 @@ void ZBuilderTSO::join(int tgt_proc)
     --prefix[prefix_idx].size; // Subtract the join instruction
     // Create a new event with only the join instruction
     ++prefix_idx;
-    // Mark that thread p owns the new event
-    threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].executed_instructions, // first will be 1
+                        threads[p].clock[p] + 1, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -408,30 +395,46 @@ void ZBuilderTSO::join(int tgt_proc)
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::JOIN;
-  curnode().childs_cpid = threads[2*tgt_proc].cpid;
+  IPid tgt_ipid = proc_to_ipid[tgt_proc];
+  curnode().childs_cpid = threads[tgt_ipid].cpid;
   mayConflict();
+  //curnode().clock += threads[tgt_ipid].clock;
+  //curnode().clock += threads[tgt_ipid].aux_clock_sum;
+  //threads[ipid].clock += curnode().clock;
 }
 
 
-void ZBuilderTSO::store(const SymData &sd, int val)
+void ZBuilderPSO::store(const SymData &sd, int val)
 {
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
-
-  unsigned p = curnode().iid.get_pid();
-  assert(p % 2 == 0);
-
-  // Put the store to buffer
-  threads[p].store_buffer.push_back(PendingStore(sd.get_ref(),prefix_idx,last_md));
-  threads[p+1].available = true;
+  unsigned ipid = curnode().iid.get_pid();
+  assert(!threads[ipid].cpid.is_auxiliary());
 
   const SymAddrSize& ml = sd.get_ref();
   // Stores to local memory on stack may not conflict
   assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
 
+  // Put the store to buffer
+  for(SymAddr b : ml){
+    threads[ipid].store_buffers[b].push_back(PendingStoreByte(ml,threads[ipid].clock,last_md));
+  }
+  IPid upd_ipid;
+  auto it = threads[ipid].byte_to_aux.find(ml.addr);
+  if(it == threads[ipid].byte_to_aux.end()){
+    /* Create new auxiliary thread */
+    int aux_idx = int(threads[ipid].aux_to_byte.size());
+    upd_ipid = int(threads.size());
+    threads.push_back(Thread(threads[ipid].proc,CPS.new_aux(threads[ipid].cpid),threads[ipid].clock,ipid));
+    threads[ipid].byte_to_aux[ml.addr] = aux_idx;
+    threads[ipid].aux_to_byte.push_back(ml.addr);
+    threads[ipid].aux_to_ipid.push_back(upd_ipid);
+  }else{
+    upd_ipid = threads[ipid].aux_to_ipid[it->second];
+  }
+  mark_available_ipid(upd_ipid);
+
   // Global stores happening with just one thread existing may not conflict
   // but we have to record them as such anyway to keep track of them
-
   //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::WRITEB;
@@ -439,20 +442,22 @@ void ZBuilderTSO::store(const SymData &sd, int val)
   mayConflict(&ml);
 
   // Enqueue the update into visible store queue
-  if (!visibleStoreQueue.count(p))
-    visibleStoreQueue.emplace(p, std::vector<int>());
-  visibleStoreQueue[p].push_back(prefix_idx);
+  if (!visibleStoreQueue.count(ipid))
+    visibleStoreQueue.emplace(ipid, std::unordered_map<SymAddrSize, std::list<int>>());
+  if (!visibleStoreQueue[ipid].count(ml))
+    visibleStoreQueue[ipid].emplace(ml, std::list<int>());
+  visibleStoreQueue[ipid][ml].push_back(prefix_idx);
 }
 
 
-void ZBuilderTSO::atomic_store(const SymData &sd)
+void ZBuilderPSO::atomic_store(const SymData &sd)
 {
   assert(!dryrun);
 
-  unsigned auxp = curnode().iid.get_pid();
-  assert(auxp % 2 == 1 && "Only auxiliary threads can perform memory-writes");
-  unsigned realp = auxp - 1;
-  assert(auxp > realp && auxp == realp + 1);
+  IPid uipid = curnode().iid.get_pid(); // ID of the thread changing the memory
+  assert(threads[uipid].cpid.is_auxiliary() &&
+         "Only auxiliary threads can perform memory-writes");
+  IPid tipid = threads[uipid].parent; // ID of the (real) thread that issued the store
 
   const SymAddrSize& ml = sd.get_ref();
   // We consider all Stack writes as invisible and atomic,
@@ -460,14 +465,39 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
   assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
          "No Stack writes are allowed in the store buffer");
 
+  assert(threads[tipid].store_buffers.count(ml.addr));
+  assert(threads[tipid].store_buffers[ml.addr].size());
+  assert(threads[tipid].store_buffers[ml.addr].front().ml == ml);
+  const PendingStoreByte &pst = threads[tipid].store_buffers[ml.addr].front();
+  //curnode().clock += pst.clock;
+  //threads[uipid].clock += pst.clock;
+  //curnode().origin_iid = IID<IPid>(tipid,pst.clock[tipid]);
+  curnode().md = pst.md;
+
+  /* Register in memory */
+  int last_rowe = threads[tipid].store_buffers[ml.addr].front().last_rowe;
+  for(SymAddr b : ml){
+    ByteInfo &bi = mem[b];
+    bi.last_update = prefix_idx;
+    bi.last_update_ml = ml;
+    if(0 <= last_rowe){
+      bi.last_read[threads[tipid].proc] = last_rowe;
+    }
+  }
+
   // Remove pending store from buffer
-  for(unsigned i=0; i<threads[realp].store_buffer.size()-1; ++i) {
-    threads[realp].store_buffer[i] = threads[realp].store_buffer[i+1];
+  for(SymAddr b : ml){
+    std::vector<PendingStoreByte> &sb = threads[tipid].store_buffers[b];
+    for(unsigned i = 0; i < sb.size() - 1; ++i){
+      sb[i] = sb[i+1];
+    }
+    sb.pop_back();
+    if(sb.empty()){
+      threads[tipid].store_buffers.erase(b);
+      mark_unavailable_ipid(uipid);
+    }
   }
-  threads[realp].store_buffer.pop_back();
-  if(threads[realp].store_buffer.empty()) {
-    threads[auxp].available = false;
-  }
+  //threads[tipid].aux_clock_sum += curnode().clock;
 
   //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -475,8 +505,10 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
   mayConflict(&ml);
 
   // Locate corresponding buffer-write
-  assert(visibleStoreQueue.count(realp) && !visibleStoreQueue[realp].empty());
-  curnode().write_other_trace_id = visibleStoreQueue[realp].front();
+  assert(visibleStoreQueue.count(tipid) &&
+         visibleStoreQueue[tipid].count(ml) &&
+         !visibleStoreQueue[tipid][ml].empty());
+  curnode().write_other_trace_id = visibleStoreQueue[tipid][ml].front();
   assert(curnode().write_other_trace_id >= 0 &&
          curnode().write_other_trace_id <= (int) prefix.size() - 2);
   assert(prefix[curnode().write_other_trace_id].kind == ZEvent::Kind::WRITEB);
@@ -487,28 +519,25 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
   prefix[curnode().write_other_trace_id].write_other_trace_id = prefix_idx;
 
   // Dequeue oldest update from queue
-  for(unsigned i=0; i<visibleStoreQueue[realp].size()-1; ++i){
-    visibleStoreQueue[realp][i] = visibleStoreQueue[realp][i+1];
-  }
-  visibleStoreQueue[realp].pop_back();
+  visibleStoreQueue[tipid][ml].pop_front();
 
   lastWrite[ml] = prefix_idx;
 }
 
 
-void ZBuilderTSO::load(const SymAddrSize &ml, int val)
+void ZBuilderPSO::load(const SymAddrSize &ml, int val)
 {
   // Loads from local memory on stack may not conflict
   // Also global loads happening with just one thread existing may not conflict
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(!threads[curnode().iid.get_pid()].cpid.is_auxiliary());
   if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
-      threads.size() > 2) { // 2 because two entries for each thread
+      spawned_something) {
     //llvm::errs() << " READ_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::READ;
-    mayConflict(&ml);
     curnode().value = val;
+    mayConflict(&ml);
 
     // Set ID of observed event
     // last memory-write
@@ -516,40 +545,43 @@ void ZBuilderTSO::load(const SymAddrSize &ml, int val)
     // check for buffer-writes present in queue
     unsigned p = curnode().iid.get_pid();
     if (!visibleStoreQueue.count(p))
-      visibleStoreQueue.emplace(p, std::vector<int>());
-    else {
-      for(int i=visibleStoreQueue[p].size()-1; i>=0; --i) {
-        int idx = visibleStoreQueue[p][i];
-        if (prefix[idx].ml == ml) {
-          obs_idx = idx;
-          break;
-        }
-      }
-    }
+      visibleStoreQueue.emplace
+        (p, std::unordered_map<SymAddrSize, std::list<int>>());
+    if (!visibleStoreQueue[p].count(ml))
+      visibleStoreQueue[p].emplace(ml, std::list<int>());
+    else if (!visibleStoreQueue[p][ml].empty())
+      obs_idx = visibleStoreQueue[p][ml].back();
     curnode().observed_trace_id = obs_idx;
 
     if (!sch_replay)
-      somethingToAnnotate.insert(curnode().iid.get_pid());
+      somethingToAnnotate.insert
+        (threads[curnode().iid.get_pid()].proc);
   }
 }
 
 
-void ZBuilderTSO::fence()
+void ZBuilderPSO::fence()
 {
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
-  assert(!visibleStoreQueue.count(curnode().iid.get_pid()) ||
-         visibleStoreQueue[curnode().iid.get_pid()].empty());
-  assert(threads[curnode().iid.get_pid()].store_buffer.empty());
+  IPid ipid = curnode().iid.get_pid();
+  assert(!threads[ipid].cpid.is_auxiliary());
+  assert(threads[ipid].all_buffers_empty());
+  #ifndef NDEBUG
+  if (visibleStoreQueue.count(ipid) &&
+      !visibleStoreQueue[ipid].empty()) {
+    for (const auto& ml_list : visibleStoreQueue[ipid])
+      assert(visibleStoreQueue[ipid][ml_list.first].empty());
+  }
+  #endif
   curnode().fence = true;
 }
 
 
-void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
+void ZBuilderPSO::mutex_init(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(!threads[curnode().iid.get_pid()].cpid.is_auxiliary());
   fence();
   assert(!mutexes.count(ml.addr));
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -559,11 +591,11 @@ void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
 }
 
 
-void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
+void ZBuilderPSO::mutex_destroy(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(!threads[curnode().iid.get_pid()].cpid.is_auxiliary());
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -577,11 +609,11 @@ void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
 }
 
 
-void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
+void ZBuilderPSO::mutex_unlock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(!threads[curnode().iid.get_pid()].cpid.is_auxiliary());
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -602,11 +634,12 @@ void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 }
 
 
-void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
+void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
 {
   //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  int ipid = curnode().iid.get_pid();
+  assert(!threads[ipid].cpid.is_auxiliary());
   fence();
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)) {
     // Assume static initialization
@@ -626,12 +659,10 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
     --prefix[prefix_idx].size; // Subtract the lock instruction
     // Create a new event with only the lock instruction
     ++prefix_idx;
-    // Mark that thread p owns the new event
-    threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].executed_instructions, // first will be 1
+                        threads[p].clock[p] + 1, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -646,8 +677,8 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
 
   mayConflict(&ml);
   if (!sch_replay)
-    somethingToAnnotate.insert(curnode().iid.get_pid());
-  endsWithLockFail.erase(curnode().iid.get_pid());
+    somethingToAnnotate.insert(threads[ipid].proc);
+  endsWithLockFail.erase(ipid);
 
   assert(!mutex.locked);
   mutex.last_lock = mutex.last_access = prefix_idx;
@@ -655,10 +686,11 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
 }
 
 
-void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
+void ZBuilderPSO::mutex_lock_fail(const SymAddrSize &ml) {
   //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
+  int ipid = curnode().iid.get_pid();
+  assert(!threads[ipid].cpid.is_auxiliary());
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
     // Assume static initialization
     mutexes[ml.addr] = Mutex(-1);
@@ -671,12 +703,12 @@ void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
   #endif
 
   if (!sch_replay)
-    somethingToAnnotate.insert(curnode().iid.get_pid());
-  endsWithLockFail.emplace(curnode().iid.get_pid(), ml);
+    somethingToAnnotate.insert(threads[ipid].proc);
+  endsWithLockFail.emplace(ipid, ml);
 }
 
 
-std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
+std::pair<std::vector<ZEvent>, bool> ZBuilderPSO::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, *config));
@@ -694,18 +726,17 @@ std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
 }
 
 
-void ZBuilderTSO::add_failed_lock_attempts() {
+void ZBuilderPSO::add_failed_lock_attempts() {
   // Add lock event for every thread ending with a failed mutex lock attempt
   for (auto p_ml : endsWithLockFail) {
     unsigned p = p_ml.first;
-    ++threads[p].executed_instructions;
+    assert(!threads[p].cpid.is_auxiliary());
+    ++threads[p].clock[p];
     ++prefix_idx;
-    // Mark that thread p owns the new event
-    threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].executed_instructions, // first will be 1
+                        threads[p].clock[p] + 1, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -720,7 +751,7 @@ void ZBuilderTSO::add_failed_lock_attempts() {
 }
 
 
-Trace *ZBuilderTSO::get_trace() const
+Trace *ZBuilderPSO::get_trace() const
 {
   if (error_trace) {
     assert(errors.size() == 0);

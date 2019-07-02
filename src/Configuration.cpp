@@ -53,7 +53,8 @@ cl_memory_model(llvm::cl::NotHidden, llvm::cl::init(Configuration::MM_UNDEF),
                                  clEnumValN(Configuration::POWER,"power","The POWER model"),
                                  clEnumValN(Configuration::PSO,"pso","Partial Store Order"),
                                  clEnumValN(Configuration::TSO,"tso","Total Store Order"),
-                                 clEnumValN(Configuration::DCTSO,"dctso","Data-centric DPOR with Total Store Order")
+                                 clEnumValN(Configuration::DCTSO,"dctso","Data-centric DPOR with Total Store Order"),
+                                 clEnumValN(Configuration::DCPSO,"dcpso","Data-centric DPOR with Partial Store Order")
 #ifdef LLVM_CL_VALUES_USES_SENTINEL
                                 ,clEnumValEnd
 #endif

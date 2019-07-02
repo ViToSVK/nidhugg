@@ -29,12 +29,12 @@ ZTrace::ZTrace()
 
 ZTrace::ZTrace
 (std::vector<ZEvent>&& initial_trace,
- int star_root_index, bool assumeblocked)
+ int star_root_index, bool assumeblocked, bool tso)
   : parent(nullptr),
     trace(std::move(initial_trace)),
     annotation(),
     negative(),
-    graph(this->trace, star_root_index),
+    graph(this->trace, star_root_index, tso),
     assumeblocked(assumeblocked),
     deadlocked(false)
 {}

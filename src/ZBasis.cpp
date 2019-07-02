@@ -255,21 +255,25 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
     // No write events in this thread
     return -1;
   }
-  if (axs.size() == 2) {
+  if (axs.size() == 2 && graph.tso) {
+    #ifndef NDEBUG
     auto it = axs.begin();
     while (*it == -1) {
       ++it;
       assert(it != axs.end());
     }
-    return *it;
+    assert(*it == 0);
+    #endif
+    return 0;
   }
   // PSO below
   for (auto aux : axs) {
     assert(!((*this)(thr, aux).empty()));
-    if (ml == (*this)(thr, aux)[0]->ml)
+    const ZEvent *first = (*this)(thr, aux)[0];
+    if (isWriteM(first) && first->ml == ml)
       return aux;
   }
-  assert(false && "Unreachable");
+  // This thread has no event for this ml
   return -1;
 }
 

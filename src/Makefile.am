@@ -49,6 +49,8 @@ libnidhugg_a_SOURCES = \
   ZClosure.cpp ZClosure.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \
   ZBuilderTSO.cpp ZBuilderTSO.h \
+  ZInterpreterPSO.cpp ZInterpreterPSO.h \
+  ZBuilderPSO.cpp ZBuilderPSO.h \
   ZExplorer.cpp ZExplorer.h
 
 libnidhugg_a_CXXFLAGS = -fno-rtti
