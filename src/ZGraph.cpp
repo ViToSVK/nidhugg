@@ -824,13 +824,8 @@ std::list<ZObs> ZGraph::getObsCandidates
 
 
 std::vector<std::pair<const ZEvent *, const ZEvent *>>
-  ZGraph::chronoOrderPairs(const ZEvent *leafread) const
+  ZGraph::chronoOrderWrites() const
 {
-  bool isLR = (leafread && isRead(leafread) && !basis.isRoot(leafread));
-  assert(!leafread || isLR);
-  assert(cache.chrono.size() >= 2 ||
-         (cache.chrono.size() == 1 && isLR &&
-          !cache.chrono.count(leafread->threadID())));
   std::vector<std::pair<const ZEvent *, const ZEvent *>> res;
 
   for (auto it1 = cache.chrono.begin(); it1 != cache.chrono.end(); ++it1) {
@@ -847,32 +842,6 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
           // ev1-ev2
           if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
             res.emplace_back(ev1, ev2);
-        }
-      }
-    }
-    // MW-leafread
-    if (isLR && thr1 != leafread->threadID()) { // in chronoPO read only with MW of other threads
-      for (const auto& ev1 : it1->second) {
-        assert(isWriteM(ev1) && ev1->threadID() == thr1);
-        // ev1-leafread
-        if (!po.areOrdered(ev1, leafread) && sameMl(ev1, leafread))
-          res.emplace_back(ev1, leafread);
-      }
-    }
-    // MW-oldAnnotatedRead
-    for (auto it2 = cache.chronoAnnR.begin(); it2 != cache.chronoAnnR.end(); ++it2) {
-      unsigned thr2 = it2->first;
-      assert(!basis.isRoot(thr1) && !basis.isRoot(thr2));
-      if (thr1 != thr2) { // in chronoPO read only with MW of other threads
-        // Get pairs thr1-thr2
-        for (const auto& ev1 : it1->second) {
-          assert(isWriteM(ev1) && ev1->threadID() == thr1);
-          for (const auto& ev2 : it2->second) {
-            assert(isRead(ev2) && ev2->threadID() == thr2);
-            // ev1-ev2
-            if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
-              res.emplace_back(ev1, ev2);
-          }
         }
       }
     }

@@ -143,10 +143,10 @@ class ZGraph {
   std::list<ZObs> getObsCandidates(const ZEvent *read,
                                    const ZAnnotationNeg& negative) const;
 
-  // Returns pairs of po-unordered leaf conflicting events
+  // Returns pairs of po-unordered leaf conflicting writes
   // that have to be ordered to get a leaves-chronological-po
   std::vector<std::pair<const ZEvent *, const ZEvent *>>
-    chronoOrderPairs(const ZEvent *leafread) const;
+    chronoOrderWrites() const;
 
   // Linearizes a partial order
   std::vector<ZEvent> linearizeTSO

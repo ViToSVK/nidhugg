@@ -80,6 +80,11 @@ class ZExplorer {
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
      bool mutationFollowsCurrentTrace);
 
+  bool chronoReads
+    (const ZTrace& annTrace, const ZEvent *readLock,
+     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+     bool mutationFollowsCurrentTrace);
+
   bool closePO
     (const ZTrace& annTrace, const ZEvent *readLock,
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,

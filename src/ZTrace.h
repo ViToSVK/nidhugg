@@ -71,6 +71,10 @@ class ZTrace {
     return graph.getBasis().getEvent(obs);
   }
 
+  bool isRoot(unsigned thr_id) const {
+    return graph.getBasis().isRoot(thr_id);
+  }
+
   bool isRoot(const ZEvent *ev) const {
     return graph.getBasis().isRoot(ev);
   }

@@ -357,14 +357,11 @@ bool ZExplorer::chronological
        std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
 
-  auto toOrder = annTrace.graph.chronoOrderPairs
-    ((isRead(readLock) && !annTrace.isRoot(readLock))
-     ? readLock : nullptr);
+  auto toOrder = annTrace.graph.chronoOrderWrites();
 
   if (toOrder.empty()) {
-    // Nothing to order
-    ++leaf_chrono_pos;
-    return closePO
+    // No writes to order
+    return chronoReads
       (annTrace, readLock, std::move(mutatedAnnotation),
        std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
@@ -393,6 +390,8 @@ bool ZExplorer::chronological
       auto ev2 = toOrder[current.second].second;
       // Order pair ev1-ev2
       // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
+      // TODOupdate: since here we process only mw-pairs, only check
+      // *both-mws-observable-in-po*
       if (!current.first.areOrdered(ev1, ev2)) {
         // Create two cases with these orderings
         worklist.emplace_front(ZPartialOrder(current.first), // copy
@@ -410,10 +409,9 @@ bool ZExplorer::chronological
       current.first.areOrdered(pair.first, pair.second);
       // or-*one-read*-or-*both-mws-observable-in-po* condition
     #endif
-    ++leaf_chrono_pos;
     time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-    bool error = closePO
+    bool error = chronoReads
       (annTrace, readLock,
        worklist.empty()
        ? std::move(mutatedAnnotation) // move
@@ -428,6 +426,84 @@ bool ZExplorer::chronological
   worklist.clear();
 
   return false;
+}
+
+
+bool ZExplorer::chronoReads
+(const ZTrace& annTrace, const ZEvent *readLock,
+ ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
+ bool mutationFollowsCurrentTrace)
+{
+  // This PO has all conflicting leaf memory-write pairs ordered
+  // Here we have to ensure that all leaf reads with leaf observation
+  // happen before the leaf memory-write right after the observation-memory-write
+  // (no matter if the observation is local-leaf or remote-leaf)
+
+  auto init = std::clock();
+
+  std::list<const ZEvent *> leafReadsLeafObs;
+  if (isRead(readLock) && !annTrace.isRoot(readLock) &&
+      !annTrace.isRoot(mutatedAnnotation.getObs(readLock).thr))
+    leafReadsLeafObs.push_back(readLock);
+  for (const auto& thr_list : annTrace.graph.getCache().chronoAnnR)
+    for (const auto& leaf : thr_list.second) {
+      assert(isRead(leaf) && mutatedAnnotation.defines(leaf) &&
+             !annTrace.isRoot(leaf) && leaf->threadID() == thr_list.first);
+      if (!annTrace.isRoot(mutatedAnnotation.getObs(leaf).thr))
+        leafReadsLeafObs.push_back(leaf);
+    }
+
+  for (const auto& leaf : leafReadsLeafObs) {
+    const ZEvent *anBuf = mutatedAnnotation.getObs(leaf).thr != INT_MAX
+      ? annTrace.getEvent(mutatedAnnotation.getObs(leaf)) : nullptr;
+    assert(!anBuf || isWriteB(anBuf));
+    if (!anBuf || !annTrace.isRoot(anBuf)) {
+      // Leaf observation
+      const ZEvent *anMem = anBuf ? anBuf->write_other_ptr : nullptr;
+      assert(!anMem ||
+             (isWriteM(anMem) && sameMl(anMem, leaf) &&
+              (leaf->threadID() == anMem->threadID() ||
+               mutatedPO.hasEdge(anMem, leaf)))); // PreClosure
+      // Find the earliest conflicting read-remote leaf memory-write
+      // happening after the observation-memory-write
+      const ZEvent *nextMem = nullptr;
+      for (const auto& thr_list : annTrace.graph.getCache().chrono) { // leaf
+        if (thr_list.first != leaf->threadID()) { // read-remote
+          for (const auto& mwEv : thr_list.second) {
+            assert(isWriteM(mwEv) && mwEv->threadID() == thr_list.first);
+            if (mwEv != anMem && sameMl(mwEv, leaf)) { // conflicting
+              assert(!anMem || mutatedPO.areOrdered(anMem, mwEv));
+              if (!anMem || mutatedPO.hasEdge(anMem, mwEv)) {
+                // all conflicting others in this list happen after mwEv
+                // so only mwEv can be a candidate; break
+                if (!nextMem)
+                  nextMem = mwEv;
+                else {
+                  assert(mutatedPO.areOrdered(nextMem, mwEv));
+                  if (mutatedPO.hasEdge(mwEv, nextMem))
+                    nextMem = mwEv;
+                }
+                break;
+              }
+            }
+          } // break from this loop
+        }
+      }
+      // the read has to happen before nextMem
+      if (nextMem && mutatedPO.hasEdge(nextMem, leaf)) {
+        time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
+        return false;
+      }
+      else if (nextMem && !mutatedPO.hasEdge(leaf, nextMem))
+        mutatedPO.addEdge(leaf, nextMem);
+    }
+  }
+
+  time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
+  ++leaf_chrono_pos;
+  return closePO
+    (annTrace, readLock, std::move(mutatedAnnotation),
+     std::move(mutatedPO), mutationFollowsCurrentTrace);
 }
 
 
