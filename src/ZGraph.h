@@ -71,6 +71,9 @@ class ZGraph {
     return ZPartialOrder(po);
   }
 
+  ZPartialOrder copyPO(const ZPartialOrder& partial) const {
+    return ZPartialOrder(partial);
+  }
 
   /* *************************** */
   /* CONSTRUCTORS                */
@@ -150,6 +153,8 @@ class ZGraph {
 
   // Linearizes a partial order
   std::vector<ZEvent> linearizeTSO
+    (const ZPartialOrder& po, const ZAnnotation& annotation) const;
+  std::vector<ZEvent> linearizePSO
     (const ZPartialOrder& po, const ZAnnotation& annotation) const;
 
   void dump() const { po.dump(); }

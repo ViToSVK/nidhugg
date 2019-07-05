@@ -267,11 +267,15 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
     return 0;
   }
   // PSO below
+  assert(!graph.tso);
   for (auto aux : axs) {
-    assert(!((*this)(thr, aux).empty()));
-    const ZEvent *first = (*this)(thr, aux)[0];
-    if (isWriteM(first) && first->ml == ml)
-      return aux;
+    if (aux != -1) {
+      assert(!((*this)(thr, aux).empty()));
+      const ZEvent *first = (*this)(thr, aux)[0];
+      assert(isWriteM(first));
+      if (first->ml == ml)
+        return aux;
+    }
   }
   // This thread has no event for this ml
   return -1;

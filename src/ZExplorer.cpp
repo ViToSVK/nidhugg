@@ -553,13 +553,12 @@ bool ZExplorer::extendAndRecur
  ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
 {
   TraceExtension mutatedTrace;
-  if (mutationFollowsCurrentTrace)
+  if (mutationFollowsCurrentTrace && !mutationFollowsCurrentTrace) // TODO ENABLE AGAIN TODO ENABLE AGAIN TODO ENABLE AGAIN TODO ENABLE AGAIN
     mutatedTrace = reuseTrace(parentTrace, mutatedAnnotation);
   else {
-    if (!tso)
-      return false;
     clock_t init = std::clock();
-    auto linear = parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation);
+    auto linear = tso ? parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation)
+      : parentTrace.graph.linearizePSO(mutatedPO, mutatedAnnotation);
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
 

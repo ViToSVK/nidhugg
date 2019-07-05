@@ -246,7 +246,7 @@ void ZInterpreterPSO::visitLoadInst(llvm::LoadInst &I){
   if(pso_threads[CurrentThread].store_buffers.count(ml.addr)){
     // We consider all Stack writes as invisible and atomic,
     // hence we do not put them into the store buffer
-    assert(ml.addr.block.is_global() && ml.addr.block.is_heap());
+    assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
     uint8_t *blk = new uint8_t[ml.size];
     for(SymAddr b : ml){
       assert(pso_threads[CurrentThread].store_buffers[b].back().ml == ml);

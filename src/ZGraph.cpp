@@ -695,6 +695,38 @@ std::list<ZObs> ZGraph::getObsCandidates
         assert(su == INT_MAX);
         su = (int) basis(tid, auxid).size();
       }
+      // Dumb
+      /*
+      int curr = su - 1;
+      while (curr >= 0) {
+        const ZEvent *rem = basis(tid, auxid)[curr];
+        assert(isWriteM(rem) && !po.hasEdge(read, rem));
+        if (po.hasEdge(rem, read)) {
+          if (sameMl(read, rem)) {
+            mayBeCovered.emplace(rem);
+            // Update cover
+            for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+              if (covthr != rem->threadID()) {
+                for (int covaux : basis.auxes(covthr)) {
+                  int newcov = po.pred(rem, covthr, covaux).second;
+                  auto covta = std::pair<unsigned, int>(covthr, covaux);
+                  assert(covered.count(covta));
+                  if (newcov > covered[covta])
+                    covered[covta] = newcov;
+                }
+              }
+            }
+            // Break
+            break;
+          }
+          curr--;
+        } else {
+          if (sameMl(read, rem))
+            notCovered.emplace(rem);
+          curr--;
+        }
+      }
+      */
       // TailW index to cache.wm
       int wm_idx = getTailWindex(read->ml, tid, su - 1);
       assert(wm_idx == getLatestNotAfterIndex(read, tid, po));
@@ -815,7 +847,7 @@ std::list<ZObs> ZGraph::getObsCandidates
       // Add if not forbidden
       if (!negative.forbids(read, remB))
         res.emplace_back(remB);
-      }
+    }
   }
 
   res.sort();
@@ -852,10 +884,10 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
 }
 
 
-
 std::vector<ZEvent> ZGraph::linearizeTSO
 (const ZPartialOrder& partial, const ZAnnotation& annotation) const
 {
+  assert(tso);
   assert(basis.auxes(basis.root()).size() <= 2 && "TSO");
 
   std::vector<ZEvent> result;
@@ -1022,6 +1054,120 @@ std::vector<ZEvent> ZGraph::linearizeTSO
   //dumpTrace(result);
   return result;
 }
+
+
+std::vector<ZEvent> ZGraph::linearizePSO
+(const ZPartialOrder& partial, const ZAnnotation& annotation) const
+{
+  assert(!tso);
+  ZPartialOrder lin = copyPO(partial);
+  unsigned root = basis.root();
+
+  // (1) For all conflicting unordered pairs (i) leaf-event (ii) root memory-write,
+  //     order the leaf event before the root memory-write
+  for (unsigned thr = 0; thr < basis.number_of_threads(); ++thr) {
+    if (thr != root) {
+      for (int aux : basis.auxes(thr)) {
+        if (aux != -1) {
+          // Leaf buffer
+          assert(!basis(thr, aux).empty() && isWriteM(basis(thr, aux)[0]));
+          const auto& ml = basis(thr, aux)[0]->ml;
+          int raux = basis.auxForMl(ml, root);
+          if (raux != -1) {
+            // All events of thr,aux go before unordered events from root,raux
+            for (int ev_id = basis(thr, aux).size() - 1; ev_id >= 0; --ev_id) {
+              const ZEvent *leaf = basis(thr, aux)[ev_id];
+              int pred = lin.pred(leaf, root, raux).second;
+              if (pred + 1 < (int) basis(root, raux).size()) {
+                const ZEvent *newsucc = basis(root, raux)[pred + 1];
+                assert(!lin.hasEdge(newsucc, leaf));
+                if (!lin.hasEdge(leaf, newsucc))
+                  lin.addEdge(leaf, newsucc);
+              }
+            }
+          }
+        } else {
+          // Leaf main thread
+          for (int ev_id = basis(thr, aux).size() - 1; ev_id >= 0; --ev_id) {
+            const ZEvent *leaf = basis(thr, aux)[ev_id];
+            if (!isRead(leaf)) // No need for buffer-writes
+              continue;
+            int raux = basis.auxForMl(leaf->ml, root);
+            if (raux == -1)
+              continue;
+            int pred = lin.pred(leaf, root, raux).second;
+            if (pred + 1 < (int) basis(root, raux).size()) {
+              const ZEvent *newsucc = basis(root, raux)[pred + 1];
+              assert(!lin.hasEdge(newsucc, leaf));
+              if (!lin.hasEdge(leaf, newsucc))
+                lin.addEdge(leaf, newsucc);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // (2) Linearize arbitrarily
+  std::vector<ZEvent> result;
+  unsigned resultsize = 0;
+
+  std::unordered_map<std::pair<unsigned, int>, unsigned>
+    until;
+  std::set<const ZEvent *, ZEventPtrComp> next;
+
+  for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
+    for (int aux : basis.auxes(thr)) {
+      assert(!basis(thr, aux).empty());
+      auto lastEv = basis(thr, aux)[basis(thr, aux).size() - 1];
+      if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
+          (isLock(lastEv) && !annotation.isLastLock(lastEv))) {
+        // These events should be 'rediscovered' by the
+        // TraceBuilder as something to annotate
+        // Also locks can't be force-replayed if the
+        // location is already held
+        until.emplace(std::pair<unsigned, int>(thr, aux),
+                      basis(thr, aux).size() - 1);
+        resultsize += basis(thr, aux).size() - 1;
+        if (((int) basis(thr, aux).size()) - 1 > 0)
+          next.insert(basis(thr, aux)[0]);
+      } else {
+        until.emplace(std::pair<unsigned, int>(thr, aux),
+                      basis(thr, aux).size());
+        resultsize += basis(thr, aux).size();
+        next.insert(basis(thr, aux)[0]);
+      }
+    }
+  result.reserve(resultsize);
+
+  while (!next.empty()) {
+    // Find an arbitrary head event
+    const ZEvent *head = nullptr;
+    for (const auto& ev : next) {
+      if (!head || lin.hasEdge(ev, head))
+        head = ev;
+    }
+    #ifndef NDEBUG
+    for (const auto& ev : next)
+      assert(ev == head || !lin.hasEdge(ev, head));
+    #endif
+
+    assert(next.count(head));
+    next.erase(head);
+    result.push_back(head->copy(result.size(), true));
+    std::pair<unsigned, int> thau(head->threadID(), head->auxID());
+    assert(until.count(thau));
+    if (head->eventID() + 1 < until[thau]) {
+      assert(head->eventID() + 1 < basis(thau).size());
+      next.insert(basis(thau)[head->eventID() + 1]);
+    }
+  }
+
+  assert(result.size() == resultsize);
+  //dumpTrace(result);
+  return result;
+}
+
 
 /*
 bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
