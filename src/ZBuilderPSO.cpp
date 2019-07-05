@@ -132,13 +132,13 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
            threads[p].cpid && "IPID<->CPID correspondence has changed");
     // Create the new event
     assert(replay_trace[prefix_idx].instruction_order == (unsigned)
-           threads[p].clock[p] + 1 && "Inconsistent scheduling");
+           threads[p].executed_instructions + 1 && "Inconsistent scheduling");
     assert(replay_trace[prefix_idx].eventID() ==
            threads[p].executed_events && "Inconsistent scheduling");
-    // ++threads[p].clock[p]; Do it later after this block
+    // ++threads[p].executed_instructions; Do it later after this block
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p] + 1),
                         threads[p].cpid,
-                        threads[p].clock[p] + 1, // +1 so that first will be 1
+                        threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
     // Mark that thread executes a new event
@@ -156,7 +156,7 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[prefix_idx].iid.get_pid();
   // Mark that thread p executes a new instruction
-  ++threads[p].clock[p];
+  ++threads[p].executed_instructions;
   assert(threads[p].available);
 
   bool ret = schedule_thread(proc, aux, p);
@@ -235,7 +235,7 @@ bool ZBuilderPSO::schedule_thread(int *proc, int *aux, unsigned p)
 void ZBuilderPSO::update_prefix(unsigned p)
 {
   assert(!sch_replay && sch_extend);
-  ++threads[p].clock[p];
+  ++threads[p].executed_instructions;
 
   if (prefix_idx != -1 && (int) p == curnode().iid.get_pid() &&
       !curnode().may_conflict) {
@@ -251,7 +251,7 @@ void ZBuilderPSO::update_prefix(unsigned p)
     // Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].clock[p], // first will be 1
+                        threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -278,7 +278,7 @@ void ZBuilderPSO::refuse_schedule()
   // Here used to be:
   // --threads[p].event_indices[p];
 
-  --threads[p].clock[p]; //
+  --threads[p].executed_instructions; //
 
   if (curnode().size == 1) {
     // Refused instruction wanted to create a new event,
@@ -385,7 +385,7 @@ void ZBuilderPSO::join(int tgt_proc)
     // Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].clock[p] + 1, // first will be 1
+                        threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -662,7 +662,7 @@ void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
     // Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].clock[p] + 1, // first will be 1
+                        threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
@@ -731,12 +731,12 @@ void ZBuilderPSO::add_failed_lock_attempts() {
   for (auto p_ml : endsWithLockFail) {
     unsigned p = p_ml.first;
     assert(!threads[p].cpid.is_auxiliary());
-    ++threads[p].clock[p];
+    ++threads[p].executed_instructions;
     ++prefix_idx;
     // Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
                         threads[p].cpid,
-                        threads[p].clock[p] + 1, // first will be 1
+                        threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;

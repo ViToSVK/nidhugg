@@ -140,6 +140,9 @@ protected:
      * thread.
      */
     VClock<IPid> clock;
+    /* Number of instructions executed in this process.
+     */
+    unsigned executed_instructions = 0;
     /* Number of events executed in this process.
     */
     unsigned executed_events = 0;
