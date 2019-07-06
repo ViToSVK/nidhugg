@@ -394,7 +394,6 @@ void ZBuilderPSO::join(int tgt_proc)
   if (prefix[prefix_idx].size > 1) {
     // Some invisible instructions happened before the
     // join instruction, we split this into two events
-    unsigned p = curnode().iid.get_pid();
     --prefix[prefix_idx].size; // Subtract the join instruction
     // Create a new event with only the join instruction
     ++prefix_idx;
@@ -586,10 +585,10 @@ void ZBuilderPSO::load(const SymAddrSize &ml, int val)
 void ZBuilderPSO::fence()
 {
   assert(!dryrun);
+  #ifndef NDEBUG
   IPid ipid = curnode().iid.get_pid();
   assert(!threads[ipid].cpid.is_auxiliary());
   assert(threads[ipid].all_buffers_empty());
-  #ifndef NDEBUG
   if (visibleStoreQueue.count(ipid) &&
       !visibleStoreQueue[ipid].empty()) {
     for (const auto& ml_list : visibleStoreQueue[ipid])

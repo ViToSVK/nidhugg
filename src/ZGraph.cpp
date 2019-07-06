@@ -874,13 +874,12 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
     unsigned thr1 = it1->first;
     // MW-MW
     for (auto it2 = cache.chrono.begin(); it2 != it1; ++it2) {
-      unsigned thr2 = it2->first;
-      assert(thr1 != thr2 && !basis.isRoot(thr1) && !basis.isRoot(thr2));
+      assert(thr1 != it2->first && !basis.isRoot(thr1) && !basis.isRoot(it2->first));
       // Get pairs thr1-thr2
       for (const auto& ev1 : it1->second) {
         assert(isWriteM(ev1) && ev1->threadID() == thr1);
         for (const auto& ev2 : it2->second) {
-          assert(isWriteM(ev2) && ev2->threadID() == thr2);
+          assert(isWriteM(ev2) && ev2->threadID() == it2->first);
           // ev1-ev2
           if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
             res.emplace_back(ev1, ev2);
