@@ -82,6 +82,7 @@ class ZBasis {
  private:
   std::unordered_map<std::pair<unsigned, int>, unsigned> thread_aux_to_line_id; ////
   std::vector<std::set<int>> threads_auxes; ////
+  std::unordered_map<unsigned, std::vector<SymAddrSize>> pso_thr_mlauxes; ////
   unsigned lineID(unsigned thread_id, int aux_id) const;
   unsigned lineID(const ZEvent *ev) const;
  public:
@@ -95,6 +96,7 @@ class ZBasis {
   // Returns -1 if thr has no writes
   // Otherwise, the answer is always 0 in TSO
   int auxForMl(const SymAddrSize& ml, unsigned thr) const;
+  int psoGetAux(const ZEvent* writeM);
 
   // PROCSEQ->THREAD_ID (retained accross recursion children)
  private:

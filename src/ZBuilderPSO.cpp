@@ -125,18 +125,25 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
     // Next instruction is the beginning of a new event
     assert(replay_trace.size() > prefix.size());
     assert(prefix_idx == (int) prefix.size());
-    unsigned p = replay_trace[prefix_idx].iid.get_pid();
-    // If below assertion fails, search for p' tied to r_t[p_i].cpid,
-    // scan r_t down and swap p with p' in all found events
-    assert(replay_trace[prefix_idx].cpid ==
-           threads[p].cpid && "IPID<->CPID correspondence has changed");
+    if (prefix_idx == 0) {
+      cpidMainToIpid.emplace(replay_trace[prefix_idx].cpid.get_proc_seq(),
+                             replay_trace[prefix_idx].iid.get_pid());
+    }
+    const ZEvent& toReplay = replay_trace[prefix_idx];
+    assert(cpidMainToIpid.count(toReplay.cpid.get_proc_seq()));
+    assert(!isWriteM(toReplay) ||
+           (cpidMlToIpid.count(toReplay.cpid.get_proc_seq()) &&
+            cpidMlToIpid[toReplay.cpid.get_proc_seq()].count(toReplay.ml)));
+    unsigned p = (isWriteM(toReplay))
+      ? cpidMlToIpid[toReplay.cpid.get_proc_seq()][toReplay.ml]
+      : cpidMainToIpid[toReplay.cpid.get_proc_seq()];
     // Create the new event
     assert(replay_trace[prefix_idx].instruction_order == (unsigned)
            threads[p].executed_instructions + 1 && "Inconsistent scheduling");
     assert(replay_trace[prefix_idx].eventID() ==
            threads[p].executed_events && "Inconsistent scheduling");
     // ++threads[p].executed_instructions; Do it later after this block
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p] + 1),
+    prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
                         threads[p].cpid,
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
@@ -154,7 +161,14 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
   }
 
   assert((unsigned) prefix_idx < replay_trace.size());
-  unsigned p = replay_trace[prefix_idx].iid.get_pid();
+  const ZEvent& toReplay = replay_trace[prefix_idx];
+  assert(cpidMainToIpid.count(toReplay.cpid.get_proc_seq()));
+  assert(!isWriteM(toReplay) ||
+         (cpidMlToIpid.count(toReplay.cpid.get_proc_seq()) &&
+          cpidMlToIpid[toReplay.cpid.get_proc_seq()].count(toReplay.ml)));
+  unsigned p = (isWriteM(toReplay))
+    ? cpidMlToIpid[toReplay.cpid.get_proc_seq()][toReplay.ml]
+    : cpidMainToIpid[toReplay.cpid.get_proc_seq()];
   // Mark that thread p executes a new instruction
   ++threads[p].executed_instructions;
   assert(threads[p].available);
@@ -249,7 +263,7 @@ void ZBuilderPSO::update_prefix(unsigned p)
     // Because one of 1)2)3) doesn't hold, we create a new event
     ++prefix_idx;
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
+    prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
                         threads[p].cpid,
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
@@ -351,6 +365,8 @@ void ZBuilderPSO::spawn()
 
   IPid child_ipid = threads.size();
   CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
+  assert(!child_cpid.is_auxiliary());
+  cpidMainToIpid.emplace(child_cpid.get_proc_seq(), child_ipid);
   curnode().childs_cpid = child_cpid;
   int proc = 0;
   for(unsigned i = 0; i < threads.size(); ++i){
@@ -383,7 +399,7 @@ void ZBuilderPSO::join(int tgt_proc)
     // Create a new event with only the join instruction
     ++prefix_idx;
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
+    prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
                         threads[p].cpid,
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
@@ -424,10 +440,17 @@ void ZBuilderPSO::store(const SymData &sd, int val)
     /* Create new auxiliary thread */
     int aux_idx = int(threads[ipid].aux_to_byte.size());
     upd_ipid = int(threads.size());
-    threads.push_back(Thread(threads[ipid].proc,CPS.new_aux(threads[ipid].cpid),threads[ipid].clock,ipid));
+    CPid upd_cpid = CPS.new_aux(threads[ipid].cpid);
+    assert(upd_cpid.is_auxiliary());
+    threads.push_back(Thread(threads[ipid].proc,upd_cpid,threads[ipid].clock,ipid));
     threads[ipid].byte_to_aux[ml.addr] = aux_idx;
     threads[ipid].aux_to_byte.push_back(ml.addr);
     threads[ipid].aux_to_ipid.push_back(upd_ipid);
+    if (!cpidMlToIpid.count(upd_cpid.get_proc_seq()))
+      cpidMlToIpid.emplace(upd_cpid.get_proc_seq(),
+                           std::unordered_map<SymAddrSize, unsigned>());
+    assert(!cpidMlToIpid[upd_cpid.get_proc_seq()].count(ml));
+    cpidMlToIpid[upd_cpid.get_proc_seq()].emplace(ml, upd_ipid);
   }else{
     upd_ipid = threads[ipid].aux_to_ipid[it->second];
   }
@@ -660,7 +683,7 @@ void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
     // Create a new event with only the lock instruction
     ++prefix_idx;
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
+    prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
                         threads[p].cpid,
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
@@ -734,7 +757,7 @@ void ZBuilderPSO::add_failed_lock_attempts() {
     ++threads[p].executed_instructions;
     ++prefix_idx;
     // Create the new event
-    prefix.emplace_back(IID<IPid>(IPid(p),threads[p].clock[p]),
+    prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
                         threads[p].cpid,
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0

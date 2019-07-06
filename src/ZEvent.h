@@ -81,7 +81,7 @@ class ZEvent {
   mutable unsigned _thread_id;
   unsigned threadID() const { return _thread_id; }
   /* Aux ID in our partial order */
-  int _aux_id;
+  mutable int _aux_id;
   int auxID() const { return _aux_id; }
   /* Sequential number (within the thread) of this event,
    * also Event ID in our partial order

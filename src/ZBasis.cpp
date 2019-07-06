@@ -32,6 +32,8 @@ ZBasis::ZBasis(const ZGraph& gr)
     init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
+    threads_auxes(),
+    pso_thr_mlauxes(),
     proc_seq_to_thread_id(),
     event_to_position()
 {
@@ -51,6 +53,8 @@ ZBasis::ZBasis(const ZGraph& gr, int root_thread_id)
     init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
+    threads_auxes(),
+    pso_thr_mlauxes(),
     proc_seq_to_thread_id(),
     event_to_position()
 {
@@ -66,6 +70,7 @@ ZBasis::ZBasis(const ZBasis& oth, const ZGraph& gr)
     lines(oth.lines),
     thread_aux_to_line_id(oth.thread_aux_to_line_id),
     threads_auxes(oth.threads_auxes),
+    pso_thr_mlauxes(oth.pso_thr_mlauxes),
     proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
     event_to_position(oth.event_to_position)
 {}
@@ -151,6 +156,8 @@ void ZBasis::addEvent(const ZEvent *ev)
 
   unsigned event_id = line.size();
   assert(event_id == ev->eventID());
+  assert(graph.tso || ev->auxID() == -1 || line.empty() ||
+         sameMl(line[0], ev));
   event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
   line.push_back(ev);
   assert(hasEvent(ev));
@@ -268,6 +275,7 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
   }
   // PSO below
   assert(!graph.tso);
+  assert(pso_thr_mlauxes.count(thr));
   for (auto aux : axs) {
     if (aux != -1) {
       assert(!((*this)(thr, aux).empty()));
@@ -279,6 +287,34 @@ int ZBasis::auxForMl(const SymAddrSize& ml, unsigned thr) const
   }
   // This thread has no event for this ml
   return -1;
+}
+
+int ZBasis::psoGetAux(const ZEvent* writeM)
+{
+  assert(!graph.tso && isWriteM(writeM));
+  unsigned thr_idx = writeM->threadID();
+  assert(thr_idx < 100);
+  int aux_idx = -1;
+  if (!pso_thr_mlauxes.count(thr_idx)) {
+    // First aux
+    pso_thr_mlauxes.emplace
+      (thr_idx, std::vector<SymAddrSize>());
+    pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
+    aux_idx = 0;
+  } else {
+    for (unsigned ax = 0; ax < pso_thr_mlauxes[thr_idx].size(); ++ax)
+      if (pso_thr_mlauxes[thr_idx][ax] == writeM->ml) {
+        aux_idx = ax;
+        break;
+      }
+    if (aux_idx == -1) {
+      // New aux
+      aux_idx = pso_thr_mlauxes[thr_idx].size();
+      pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
+    }
+  }
+  assert(aux_idx >= 0);
+  return aux_idx;
 }
 
 

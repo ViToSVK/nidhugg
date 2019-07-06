@@ -71,8 +71,9 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 	bool change = false;
 	for(unsigned i=0; i < totThreads; ++i){  // looping over all threads
 		if(i != readThread and i != writeThread){	// all but read thread
-			if(!ba.hasThreadAux(i,0)) continue;
-			int lastEvid = po.pred(read,i,0).second ; // Hardcode Aux gets Event id of pred
+			int readaux = ba.auxForMl(location, i);
+			if(readaux == -1) continue;
+			int lastEvid = po.pred(read,i,readaux).second ; // Hardcode Aux gets Event id of pred
 			if(lastEvid != -1){ // {0,1,2,..,lastEvid} happens before real
 				auto memory_pred = gr.getTailW(location,i,lastEvid);	// last write of thread i on same location as read
 				if(memory_pred){	// not nullptr
@@ -88,8 +89,9 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs){
 		}
 	}
 	if(write_memory and readThread != writeThread){ // checking for impossibility due to write thread
-		if(ba.hasThreadAux(writeThread,0)){
-			int lastEvid = po.pred(read,writeThread,0).second ; // Hardcode Aux gets Event id of pred
+		int writeaux = ba.auxForMl(location, writeThread);
+		if(writeaux != -1){
+			int lastEvid = po.pred(read,writeThread,writeaux).second ; // Hardcode Aux gets Event id of pred
 			if(lastEvid != -1){ // {0,1,2,..,lastEvid} happens before real
 				auto memory_pred = gr.getTailW(location,writeThread,lastEvid);	// last write of thread i on same location as read
 				if(memory_pred){	// not nullptr

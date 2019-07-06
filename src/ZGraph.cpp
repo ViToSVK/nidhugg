@@ -165,12 +165,11 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
     // Check if this process is already known
     auto ipidit = ipid_to_thraux.find(ev->iid.get_pid());
-    if (ipidit != ipid_to_thraux.end()) {
+    if (tso && ipidit != ipid_to_thraux.end()) {
       thr_idx = ipidit->second.first;
       assert(ev->auxID() == ipidit->second.second);
     } else {
-      auto thr_new = basis.getThreadID(ev);
-      thr_idx = thr_new.first;
+      thr_idx = basis.getThreadID(ev).first;
       // add to ipid cache for faster lookup next time
       ipid_to_thraux.emplace(ev->iid.get_pid(),
                              std::pair<unsigned, int>(thr_idx,
@@ -178,6 +177,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     ev->_thread_id = thr_idx;
+    if (!tso && isWriteM(ev)) {
+      // Handle aux for pso
+      int aux_idx = basis.psoGetAux(ev);
+      ev->_aux_id = aux_idx;
+    }
+
     auto thraux = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
 
     // Check possible cases why we cannot add this event
@@ -1090,7 +1095,7 @@ std::vector<ZEvent> ZGraph::linearizePSO
           // Leaf main thread
           for (int ev_id = basis(thr, aux).size() - 1; ev_id >= 0; --ev_id) {
             const ZEvent *leaf = basis(thr, aux)[ev_id];
-            if (!isRead(leaf)) // No need for buffer-writes
+            if (!isRead(leaf) || !annotation.defines(leaf)) // No need for buffer-writes
               continue;
             int raux = basis.auxForMl(leaf->ml, root);
             if (raux == -1)

@@ -91,6 +91,10 @@ class ZBuilderPSO : public PSOTraceBuilder {
    <SymAddrSize, std::list<int>>> visibleStoreQueue;
   // Was something spawned (i.e. do we have at least two threads)?
   bool spawned_something = false;
+  // ProcSeq(Ml) to Ipid
+  std::unordered_map<std::vector<int>, unsigned> cpidMainToIpid;
+  std::unordered_map<std::vector<int>,
+    std::unordered_map<SymAddrSize, unsigned>> cpidMlToIpid;
 
 
   ZEvent& curnode() {
