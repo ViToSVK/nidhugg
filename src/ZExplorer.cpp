@@ -357,10 +357,13 @@ bool ZExplorer::chronological
        std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
 
-  auto toOrder = annTrace.graph.chronoOrderWrites();
+  auto toOrder = annTrace.graph.chronoOrderPairs
+    ((isRead(readLock) && !annTrace.isRoot(readLock) &&
+      annTrace.isRoot(mutatedAnnotation.getObs(readLock).thr))
+     ? readLock : nullptr, mutatedAnnotation);
 
   if (toOrder.empty()) {
-    // No writes to order
+    // No pairs to order
     return chronoReads
       (annTrace, readLock, std::move(mutatedAnnotation),
        std::move(mutatedPO), mutationFollowsCurrentTrace);
@@ -390,8 +393,6 @@ bool ZExplorer::chronological
       auto ev2 = toOrder[current.second].second;
       // Order pair ev1-ev2
       // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
-      // TODOupdate: since here we process only mw-pairs, only check
-      // *both-mws-observable-in-po*
       if (!current.first.areOrdered(ev1, ev2)) {
         // Create two cases with these orderings
         worklist.emplace_front(ZPartialOrder(current.first), // copy
@@ -553,7 +554,7 @@ bool ZExplorer::extendAndRecur
  ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
 {
   TraceExtension mutatedTrace;
-  if (mutationFollowsCurrentTrace && !mutationFollowsCurrentTrace) // TODO ENABLE AGAIN TODO ENABLE AGAIN TODO ENABLE AGAIN TODO ENABLE AGAIN
+  if (mutationFollowsCurrentTrace)
     mutatedTrace = reuseTrace(parentTrace, mutatedAnnotation);
   else {
     clock_t init = std::clock();
