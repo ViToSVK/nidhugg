@@ -376,9 +376,15 @@ bool ZExplorer::chronological
   assert(mutatedPO.empty() && !worklist.empty() &&
          !worklist.front().first.empty());
 
+  fullTraceAfterChrono = false;
   while (!worklist.empty()) {
-    // TODO Optimization: check if this mutation leads to
-    // full trace, if yes you can break from this loop
+    if (fullTraceAfterChrono) {
+      // This mutation leads to a full trace without an assertion violation
+      // all the other successful chrono orderings generated here
+      // would produce the same, hence no need to check them
+      fullTraceAfterChrono = false;
+      break;
+    }
 
     // Recursively process one chronoPO branch
     auto init = std::clock();
@@ -586,10 +592,11 @@ bool ZExplorer::extendAndRecur
       llvm::errs() << "FULL\n";
       //mutatedAnnotation.dump();
     }
-    // TODO Optimization:
     // Note in explorer that mutation produces max-trace
+    fullTraceAfterChrono = true;
     return false;
   }
+  fullTraceAfterChrono = false;
 
   clock_t init = std::clock();
   assert(!mutatedTrace.empty() && !mutatedPO.empty());

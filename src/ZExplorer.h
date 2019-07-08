@@ -38,6 +38,7 @@ class ZExplorer {
   ZTrace * initial;
 
   bool info = false;
+  bool fullTraceAfterChrono = false;
   const bool tso;
 
   class TraceExtension {
