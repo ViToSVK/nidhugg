@@ -468,15 +468,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   for (const ZEvent *spwn : spawns) {
     auto thr_added = basis.getThreadID(spwn->childs_cpid.get_proc_seq());
     assert(!thr_added.second);
-    int aux = -1;
-    while (basis.hasThreadAux(thr_added.first, aux)) {
+    for (int aux : basis.auxes(thr_added.first)) {
       assert(!basis(thr_added.first, aux).empty());
       const ZEvent *nthr = basis.getEvent(thr_added.first, aux, 0);
 
       assert(!po.hasEdge(nthr, spwn));
       if (!po.hasEdge(spwn, nthr))
         po.addEdge(spwn, nthr);
-      aux++;
     }
   }
 
@@ -484,8 +482,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   for (const ZEvent *jn : joins) {
     auto thr_joined = basis.getThreadID(jn->childs_cpid.get_proc_seq());
     assert(!thr_joined.second);
-    int aux = -1;
-    while (basis.hasThreadAux(thr_joined.first, aux)) {
+    for (int aux : basis.auxes(thr_joined.first)) {
       assert(!basis(thr_joined.first, aux).empty());
       unsigned lastev_idx = basis(thr_joined.first, aux).size() - 1;
       const ZEvent *wthr = basis.getEvent(thr_joined.first, aux, lastev_idx);
@@ -493,10 +490,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       assert(!po.hasEdge(jn, wthr));
       if (!po.hasEdge(wthr, jn))
         po.addEdge(wthr, jn);
-
-      aux++;
     }
-    assert(aux >= 0);
   }
 
   // EDGES - mutex inits
