@@ -354,7 +354,8 @@ bool ZExplorer::chronological
 
     return closePO
       (annTrace, readLock, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace);
+       std::move(mutatedPO), mutationFollowsCurrentTrace,
+       nullptr);
   }
 
   auto toOrder = annTrace.graph.chronoOrderPairs
@@ -366,7 +367,8 @@ bool ZExplorer::chronological
     // No pairs to order
     return chronoReads
       (annTrace, readLock, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace);
+       std::move(mutatedPO), mutationFollowsCurrentTrace,
+       nullptr);
   }
 
   // First - partial order
@@ -376,13 +378,12 @@ bool ZExplorer::chronological
   assert(mutatedPO.empty() && !worklist.empty() &&
          !worklist.front().first.empty());
 
-  fullTraceAfterChrono = false;
+  bool sawFullTrace = false;
   while (!worklist.empty()) {
-    if (fullTraceAfterChrono) {
+    if (sawFullTrace) {
       // This mutation leads to a full trace without an assertion violation
       // all the other successful chrono orderings generated here
-      // would produce the same, hence no need to check them
-      fullTraceAfterChrono = false;
+      // would produce traces with the same events, hence no need to check them
       break;
     }
 
@@ -423,7 +424,8 @@ bool ZExplorer::chronological
        worklist.empty()
        ? std::move(mutatedAnnotation) // move
        : ZAnnotation(mutatedAnnotation), // copy
-       std::move(current.first), mutationFollowsCurrentTrace);
+       std::move(current.first), mutationFollowsCurrentTrace,
+       &sawFullTrace);
 
     if (error) {
       assert(originalTB && originalTB->error_trace);
@@ -439,7 +441,7 @@ bool ZExplorer::chronological
 bool ZExplorer::chronoReads
 (const ZTrace& annTrace, const ZEvent *readLock,
  ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace)
+ bool mutationFollowsCurrentTrace, bool *fullTraceAfterChrono)
 {
   // This PO has all conflicting leaf memory-write pairs ordered
   // Here we have to ensure that all leaf reads with leaf observation
@@ -510,7 +512,8 @@ bool ZExplorer::chronoReads
   ++leaf_chrono_pos;
   return closePO
     (annTrace, readLock, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace);
+     std::move(mutatedPO), mutationFollowsCurrentTrace,
+     fullTraceAfterChrono);
 }
 
 
@@ -521,7 +524,7 @@ bool ZExplorer::chronoReads
 bool ZExplorer::closePO
 (const ZTrace& annTrace, const ZEvent *readLock,
  ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace)
+ bool mutationFollowsCurrentTrace, bool *fullTraceAfterChrono)
 {
   auto init = std::clock();
   ZClosure closure(mutatedAnnotation, mutatedPO);
@@ -547,7 +550,8 @@ bool ZExplorer::closePO
 
   return extendAndRecur
     (annTrace, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace);
+     std::move(mutatedPO), mutationFollowsCurrentTrace,
+     fullTraceAfterChrono);
 }
 
 
@@ -557,7 +561,8 @@ bool ZExplorer::closePO
 
 bool ZExplorer::extendAndRecur
 (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
- ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
+ ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace,
+ bool *fullTraceAfterChrono)
 {
   TraceExtension mutatedTrace;
   if (mutationFollowsCurrentTrace)
@@ -593,10 +598,10 @@ bool ZExplorer::extendAndRecur
       //mutatedAnnotation.dump();
     }
     // Note in explorer that mutation produces max-trace
-    fullTraceAfterChrono = true;
+    if (fullTraceAfterChrono)
+      *fullTraceAfterChrono = true;
     return false;
   }
-  fullTraceAfterChrono = false;
 
   clock_t init = std::clock();
   assert(!mutatedTrace.empty() && !mutatedPO.empty());

@@ -38,7 +38,6 @@ class ZExplorer {
   ZTrace * initial;
 
   bool info = false;
-  bool fullTraceAfterChrono = false;
   const bool tso;
 
   class TraceExtension {
@@ -84,16 +83,19 @@ class ZExplorer {
   bool chronoReads
     (const ZTrace& annTrace, const ZEvent *readLock,
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace);
+     bool mutationFollowsCurrentTrace,
+     bool *fullTraceAfterChrono);
 
   bool closePO
     (const ZTrace& annTrace, const ZEvent *readLock,
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace);
+     bool mutationFollowsCurrentTrace,
+     bool *fullTraceAfterChrono);
 
   bool extendAndRecur
     (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
-     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace);
+     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace,
+     bool *fullTraceAfterChrono);
 
   TraceExtension reuseTrace(const ZTrace& parentTrace,
                             const ZAnnotation& mutatedAnnotation);
