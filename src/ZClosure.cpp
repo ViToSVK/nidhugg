@@ -245,7 +245,8 @@ bool ZClosure::close(const ZEvent *newread){
     change = false;
     for (const auto& read_obs : an) {
       auto read = ba.getEvent(read_obs.first.thr, -1, read_obs.first.ev);
-      if (!newread || newread != read) {
+      if ((!newread || newread != read) &&
+          !po.isClosureSafe(read)) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }
         if (res.second) change = true;

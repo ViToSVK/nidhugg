@@ -49,9 +49,12 @@ class ZPartialOrder {
  private:
   ClockT _succ;
   ClockT _pred;
+  std::vector<unsigned> closureSafeUntil;
   std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_line) const;
   std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_line) const;
  public:
+  // Is this annotated read provably closure-safe?
+  bool isClosureSafe(const ZEvent *read) const;
   // Smallest (i.e. earliest) successor. Returns:
   // Event pointer (nullptr if no successor)
   // Event id (INT_MAX if no successor)
@@ -92,7 +95,7 @@ class ZPartialOrder {
 
   bool empty() const {
     assert(_succ.size() == _pred.size());
-    return _succ.empty();
+    return _succ.empty() && closureSafeUntil.empty();
   }
   size_t size() const {
     assert(_succ.size() == _pred.size());
