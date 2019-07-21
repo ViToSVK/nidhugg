@@ -240,22 +240,43 @@ bool ZClosure::close(const ZEvent *newread){
   }
 
   bool change = true;
+  int last_change = an.size();
   while (change) {
     iterations++;
     change = false;
+    int cur = -1;
     for (const auto& read_obs : an) {
+      cur++;
+      if (cur == last_change) {
+        // One entire iteration without any changes
+        // hence the partial order is closed
+        return true;
+      }
       auto read = ba.getEvent(read_obs.first.thr, -1, read_obs.first.ev);
       if ((!newread || newread != read) &&
           !po.isClosureSafe(read)) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }
-        if (res.second) change = true;
+        if (res.second) {
+          change = true;
+          last_change = cur;
+        }
       }
+    }
+    cur++;
+    assert(cur == (int) an.size());
+    if (cur == last_change) {
+        // One entire iteration without any changes
+        // hence the partial order is closed
+        return true;
     }
     if (newread) {
       auto res = rules(newread, an.getObs(newread));
       if (res.first) { return false; }
-      if (res.second) change = true;
+      if (res.second) {
+        change = true;
+        last_change = cur;
+      }
     }
   }
   //po.dump();
