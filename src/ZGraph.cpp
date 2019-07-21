@@ -527,10 +527,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 /* MAIN ALGORITHM              */
 /* *************************** */
 
-int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, unsigned ev) const
+int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const
 {
   assert(thr < basis.number_of_threads());
   assert(cache.wm.count(ml));
+  if (evX < 0)
+    return -1;
+  unsigned ev = evX;
   if (!cache.wm.at(ml).count(thr))
     return -1;
 
@@ -580,9 +583,9 @@ int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, unsigned ev) cons
 
 
 const ZEvent * ZGraph::getTailW
-(const SymAddrSize& ml, unsigned thr, unsigned ev) const
+(const SymAddrSize& ml, unsigned thr, int evX) const
 {
-  int idx = getTailWindex(ml, thr, ev);
+  int idx = getTailWindex(ml, thr, evX);
   if (idx == -1)
     return nullptr;
 
@@ -590,7 +593,7 @@ const ZEvent * ZGraph::getTailW
   auto res = cache.wm.at(ml).at(thr)[idx];
   assert(isWriteM(res) && res->ml == ml &&
          res->threadID() == thr && res->auxID() != -1 &&
-         res->eventID() <= ev);
+         evX >= 0 && res->eventID() <= (unsigned) evX);
   return res;
 }
 
@@ -912,7 +915,6 @@ std::vector<std::pair<const ZEvent *, const ZEvent *>>
     }
   }
 
-  // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
   return res;
 }
 
@@ -1202,59 +1204,159 @@ std::vector<ZEvent> ZGraph::linearizePSO
 }
 
 
-/*
-bool ZGraph::isObservable(const Node *nd, const PartialOrder& po) const
+bool ZGraph::isObservable(const ZEvent *ev, const ZPartialOrder& partial) const
 {
-  assert(isWrite(nd));
+  assert(isWriteM(ev));
+  assert(isWriteB(ev->write_other_ptr));
 
-  auto itmlR = readsRoot.find(nd->getEvent()->ml);
-  if (itmlR != readsRoot.end())
-    for (const Node *rootRead : itmlR->second) {
-      bool observableBy = isObservableBy(nd, rootRead, po);
-      if (observableBy)
-        return true;
+  // In local thread
+  for (unsigned evIdx = ev->write_other_ptr->eventID() + 1;
+       evIdx < basis(ev->threadID(), -1).size(); ++evIdx) {
+    const ZEvent *read = basis(ev->threadID(), -1)[evIdx];
+    if (isWriteB(read) && sameMl(ev, read)) {
+      // no read between ev and the subsequent conflicting write
+      break;
     }
+    if (!isRead(read) || !sameMl(ev, read))
+      continue;
+    assert(cache.readWB.at(read) == ev->write_other_ptr);
+    // ev observable by read if unordered or happening after read
+    if (!partial.hasEdge(ev, read))
+      return true;
+    // might be covered from read by write in other thread
+    assert(isRead(read) && sameMl(ev, read) && partial.hasEdge(ev, read));
+    bool evCovered = isCoveredFromByOtherThread(ev, read, partial);
+    if (!evCovered) {
+      // ev observable by read
+      return true;
+    } else {
+      // ev covered from read and hence covered
+      // also from all potential local reads after
+      // this one, stop searching in local thread
+      break;
+    }
+  }
 
-  auto itmlN = readsNonroot.find(nd->getEvent()->ml);
-  if (itmlN != readsNonroot.end())
-    for (const Node *nonrootRead : itmlN->second) {
-      bool observableBy = isObservableBy(nd, nonrootRead, po);
-      if (observableBy)
-        return true;
-    }
+  // In remote threads
+  for (unsigned thIdx = 0; thIdx < basis.number_of_threads(); ++thIdx) {
+    if (thIdx == ev->threadID())
+      continue;
+
+    // Search for conflicting reads in thIdx
+    for (int evIdx = partial.pred(ev, thIdx, -1).second + 1;
+         evIdx < (int) basis(thIdx, -1).size(); ++evIdx) {
+      const ZEvent *read = basis(thIdx, -1)[evIdx];
+      assert(!partial.hasEdge(read, ev));
+      if (!isRead(read) || !sameMl(ev, read))
+        continue;
+
+      if (!partial.hasEdge(ev, read)) {
+        // Unordered, ev can be covered from read
+        // only by a read-local write
+        assert(!partial.areOrdered(ev, read));
+        const ZEvent *writeRlocal = cache.readWB.at(read);
+        if (!writeRlocal) {
+          // ev observable by read
+          return true;
+        }
+        assert(isWriteB(writeRlocal));
+        writeRlocal = writeRlocal->write_other_ptr;
+        assert(isWriteM(writeRlocal));
+        if (!partial.hasEdge(ev, writeRlocal) &&
+            !partial.hasEdge(read, writeRlocal)) {
+          // ev observable by read
+          return true;
+        }
+        // Not observable
+        if (partial.hasEdge(read, writeRlocal)) {
+          // ev not observable by read, but could be
+          // by some other read in this same thread,
+          // continue searching
+          continue;
+        } else {
+          assert(partial.hasEdge(ev, writeRlocal));
+          // since ev -> writeRlocal, it will be covered
+          // by writeRlocal also to all later reads
+          // in this thread
+          break;
+        }
+
+      } else {
+        // ev -> read, last chance in this thread
+        // (1) Not covered by other threads
+        if (isCoveredFromByOtherThread(ev, read, partial)) {
+          // since ev -> read, it has no chance with reads after read in this thread
+          break;
+        }
+        // (2) Not covered by ev-thread
+        int auxIdx = basis.auxForMl(read->ml, ev->threadID());
+        assert(auxIdx != -1 && auxIdx == ev->auxID());
+        int pr = partial.pred(read, ev->threadID(), auxIdx).second;
+        const ZEvent *othW = getTailW(read->ml, ev->threadID(), pr);
+        assert(othW && isWriteM(othW));
+        if (othW != ev) {
+          // ev -> othW -> read
+          assert(sameMl(othW, ev) && othW->eventID() > ev->eventID() &&
+                 partial.hasEdge(othW, read));
+          // since ev -> read, it has no chance with reads after read in this thread
+          break;
+        }
+        // (3) Not covered by read-thread
+        const ZEvent *writeRlocal = cache.readWB.at(read);
+        if (!writeRlocal) {
+          // ev observable by read
+          return true;
+        }
+        assert(isWriteB(writeRlocal));
+        writeRlocal = writeRlocal->write_other_ptr;
+        assert(isWriteM(writeRlocal));
+        if (!partial.hasEdge(ev, writeRlocal) &&
+            !partial.hasEdge(read, writeRlocal)) {
+          // ev observable by read
+          return true;
+        }
+        assert(partial.hasEdge(ev, writeRlocal) ||
+               partial.hasEdge(read, writeRlocal));
+        // since ev -> read, it has no chance with reads after read in this thread
+        break;
+      }
+
+    } // evIdx loop
+  } // thIdx loop
 
   return false;
 }
 
-bool ZGraph::isObservableBy(const Node *writend, const Node *readnd,
-                                   const PartialOrder& po) const
+
+// Is 'writeEv' covered from 'readEv' in 'partial'
+// by some other conflicting write othW? (writeEv -> othW -> readEv)
+// This function checks for othW only in threads different from
+// thread of writeEv and thread of readEv
+bool ZGraph::isCoveredFromByOtherThread
+(const ZEvent *writeEv, const ZEvent *readEv,
+ const ZPartialOrder& partial) const
 {
-  assert(isWrite(writend) && isRead(readnd) &&
-         sameMl(writend, readnd));
-
-  if (hasEdge(readnd, writend, po)) {
-    // Trivially unobservable
-    return false;
+  assert(isWriteM(writeEv) && isRead(readEv) &&
+         sameMl(writeEv, readEv) && partial.hasEdge(writeEv, readEv));
+  for (unsigned thIdx = 0; thIdx < basis.number_of_threads(); ++thIdx) {
+    // Only checks different threads!!!
+    if (thIdx == writeEv->threadID() || thIdx == readEv->threadID())
+      continue;
+    int auxIdx = basis.auxForMl(readEv->ml, thIdx);
+    if (auxIdx == -1)
+      continue;
+    int pr = partial.pred(readEv, thIdx, auxIdx).second;
+    const ZEvent *othW = getTailW(readEv->ml, thIdx, pr);
+    if (!othW)
+      continue;
+    assert(isWriteM(othW));
+    assert(sameMl(writeEv, othW));
+    assert(partial.hasEdge(othW, readEv));
+    if (partial.hasEdge(writeEv, othW)) {
+      // writeEv -> othW -> readEv
+      // Hence writeEv covered
+      return true;
+    }
   }
-
-  if (!hasEdge(writend, readnd, po)) {
-    // Trivially observable
-    assert(!areOrdered(writend, readnd, po));
-    return true;
-  }
-
-  assert(hasEdge(writend, readnd, po));
-  // If a write happens before a read, it can be
-  // observable by this read only if it is head
-  auto heads = getHeadWrites(readnd, po);
-  if (heads.first && heads.first == writend)
-    return true;
-
-  if (heads.second.size() > 0)
-    for (const Node *nonrootHead : heads.second)
-      if (nonrootHead == writend)
-        return true;
-
   return false;
 }
-*/

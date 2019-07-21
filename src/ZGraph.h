@@ -126,8 +126,8 @@ class ZGraph {
 
   // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
   // return first memory-write to ml (resp. return its index in cache.wm)
-  int getTailWindex(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
-  const ZEvent *getTailW(const SymAddrSize& ml, unsigned thr, unsigned ev) const;
+  int getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const;
+  const ZEvent *getTailW(const SymAddrSize& ml, unsigned thr, int ev) const;
 
   // In thread thr (and specific aux), from all memory-writes
   // conflicting with read that do not happen after the read in partial,
@@ -156,6 +156,12 @@ class ZGraph {
     (const ZPartialOrder& po, const ZAnnotation& annotation) const;
   std::vector<ZEvent> linearizePSO
     (const ZPartialOrder& po, const ZAnnotation& annotation) const;
+
+
+  // Observability
+  bool isObservable(const ZEvent *ev, const ZPartialOrder& partial) const;
+  bool isCoveredFromByOtherThread(const ZEvent *writeEv, const ZEvent *readEv,
+                                  const ZPartialOrder& partial) const;
 
   void dump() const { po.dump(); }
 

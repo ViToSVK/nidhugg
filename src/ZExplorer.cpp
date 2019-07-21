@@ -399,23 +399,30 @@ bool ZExplorer::chronological
       auto ev1 = toOrder[current.second].first;
       auto ev2 = toOrder[current.second].second;
       // Order pair ev1-ev2
-      // TODO: add *one-read*-or-*both-mws-observable-in-po* condition
       if (!current.first.areOrdered(ev1, ev2)) {
-        // Create two cases with these orderings
-        worklist.emplace_front(ZPartialOrder(current.first), // copy
-                               current.second + 1);
-        // Handle current: ev1 -> ev2
-        current.first.addEdge(ev1, ev2);
-        // Handle otherorder: ev2 -> ev1
-        worklist.front().first.addEdge(ev2, ev1);
+        // *one-read*-or-*both-mws-observable-in-po* condition
+        if (isRead(ev1) || isRead(ev2) ||
+            (annTrace.graph.isObservable(ev1, current.first) &&
+             annTrace.graph.isObservable(ev2, current.first))) {
+          // Create two cases with these orderings
+          worklist.emplace_front(ZPartialOrder(current.first), // copy
+                                 current.second + 1);
+          // Handle current: ev1 -> ev2
+          current.first.addEdge(ev1, ev2);
+          // Handle otherorder: ev2 -> ev1
+          worklist.front().first.addEdge(ev2, ev1);
+        }
       }
       current.second++;
     }
     assert(current.second == toOrder.size());
     #ifndef NDEBUG
     for (auto& pair : toOrder)
-      current.first.areOrdered(pair.first, pair.second);
-      // or-*one-read*-or-*both-mws-observable-in-po* condition
+      assert(current.first.areOrdered(pair.first, pair.second) ||
+             (!isRead(pair.first) && !isRead(pair.second) &&
+              (!annTrace.graph.isObservable(pair.first, current.first) ||
+               !annTrace.graph.isObservable(pair.second, current.first))));
+      // *ordered*-or-(*no-read*-and-*some-mw-unobservable-in-po*)
     #endif
     time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
 
@@ -466,25 +473,29 @@ bool ZExplorer::chronoReads
     const ZEvent *anBuf = mutatedAnnotation.getObs(leaf).thr != INT_MAX
       ? annTrace.getEvent(mutatedAnnotation.getObs(leaf)) : nullptr;
     assert(!anBuf || isWriteB(anBuf));
-    if (!anBuf || !annTrace.isRoot(anBuf)) {
-      // Leaf observation
-      const ZEvent *anMem = anBuf ? anBuf->write_other_ptr : nullptr;
-      assert(!anMem ||
-             (isWriteM(anMem) && sameMl(anMem, leaf) &&
-              (leaf->threadID() == anMem->threadID() ||
-               mutatedPO.hasEdge(anMem, leaf)))); // PreClosure
-      // Find the earliest conflicting read-remote leaf memory-write
-      // happening after the observation-memory-write
-      const ZEvent *nextMem = nullptr;
-      for (const auto& thr_list : annTrace.graph.getCache().chrono) { // leaf
-        if (thr_list.first != leaf->threadID()) { // read-remote
-          for (const auto& mwEv : thr_list.second) {
-            assert(isWriteM(mwEv) && mwEv->threadID() == thr_list.first);
-            if (mwEv != anMem && sameMl(mwEv, leaf)) { // conflicting
-              assert(!anMem || mutatedPO.areOrdered(anMem, mwEv));
-              if (!anMem || mutatedPO.hasEdge(anMem, mwEv)) {
-                // all conflicting others in this list happen after mwEv
-                // so only mwEv can be a candidate; break
+    assert(!anBuf || !annTrace.isRoot(anBuf)); // leaf observation
+    const ZEvent *anMem = anBuf ? anBuf->write_other_ptr : nullptr;
+    assert(!anMem ||
+           (isWriteM(anMem) && sameMl(anMem, leaf) &&
+            (leaf->threadID() == anMem->threadID() ||
+             mutatedPO.hasEdge(anMem, leaf)))); // PreClosure
+
+    // Find the earliest conflicting read-remote leaf memory-write
+    // happening after the observation-memory-write
+    const ZEvent *nextMem = nullptr;
+    for (const auto& thr_list : annTrace.graph.getCache().chrono) { // leaf
+      if (thr_list.first != leaf->threadID()) { // read-remote
+        for (const auto& mwEv : thr_list.second) {
+
+          assert(isWriteM(mwEv) && mwEv->threadID() == thr_list.first);
+          if (mwEv != anMem && sameMl(mwEv, leaf)) { // conflicting
+            assert(!anMem || mutatedPO.areOrdered(anMem, mwEv) ||
+                   !annTrace.graph.isObservable(anMem, mutatedPO) ||
+                   !annTrace.graph.isObservable(mwEv, mutatedPO));
+            if (!anMem || mutatedPO.hasEdge(anMem, mwEv)) {
+              // all conflicting others in this list happen after mwEv
+              // so only mwEv can be a candidate; break
+              if (annTrace.graph.isObservable(mwEv, mutatedPO)) {
                 if (!nextMem)
                   nextMem = mwEv;
                 else {
@@ -492,20 +503,21 @@ bool ZExplorer::chronoReads
                   if (mutatedPO.hasEdge(mwEv, nextMem))
                     nextMem = mwEv;
                 }
-                break;
               }
+              break;
             }
-          } // break from this loop
-        }
+          }
+
+        } // break from this loop
       }
-      // the read has to happen before nextMem
-      if (nextMem && mutatedPO.hasEdge(nextMem, leaf)) {
-        time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
-        return false;
-      }
-      else if (nextMem && !mutatedPO.hasEdge(leaf, nextMem))
-        mutatedPO.addEdge(leaf, nextMem);
     }
+    // the read has to happen before nextMem
+    if (nextMem && mutatedPO.hasEdge(nextMem, leaf)) {
+      time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
+      return false;
+    }
+    else if (nextMem && !mutatedPO.hasEdge(leaf, nextMem))
+      mutatedPO.addEdge(leaf, nextMem);
   }
 
   time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
