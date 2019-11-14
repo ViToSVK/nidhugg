@@ -36,6 +36,12 @@
 #endif
 #include <llvm/Transforms/Utils/Cloning.h>
 
+#ifdef LLVM_HAS_TERMINATORINST
+typedef llvm::TerminatorInst TerminatorInst;
+#else
+typedef llvm::Instruction TerminatorInst;
+#endif
+
 void LoopUnrollPass::getAnalysisUsage(llvm::AnalysisUsage &AU) const{
   llvm::LoopPass::getAnalysisUsage(AU);
   AU.addRequired<DeclareAssumePass>();
@@ -95,7 +101,7 @@ bool LoopUnrollPass::runOnLoop(llvm::Loop *L, llvm::LPPassManager &LPM){
   for(int i = 0; i < unroll_depth; ++i){
     for(int j = 0; j < int(bodies[i].size()); ++j){
       /* Branches */
-      llvm::TerminatorInst *TI = bodies[i][j]->getTerminator();
+      TerminatorInst *TI = bodies[i][j]->getTerminator();
       int nsucc = TI->getNumSuccessors();
       for(int k = 0; k < nsucc; ++k){
         llvm::BasicBlock *succ0 = TI->getSuccessor(k);
@@ -207,7 +213,10 @@ bool LoopUnrollPass::runOnLoop(llvm::Loop *L, llvm::LPPassManager &LPM){
       }
     }
   }
-#ifdef HAVE_LLVM_LOOPINFO_MARK_AS_REMOVED
+#ifdef HAVE_LLVM_LOOPINFO_ERASE
+  LPM.getAnalysis<llvm::LoopInfoWrapperPass>().getLoopInfo().erase(L);
+  LPM.markLoopAsDeleted(*L);
+#elif defined(HAVE_LLVM_LOOPINFO_MARK_AS_REMOVED)
   LPM.getAnalysis<llvm::LoopInfoWrapperPass>().getLoopInfo().markAsRemoved(L);
 #else
   LPM.deleteLoopFromQueue(L);

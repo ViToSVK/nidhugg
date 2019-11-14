@@ -69,7 +69,7 @@ llvm::ExecutionEngine *VCInterpreter::create(llvm::Module *M, VCTraceBuilder &TB
     // We got an error, just return 0
     return nullptr;
   }
-#elif LLVM_VERSION_MAJOR == 4
+#elif LLVM_VERSION_MAJOR >= 4
   if(llvm::Error EC = M->materializeAll()){
     // We got an error, just return 0
     if(EC)
