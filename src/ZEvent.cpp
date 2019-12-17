@@ -143,6 +143,8 @@ std::string ZEvent::to_string(bool write_cpid) const
    default :
      res << " unknown";
   }
+  if (fence)
+    res << " fence";
 
   return res.str();
 }
