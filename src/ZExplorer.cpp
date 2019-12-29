@@ -581,8 +581,8 @@ bool ZExplorer::extendAndRecur
     mutatedTrace = reuseTrace(parentTrace, mutatedAnnotation);
   else {
     clock_t init = std::clock();
-    auto linear = tso ? parentTrace.graph.linearizeTSO(mutatedPO, mutatedAnnotation)
-      : parentTrace.graph.linearizePSO(mutatedPO, mutatedAnnotation);
+    ZLinearization linearizer(mutatedAnnotation, mutatedPO);
+    auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
 

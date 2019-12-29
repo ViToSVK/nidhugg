@@ -29,6 +29,7 @@
 #include "ZBuilderPSO.h"
 #include "ZTrace.h"
 #include "ZClosure.h"
+#include "ZLinearization.h"
 
 
 class ZExplorer {

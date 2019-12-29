@@ -47,6 +47,7 @@ libnidhugg_a_SOURCES = \
   ZPartialOrder.cpp ZPartialOrder.h \
   ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
+  ZLinearization.cpp ZLinearization.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \
   ZBuilderTSO.cpp ZBuilderTSO.h \
   ZInterpreterPSO.cpp ZInterpreterPSO.h \
