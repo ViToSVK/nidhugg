@@ -85,7 +85,6 @@ void ZExplorer::print_stats() const
   std::cout << "Full traces ending in a deadlock:  " << executed_traces_full_deadlock << "\n";
   std::cout << "Traces with no mutation choices:   " << no_mut_choices << "\n";
   std::cout << "Mutations considered:              " << mutations_considered << "\n";
-  std::cout << "Leaf-chronological-POs:            " << leaf_chrono_pos << "\n";
   std::cout << "Closure failed:                    " << closure_failed << "\n";
   std::cout << "Closure succeeded:                 " << closure_succeeded << "\n";
   std::cout << "Closure succ -- no added edge:     " << closure_no_edge << "\n";
@@ -95,7 +94,6 @@ void ZExplorer::print_stats() const
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
-  std::cout << "Time spent on chronological:       " << time_chrono << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
   std::cout << "\n" << std::scientific;
@@ -224,7 +222,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
       // DC  read->observed_trace_id == obsB->write_other_ptr->traceID());
     }
 
-    bool error = chronological
+    bool error = closePO
       (annTrace, read, std::move(mutatedAnnotation),
        std::move(mutatedPO), mutationFollowsCurrentTrace);
 
@@ -271,7 +269,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     bool mutationFollowsCurrentTrace =
       (lock->observed_trace_id == -1);
 
-    return chronological
+    return closePO
       (annTrace, lock, std::move(mutatedAnnotation),
        std::move(mutatedPO), mutationFollowsCurrentTrace);
   }
@@ -319,213 +317,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   bool mutationFollowsCurrentTrace =
     (lock->observed_trace_id == lastUnlock->traceID());
 
-  return chronological
+  return closePO
     (annTrace, lock, std::move(mutatedAnnotation),
      std::move(mutatedPO), mutationFollowsCurrentTrace);
-}
-
-
-/* *************************** */
-/* CHRONOLOGICAL               */
-/* *************************** */
-
-bool ZExplorer::chronological
-(const ZTrace& annTrace, const ZEvent *readLock,
- ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace)
-{
-  assert(isRead(readLock) || isLock(readLock));
-  int chronoThreads = annTrace.graph.getCache().chrono.size();
-  if (isRead(readLock) && !annTrace.isRoot(readLock) &&
-      !annTrace.graph.getCache().chrono.count(readLock->threadID()))
-    ++chronoThreads;
-
-  if (chronoThreads < 2) {
-    // No chronological orderings are needed,
-    // we proceed with just one mutatedPO
-    ++leaf_chrono_pos;
-
-    // TODO Optimization:
-    // If we want r to observe remote goodwm
-    // and in trace r is before goodwm
-    // we can just delay thread of r
-    // such that in new trace
-    // badlocalwm -> goodwm -> r
-
-    return closePO
-      (annTrace, readLock, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace,
-       nullptr);
-  }
-
-  auto toOrder = annTrace.graph.chronoOrderPairs
-    ((isRead(readLock) && !annTrace.isRoot(readLock) &&
-      annTrace.isRoot(mutatedAnnotation.getObs(readLock).thr))
-     ? readLock : nullptr, mutatedAnnotation);
-
-  if (toOrder.empty()) {
-    // No pairs to order
-    return chronoReads
-      (annTrace, readLock, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace,
-       nullptr);
-  }
-
-  // First - partial order
-  // Second - check toOrder pairs starting from this one
-  std::list<std::pair<ZPartialOrder, unsigned>> worklist;
-  worklist.emplace_front(std::move(mutatedPO), 0);
-  assert(mutatedPO.empty() && !worklist.empty() &&
-         !worklist.front().first.empty());
-
-  bool sawFullTrace = false;
-  while (!worklist.empty()) {
-    if (sawFullTrace) {
-      // This mutation leads to a full trace without an assertion violation
-      // all the other successful chrono orderings generated here
-      // would produce traces with the same events, hence no need to check them
-      break;
-    }
-
-    // Recursively process one chronoPO branch
-    auto init = std::clock();
-    std::pair<ZPartialOrder, unsigned> current
-      (std::move(worklist.front()));
-    assert(!current.first.empty() && !worklist.empty() &&
-           worklist.front().first.empty());
-    worklist.pop_front();
-
-    while (current.second < toOrder.size()) {
-      auto ev1 = toOrder[current.second].first;
-      auto ev2 = toOrder[current.second].second;
-      // Order pair ev1-ev2
-      if (!current.first.areOrdered(ev1, ev2)) {
-        // *one-read*-or-*both-mws-observable-in-po* condition
-        if (isRead(ev1) || isRead(ev2) ||
-            (annTrace.graph.isObservable(ev1, current.first) &&
-             annTrace.graph.isObservable(ev2, current.first))) {
-          // Create two cases with these orderings
-          worklist.emplace_front(ZPartialOrder(current.first), // copy
-                                 current.second + 1);
-          // Handle current: ev1 -> ev2
-          current.first.addEdge(ev1, ev2);
-          // Handle otherorder: ev2 -> ev1
-          worklist.front().first.addEdge(ev2, ev1);
-        }
-      }
-      current.second++;
-    }
-    assert(current.second == toOrder.size());
-    #ifndef NDEBUG
-    for (auto& pair : toOrder)
-      assert(current.first.areOrdered(pair.first, pair.second) ||
-             (!isRead(pair.first) && !isRead(pair.second) &&
-              (!annTrace.graph.isObservable(pair.first, current.first) ||
-               !annTrace.graph.isObservable(pair.second, current.first))));
-      // *ordered*-or-(*no-read*-and-*some-mw-unobservable-in-po*)
-    #endif
-    time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
-
-    bool error = chronoReads
-      (annTrace, readLock,
-       worklist.empty()
-       ? std::move(mutatedAnnotation) // move
-       : ZAnnotation(mutatedAnnotation), // copy
-       std::move(current.first), mutationFollowsCurrentTrace,
-       &sawFullTrace);
-
-    if (error) {
-      assert(originalTB && originalTB->error_trace);
-      return error;
-    }
-  }
-  worklist.clear();
-
-  return false;
-}
-
-
-bool ZExplorer::chronoReads
-(const ZTrace& annTrace, const ZEvent *readLock,
- ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace, bool *fullTraceAfterChrono)
-{
-  // This PO has all conflicting leaf memory-write pairs ordered
-  // Here we have to ensure that all leaf reads with leaf observation
-  // happen before the leaf memory-write right after the observation-memory-write
-  // (no matter if the observation is local-leaf or remote-leaf)
-
-  auto init = std::clock();
-
-  std::list<const ZEvent *> leafReadsLeafObs;
-  if (isRead(readLock) && !annTrace.isRoot(readLock) &&
-      !annTrace.isRoot(mutatedAnnotation.getObs(readLock).thr))
-    leafReadsLeafObs.push_back(readLock);
-  for (const auto& thr_list : annTrace.graph.getCache().chronoAnnR)
-    for (const auto& leaf : thr_list.second) {
-      assert(isRead(leaf) && mutatedAnnotation.defines(leaf) &&
-             !annTrace.isRoot(leaf) && leaf->threadID() == thr_list.first);
-      if (!annTrace.isRoot(mutatedAnnotation.getObs(leaf).thr))
-        leafReadsLeafObs.push_back(leaf);
-    }
-
-  for (const auto& leaf : leafReadsLeafObs) {
-    const ZEvent *anBuf = mutatedAnnotation.getObs(leaf).thr != INT_MAX
-      ? annTrace.getEvent(mutatedAnnotation.getObs(leaf)) : nullptr;
-    assert(!anBuf || isWriteB(anBuf));
-    assert(!anBuf || !annTrace.isRoot(anBuf)); // leaf observation
-    const ZEvent *anMem = anBuf ? anBuf->write_other_ptr : nullptr;
-    assert(!anMem ||
-           (isWriteM(anMem) && sameMl(anMem, leaf) &&
-            (leaf->threadID() == anMem->threadID() ||
-             mutatedPO.hasEdge(anMem, leaf)))); // PreClosure
-
-    // Find the earliest conflicting read-remote leaf memory-write
-    // happening after the observation-memory-write
-    const ZEvent *nextMem = nullptr;
-    for (const auto& thr_list : annTrace.graph.getCache().chrono) { // leaf
-      if (thr_list.first != leaf->threadID()) { // read-remote
-        for (const auto& mwEv : thr_list.second) {
-
-          assert(isWriteM(mwEv) && mwEv->threadID() == thr_list.first);
-          if (mwEv != anMem && sameMl(mwEv, leaf)) { // conflicting
-            assert(!anMem || mutatedPO.areOrdered(anMem, mwEv) ||
-                   !annTrace.graph.isObservable(anMem, mutatedPO) ||
-                   !annTrace.graph.isObservable(mwEv, mutatedPO));
-            if (!anMem || mutatedPO.hasEdge(anMem, mwEv)) {
-              // all conflicting others in this list happen after mwEv
-              // so only mwEv can be a candidate; break
-              if (annTrace.graph.isObservable(mwEv, mutatedPO)) {
-                if (!nextMem)
-                  nextMem = mwEv;
-                else {
-                  assert(mutatedPO.areOrdered(nextMem, mwEv));
-                  if (mutatedPO.hasEdge(mwEv, nextMem))
-                    nextMem = mwEv;
-                }
-              }
-              break;
-            }
-          }
-
-        } // break from this loop
-      }
-    }
-    // the read has to happen before nextMem
-    if (nextMem && mutatedPO.hasEdge(nextMem, leaf)) {
-      time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
-      return false;
-    }
-    else if (nextMem && !mutatedPO.hasEdge(leaf, nextMem))
-      mutatedPO.addEdge(leaf, nextMem);
-  }
-
-  time_chrono += (double)(clock() - init)/CLOCKS_PER_SEC;
-  ++leaf_chrono_pos;
-  return closePO
-    (annTrace, readLock, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace,
-     fullTraceAfterChrono);
 }
 
 
@@ -536,7 +330,7 @@ bool ZExplorer::chronoReads
 bool ZExplorer::closePO
 (const ZTrace& annTrace, const ZEvent *readLock,
  ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace, bool *fullTraceAfterChrono)
+ bool mutationFollowsCurrentTrace)
 {
   auto init = std::clock();
   ZClosure closure(mutatedAnnotation, mutatedPO);
@@ -562,8 +356,7 @@ bool ZExplorer::closePO
 
   return extendAndRecur
     (annTrace, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace,
-     fullTraceAfterChrono);
+     std::move(mutatedPO), mutationFollowsCurrentTrace);
 }
 
 
@@ -573,8 +366,7 @@ bool ZExplorer::closePO
 
 bool ZExplorer::extendAndRecur
 (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
- ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace,
- bool *fullTraceAfterChrono)
+ ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
 {
   TraceExtension mutatedTrace;
   if (mutationFollowsCurrentTrace)
@@ -609,9 +401,6 @@ bool ZExplorer::extendAndRecur
       llvm::errs() << "FULL\n";
       //mutatedAnnotation.dump();
     }
-    // Note in explorer that mutation produces max-trace
-    if (fullTraceAfterChrono)
-      *fullTraceAfterChrono = true;
     return false;
   }
 
@@ -878,36 +667,3 @@ bool ZExplorer::linearizationRespectsAnn
 
   return true;
 }
-
-
-/*
-
-  std::vector<unsigned> processLengths = current->graph.getProcessLengths();
-  auto negativeWriteMazBranch = ZAnnotationNeg(current->negative);
-  negativeWriteMazBranch.update(nd, processLengths);
-
-  auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                      negativeWriteMazBranch, nd->getProcessID(),
-                                      mutationFollowsCurrentTrace);
-  if (error_addedToWL.first)
-    return true;
-  if (!error_addedToWL.second) {
-    // Annotating this read with this value on this trace produces a maximal trace
-    // No need to repeat this mutation in a sibling Mazurkiewicz branch
-    auto it = mutationProducesMaxTrace.find(nd->getProcessID());
-    if (it == mutationProducesMaxTrace.end())
-      mutationProducesMaxTrace.emplace_hint(it, nd->getProcessID(),
-                                            std::unordered_set<VCIID>());
-    assert(!mutationProducesMaxTrace
-           [nd->getProcessID()].count(vciid_ann.first));
-    mutationProducesMaxTrace
-      [nd->getProcessID()].insert(vciid_ann.first);
-    // Clear the rest of POs with this mutation
-    afterMutationChoicePOs.clear();
-  }
-
-    auto error_addedToWL = extendAndAdd(std::move(mutatedPo), mutatedAnnotation,
-                                        negativeWriteMazBranch, nd->getProcessID(),
-                                        mutationFollowsCurrentTrace);
-    return error_addedToWL.first;
-*/

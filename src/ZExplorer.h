@@ -76,27 +76,14 @@ class ZExplorer {
 
   bool mutateLock(const ZTrace& annTrace, const ZEvent *lock);
 
-  bool chronological
+  bool closePO
     (const ZTrace& annTrace, const ZEvent *readLock,
      ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
      bool mutationFollowsCurrentTrace);
 
-  bool chronoReads
-    (const ZTrace& annTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace,
-     bool *fullTraceAfterChrono);
-
-  bool closePO
-    (const ZTrace& annTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace,
-     bool *fullTraceAfterChrono);
-
   bool extendAndRecur
     (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
-     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace,
-     bool *fullTraceAfterChrono);
+     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace);
 
   TraceExtension reuseTrace(const ZTrace& parentTrace,
                             const ZAnnotation& mutatedAnnotation);
@@ -146,8 +133,6 @@ class ZExplorer {
   unsigned no_mut_choices = 0;
   // Number of mutations considered
   unsigned mutations_considered = 0;
-  // Number of leaf-chrono-POs
-  unsigned leaf_chrono_pos = 0;
   // Closure of mutated PO (already chrono-ordered) failed
   unsigned closure_failed = 0;
   // Closure of mutated PO (already chrono-ordered) succeeded
@@ -164,8 +149,6 @@ class ZExplorer {
   double time_linearization = 0;
   // Total time spent on interpreting
   double time_interpreter = 0;
-  // Total time spent on chronological ordering
-  double time_chrono = 0;
   // Total time spent on closure
   double time_closure = 0;
   // Total time spent on closure succ no edge

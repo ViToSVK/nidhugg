@@ -297,12 +297,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     if (isSpawn(ev)) {
       proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
       assert(basis.number_of_threads() > 0);
-      if (ev->fence && basis.number_of_threads() == 1) {
-        // Only one thread now, and everything there
-        // happens before this spawn event, so nothing
-        // in this thread has to be chrono ordered
-        cache.chrono.clear();
-      }
+      assert(ev->fence);
     }
 
     // Handle Buffer-Write
@@ -365,13 +360,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       if (!cache.wm[ev->ml].count(ev->threadID()))
         cache.wm[ev->ml].emplace(ev->threadID(), std::vector<const ZEvent *>());
       cache.wm[ev->ml][ev->threadID()].push_back(ev);
-      // Cache - chrono
-      if (!basis.isRoot(ev)) {
-        if (!cache.chrono.count(ev->threadID()))
-          cache.chrono.emplace
-            (ev->threadID(), std::list<const ZEvent *>());
-        cache.chrono[ev->threadID()].push_back(ev);
-      }
     }
 
     // Handle Read
@@ -383,13 +371,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         has_unannotated_read_or_lock.insert(ev->threadID());
       } else {
         assert(annotationPtr->defines(ev));
-        if (!basis.isRoot(ev)) {
-          // Cache - chronoAnnR
-          if (!cache.chronoAnnR.count(ev->threadID()))
-            cache.chronoAnnR.emplace
-              (ev->threadID(), std::list<const ZEvent *>());
-          cache.chronoAnnR[ev->threadID()].push_back(ev);
-        }
       }
       // Cache - wm
       if (!cache.wm.count(ev->ml))
@@ -853,68 +834,6 @@ std::list<ZObs> ZGraph::getObsCandidates
   }
 
   res.sort();
-  return res;
-}
-
-
-std::vector<std::pair<const ZEvent *, const ZEvent *>>
-  ZGraph::chronoOrderPairs
-  (const ZEvent *leafread, const ZAnnotation& annotation) const
-{
-  bool isLR = (leafread && isRead(leafread) && !basis.isRoot(leafread) &&
-               basis.isRoot(annotation.getObs(leafread).thr));
-  assert(!leafread || isLR);
-
-  std::vector<std::pair<const ZEvent *, const ZEvent *>> res;
-
-  for (auto it1 = cache.chrono.begin(); it1 != cache.chrono.end(); ++it1) {
-    unsigned thr1 = it1->first;
-    // MW-MW
-    for (auto it2 = cache.chrono.begin(); it2 != it1; ++it2) {
-      assert(thr1 != it2->first && !basis.isRoot(thr1) && !basis.isRoot(it2->first));
-      // Get pairs thr1-thr2
-      for (const auto& ev1 : it1->second) {
-        assert(isWriteM(ev1) && ev1->threadID() == thr1);
-        for (const auto& ev2 : it2->second) {
-          assert(isWriteM(ev2) && ev2->threadID() == it2->first);
-          // ev1-ev2
-          if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
-            res.emplace_back(ev1, ev2);
-        }
-      }
-    }
-    // MW-leafread (that has root observation)
-    if (isLR && thr1 != leafread->threadID()) { // in chronoPO read only with MW of other threads
-      for (const auto& ev1 : it1->second) {
-        assert(isWriteM(ev1) && ev1->threadID() == thr1);
-        // ev1-leafread
-        if (!po.areOrdered(ev1, leafread) && sameMl(ev1, leafread))
-          res.emplace_back(ev1, leafread);
-      }
-    }
-    // MW-oldAnnotatedRead with root observation
-    for (auto it2 = cache.chronoAnnR.begin(); it2 != cache.chronoAnnR.end(); ++it2) {
-      unsigned thr2 = it2->first;
-      assert(!basis.isRoot(thr1) && !basis.isRoot(thr2));
-      if (thr1 != thr2) { // in chronoPO read only with MW of other threads
-        // Get pairs thr1-thr2
-        for (const auto& ev2 : it2->second) {
-          assert(isRead(ev2) && ev2->threadID() == thr2);
-          assert(annotation.defines(ev2));
-          if (!basis.isRoot(annotation.getObs(ev2).thr))
-            continue;
-          assert(basis.isRoot(annotation.getObs(ev2).thr));
-          for (const auto& ev1 : it1->second) {
-            assert(isWriteM(ev1) && ev1->threadID() == thr1);
-            // ev1-ev2
-            if (!po.areOrdered(ev1, ev2) && sameMl(ev1, ev2))
-              res.emplace_back(ev1, ev2);
-          }
-        }
-      }
-    }
-  }
-
   return res;
 }
 

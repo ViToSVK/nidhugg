@@ -42,14 +42,8 @@ class ZGraph {
     std::unordered_map
       <const ZEvent *, const ZEvent *> readWB;
 
-    // Leaf ThrID -> memory-writes to chronologically order
-    // Leaf ThrID -> annotated reads to chronologically order
-    std::unordered_map
-      <unsigned, std::list<const ZEvent *>> chrono, chronoAnnR;
-
-
     bool empty() const {
-      return (wm.empty() && readWB.empty() && chrono.empty());
+      return (wm.empty() && readWB.empty());
     }
   };
 
@@ -145,11 +139,6 @@ class ZGraph {
   // Returns observation candidates for a read node
   std::list<ZObs> getObsCandidates(const ZEvent *read,
                                    const ZAnnotationNeg& negative) const;
-
-  // Returns pairs of po-unordered leaf conflicting writes
-  // that have to be ordered to get a leaves-chronological-po
-  std::vector<std::pair<const ZEvent *, const ZEvent *>>
-    chronoOrderPairs(const ZEvent *leafread, const ZAnnotation& annotation) const;
 
   // Linearizes a partial order
   std::vector<ZEvent> linearizeTSO
