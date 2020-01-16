@@ -120,6 +120,26 @@ inline bool isUnlock(const ZEvent& ev) {
 
 //
 
+/* conversion functions */
+
+inline const ZEvent * toWriteM(const ZEvent *ev) {
+  if (isWriteB(ev)) {
+    ev = ev->write_other_ptr;
+  }
+  assert(isWriteM(ev));
+  return ev;
+}
+
+inline const ZEvent * toWriteB(const ZEvent *ev) {
+  if (isWriteM(ev)) {
+    ev = ev->write_other_ptr;
+  }
+  assert(isWriteM(ev));
+  return ev;
+}
+
+//
+
 /* llvm instruction helpers */
 inline bool is_function_call(const llvm::Instruction *I, const char *name) {
   using namespace llvm;

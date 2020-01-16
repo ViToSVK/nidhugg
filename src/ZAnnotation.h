@@ -55,8 +55,15 @@ class ZObs {
     return res.str();
   }
 
+  bool isInitial() const {
+    return thr == INT_MAX && ev == INT_MAX;
+  }
+
   bool operator==(const ZObs& oth) const {
     return (thr == oth.thr && ev == oth.ev);
+  }
+  bool operator!=(const ZObs& oth) const {
+    return !(*this == oth);
   }
 
   bool operator<(const ZObs& oth) const {
