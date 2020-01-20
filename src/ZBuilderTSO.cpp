@@ -715,6 +715,7 @@ void ZBuilderTSO::add_failed_lock_attempts() {
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::M_LOCK;
 
+    fence();
     mayConflict(&(p_ml.second));
   }
 }
