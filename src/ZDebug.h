@@ -18,6 +18,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#ifndef NDEBUG
+
 #include <iostream>
 #include <sstream>
 
@@ -51,3 +53,14 @@ static void end_err(const std::string& str = "", bool group = DEBUG) {
   err_msg(ss.str());
   err_level -= 1;
 }
+
+#else
+
+/* What a hack! When NDEBUG is defined, all of the debug-functions are
+ * interpreted as macros that expand into nothing. */
+
+#define err_msg(...);
+#define start_err(...);
+#define end_err(...);
+
+#endif

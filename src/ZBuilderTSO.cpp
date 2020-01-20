@@ -23,6 +23,9 @@
 #include "ZBuilderTSO.h"
 #include "ZExplorer.h"
 
+static const bool DEBUG = false;
+#include "ZDebug.h"
+
 
 // Use at the very beginning to get an initial trace
 ZBuilderTSO::ZBuilderTSO
@@ -83,6 +86,7 @@ bool ZBuilderTSO::reset()
 
 bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 {
+  start_err("schedule");
   // Not using these arguments
   *dryrun = false;
   *alt = 0;
@@ -90,16 +94,21 @@ bool ZBuilderTSO::schedule(int *proc, int *aux, int *alt, bool *dryrun)
 
   if(sch_replay) {
     assert(!sch_extend);
-    return schedule_replay_trace(proc, aux);
+    auto res = schedule_replay_trace(proc, aux);
+    end_err("?a");
+    return res;
   }
 
   assert(!sch_replay && sch_extend);
-  return schedule_arbitrarily(proc, aux);
+  auto res = schedule_arbitrarily(proc, aux);
+  end_err("?b");
+  return res;
 }
 
 
 bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
 {
+  start_err("schedule_replay_trace...");
   assert(!replay_trace.empty());
   assert(prefix_idx < (int) replay_trace.size());
 
@@ -108,6 +117,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   // prefix_idx is also the index into replay_trace pointing
   // to the event we are currently replaying
 
+  err_msg("prefix = " + std::to_string(prefix_idx) + " vs. replay_trace_size = " + std::to_string(replay_trace.size()));
   if (prefix_idx == -1 || replay_trace[prefix_idx].size == prefix[prefix_idx].size) {
     ++prefix_idx;
     if (prefix_idx == (int) replay_trace.size()) {
@@ -120,7 +130,9 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
       // event in prefix - it will increase the prefix
       // again if needed
       --prefix_idx;
-      return schedule_arbitrarily(proc, aux);
+      auto res = schedule_arbitrarily(proc, aux);
+      end_err("?a");
+      return res;
     }
     // Next instruction is the beginning of a new event
     assert(replay_trace.size() > prefix.size());
@@ -157,6 +169,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[prefix_idx].iid.get_pid();
   // Mark that thread p executes a new instruction
+  err_msg("Thread " + std::to_string(p) + ", instruction " + std::to_string(threads[p].executed_instructions));
   ++threads[p].executed_instructions;
   assert(threads[p].available);
 
@@ -170,12 +183,14 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
   bool ret = schedule_thread(proc, aux, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
 
+  end_err("?b");
   return ret;
 }
 
 
 bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
 {
+  start_err("schedule_arbitrarily...");
   assert(!sch_replay && sch_extend);
 
   assert(threads.size() % 2 == 0);
@@ -191,28 +206,37 @@ bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
   if (somethingToAnnotate.size() < (threads.size() / 2)) {
     for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
       if (!somethingToAnnotate.count(p - 1))
-        if (schedule_thread(proc, aux, p))
+        if (schedule_thread(proc, aux, p)) {
+          end_err("1a");
           return true;
+        }
     }
     for (p = 0; p < sz; p += 2) { // Loop through real threads
       if (!somethingToAnnotate.count(p))
-        if (schedule_thread(proc, aux, p))
+        if (schedule_thread(proc, aux, p)) {
+          end_err("1b");
           return true;
+        }
     }
   }
 
   for (p = 1; p < sz; p += 2) { // Loop through auxiliary threads
-    if (schedule_thread(proc, aux, p))
+    if (schedule_thread(proc, aux, p)) {
+      end_err("1c");
       return true;
+    }
   }
 
   for (p = 0; p < sz; p += 2) { // Loop through real threads
-    if (schedule_thread(proc, aux, p))
+    if (schedule_thread(proc, aux, p)) {
+      end_err("1d");
       return true;
+    }
   }
 
   // We did not schedule anything
   prefix.shrink_to_fit();
+  end_err("0");
   return false;
 }
 
@@ -220,6 +244,7 @@ bool ZBuilderTSO::schedule_arbitrarily(int *proc, int *aux)
 // Schedule the next instruction to be the next instruction from thread p
 bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
 {
+  start_err("schedule_thread...");
   if (threads[p].available && !threads[p].sleeping &&
       (conf.max_search_depth < 0 || threads[p].last_event_index() < conf.max_search_depth)) {
 
@@ -233,9 +258,11 @@ bool ZBuilderTSO::schedule_thread(int *proc, int *aux, unsigned p)
     *proc = p/2;
     *aux = (p % 2) - 1; // -1 for real, 0 for auxiliary
 
+    end_err("1");
     return true;
   }
 
+  end_err("0");
   return false;
 }
 
@@ -284,6 +311,7 @@ void ZBuilderTSO::update_prefix(unsigned p)
 
 void ZBuilderTSO::refuse_schedule()
 {
+  start_err("refuse_schedule...");
   //llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
   assert(!prefix.back().may_conflict);
@@ -316,6 +344,7 @@ void ZBuilderTSO::refuse_schedule()
   // Mark this thread as unavailable since its next instruction
   // is the one we tried to schedule now, and it got refused
   mark_unavailable(p/2, -1);
+  end_err();
 }
 
 
@@ -360,6 +389,7 @@ IID<CPid> ZBuilderTSO::get_iid() const
 
 void ZBuilderTSO::spawn()
 {
+  start_err("spawn");
   //llvm::errs() << " SPAWN";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -374,11 +404,13 @@ void ZBuilderTSO::spawn()
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.emplace_back(CPS.new_aux(child_cpid), prefix_idx); // second arg was threads[parent_ipid].event_indices
   threads.back().available = false; // New thread starts with an empty store buffer
+  end_err();
 }
 
 
 void ZBuilderTSO::join(int tgt_proc)
 {
+  start_err("join...");
   //llvm::errs() << " JOIN";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -410,11 +442,13 @@ void ZBuilderTSO::join(int tgt_proc)
   curnode().kind = ZEvent::Kind::JOIN;
   curnode().childs_cpid = threads[2*tgt_proc].cpid;
   mayConflict();
+  end_err();
 }
 
 
 void ZBuilderTSO::store(const SymData &sd, int val)
 {
+  start_err("store...");
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
 
@@ -442,11 +476,13 @@ void ZBuilderTSO::store(const SymData &sd, int val)
   if (!visibleStoreQueue.count(p))
     visibleStoreQueue.emplace(p, std::vector<int>());
   visibleStoreQueue[p].push_back(prefix_idx);
+  end_err();
 }
 
 
 void ZBuilderTSO::atomic_store(const SymData &sd)
 {
+  start_err("store...");
   assert(!dryrun);
 
   unsigned auxp = curnode().iid.get_pid();
@@ -493,11 +529,13 @@ void ZBuilderTSO::atomic_store(const SymData &sd)
   visibleStoreQueue[realp].pop_back();
 
   lastWrite[ml] = prefix_idx;
+  end_err();
 }
 
 
 void ZBuilderTSO::load(const SymAddrSize &ml, int val)
 {
+  start_err("load");
   // Loads from local memory on stack may not conflict
   // Also global loads happening with just one thread existing may not conflict
   assert(!dryrun);
@@ -531,22 +569,26 @@ void ZBuilderTSO::load(const SymAddrSize &ml, int val)
     if (!sch_replay)
       somethingToAnnotate.insert(curnode().iid.get_pid());
   }
+  end_err();
 }
 
 
 void ZBuilderTSO::fence()
 {
+  start_err("fence");
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   assert(!visibleStoreQueue.count(curnode().iid.get_pid()) ||
          visibleStoreQueue[curnode().iid.get_pid()].empty());
   assert(threads[curnode().iid.get_pid()].store_buffer.empty());
   curnode().fence = true;
+  end_err();
 }
 
 
 void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
 {
+  start_err("mutex_init");
   //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -556,11 +598,13 @@ void ZBuilderTSO::mutex_init(const SymAddrSize &ml)
   curnode().kind = ZEvent::Kind::M_INIT;
   mayConflict(&ml);
   mutexes[ml.addr] = Mutex(-1); // prefix_idx
+  end_err();
 }
 
 
 void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
 {
+  start_err("mutex_destroy");
   //llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -574,11 +618,13 @@ void ZBuilderTSO::mutex_destroy(const SymAddrSize &ml)
   curnode().kind = ZEvent::Kind::M_DESTROY;
   mayConflict(&ml);
   mutexes.erase(ml.addr);
+  end_err();
 }
 
 
 void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 {
+  start_err("mutex_unlock");
   //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -599,11 +645,13 @@ void ZBuilderTSO::mutex_unlock(const SymAddrSize &ml)
 
   mutex.last_access = prefix_idx;
   mutex.locked = false;
+  end_err();
 }
 
 
 void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
 {
+  start_err("mutex_lock");
   //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -652,10 +700,12 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
   assert(!mutex.locked);
   mutex.last_lock = mutex.last_access = prefix_idx;
   mutex.locked = true;
+  end_err();
 }
 
 
 void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
+  start_err("mutex_lock_fail");
   //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
@@ -673,10 +723,12 @@ void ZBuilderTSO::mutex_lock_fail(const SymAddrSize &ml) {
   if (!sch_replay)
     somethingToAnnotate.insert(curnode().iid.get_pid());
   endsWithLockFail.emplace(curnode().iid.get_pid(), ml);
+  end_err();
 }
 
 
 std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
+  start_err("extendGivenTrace...");
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, *config));
@@ -690,7 +742,9 @@ std::pair<std::vector<ZEvent>, bool> ZBuilderTSO::extendGivenTrace() {
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
 
-  return {prefix, !somethingToAnnotate.empty()};
+  auto res = make_pair(prefix, !somethingToAnnotate.empty());
+  end_err();
+  return res;
 }
 
 
