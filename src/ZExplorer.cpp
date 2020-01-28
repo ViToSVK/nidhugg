@@ -397,7 +397,7 @@ bool ZExplorer::extendAndRecur
   }
   else {
     clock_t init = std::clock();
-    ZLinearization linearizer(mutatedAnnotation, mutatedPO);
+    ZLinearization linearizer(mutatedAnnotation, mutatedPO, parentTrace.trace);
     auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     if (linear.empty()) {
@@ -483,7 +483,7 @@ ZExplorer::reuseTrace
   }
 
   auto res = TraceExtension(std::move(tr), somethingToAnnotate,
-                        parentTrace.assumeblocked);
+                            parentTrace.assumeblocked);
   end_err("?");
   return res;
 }
@@ -662,19 +662,19 @@ bool ZExplorer::linearizationRespectsAnn
       else
         realObs.emplace(i, -1);
     }
-    
+
     if (isLock(ev)) {
       assert(!locked.count(ev->ml));
       locked.insert(ev->ml);
       lastLock[ev->ml] = i;
     }
-    
+
     if (isUnlock(ev)) {
       assert(locked.count(ev->ml));
       locked.erase(ev->ml);
     }
   }
-  
+
   // Check whether last locks are consistent with annotation
   for (auto entry : lastLock) {
     const ZEvent *ev = &(trace.at(entry.second));
