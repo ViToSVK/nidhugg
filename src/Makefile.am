@@ -48,6 +48,8 @@ libnidhugg_a_SOURCES = \
   ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
+  ZInterpreterSC.cpp ZInterpreterSC.h \
+  ZBuilderSC.cpp ZBuilderSC.h \
   ZInterpreterTSO.cpp ZInterpreterTSO.h \
   ZBuilderTSO.cpp ZBuilderTSO.h \
   ZInterpreterPSO.cpp ZInterpreterPSO.h \

@@ -50,8 +50,22 @@ ZExplorer::~ZExplorer()
 }
 
 
+ZExplorer::ZExplorer(ZBuilderSC& tb)
+  : originalTB(&tb), tso(true), sc_flag(true)
+{
+  if (tb.someThreadAssumeBlocked)
+    assume_blocked_thread = 1;
+
+  if (tb.somethingToAnnotate.empty())
+    executed_traces_full = 1;
+  else
+    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index,
+                         tb.someThreadAssumeBlocked, tso);
+}
+
+
 ZExplorer::ZExplorer(ZBuilderTSO& tb)
-  : originalTB(&tb), tso(true)
+  : originalTB(&tb), tso(true), sc_flag(false)
 {
   if (tb.someThreadAssumeBlocked)
     assume_blocked_thread = 1;
@@ -65,7 +79,7 @@ ZExplorer::ZExplorer(ZBuilderTSO& tb)
 
 
 ZExplorer::ZExplorer(ZBuilderPSO& tb)
-  : originalTB(&tb), tso(false)
+  : originalTB(&tb), tso(false), sc_flag(false)
 {
   if (tb.someThreadAssumeBlocked)
     assume_blocked_thread = 1;
@@ -498,7 +512,26 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 {
   start_err("extendTrace...");
   assert(originalTB);
-  if (tso) {
+  if (tso && sc_flag) {
+    clock_t init = std::clock();
+    ZBuilderSC TB(*(originalTB->config), originalTB->M, std::move(tr));
+    auto traceExtension = TraceExtension(TB.extendGivenTrace());
+    time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
+    interpreter_used++;
+
+    if (TB.has_error()) {
+      // ERROR FOUND
+      originalTB->error_trace = TB.get_trace();
+      traceExtension.hasError = true;
+    }
+
+    if (TB.someThreadAssumeBlocked)
+      traceExtension.hasAssumeBlockedThread = true;
+
+    end_err("?a");
+    return traceExtension;
+  }
+  else if (tso && !sc_flag) {
     clock_t init = std::clock();
     ZBuilderTSO TB(*(originalTB->config), originalTB->M, std::move(tr));
     auto traceExtension = TraceExtension(TB.extendGivenTrace());

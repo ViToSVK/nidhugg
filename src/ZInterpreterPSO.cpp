@@ -278,6 +278,13 @@ void ZInterpreterPSO::visitStoreInst(llvm::StoreInst &I){
   llvm::GenericValue *Ptr = (llvm::GenericValue *)GVTOP
     (getOperandValue(I.getPointerOperand(), SF));
 
+  Option<SymAddrSize> Ptr_sas = TryGetSymAddrSize(Ptr,I.getOperand(0)->getType());
+  if (!Ptr_sas) {
+    TB.segmentation_fault_error();
+    abort();
+    return;
+  }
+
   SymData mb = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
 
   const SymAddrSize& ml = mb.get_ref();

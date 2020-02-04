@@ -30,6 +30,8 @@
 #include "StrModule.h"
 #include "TSOInterpreter.h"
 #include "TSOTraceBuilder.h"
+#include "ZInterpreterSC.h"
+#include "ZBuilderSC.h"
 #include "ZInterpreterTSO.h"
 #include "ZBuilderTSO.h"
 #include "ZInterpreterPSO.h"
@@ -117,6 +119,9 @@ llvm::ExecutionEngine *DPORDriver::create_execution_engine(llvm::Module *mod, Tr
     break;
   case Configuration::ARM: case Configuration::POWER:
     EE = POWERInterpreter::create(mod,static_cast<POWERARMTraceBuilder&>(TB),conf,&ErrorMsg);
+    break;
+  case Configuration::DCSC:
+    EE = ZInterpreterSC::create(mod,static_cast<ZBuilderSC&>(TB),conf,&ErrorMsg);
     break;
   case Configuration::DCTSO:
     EE = ZInterpreterTSO::create(mod,static_cast<ZBuilderTSO&>(TB),conf,&ErrorMsg);
@@ -221,6 +226,9 @@ DPORDriver::Result DPORDriver::run(){
   case Configuration::POWER:
     TB = new POWERTraceBuilder(conf);
     break;
+  case Configuration::DCSC:
+    TB = new ZBuilderSC(conf, mod, 1);
+    break;
   case Configuration::DCTSO:
     TB = new ZBuilderTSO(conf, mod, 1);
     break;
@@ -244,7 +252,8 @@ DPORDriver::Result DPORDriver::run(){
   int computation_count = 0;
   int estimate = 1;
 
-  if (conf.memory_model == Configuration::DCTSO ||
+  if (conf.memory_model == Configuration::DCSC ||
+      conf.memory_model == Configuration::DCTSO ||
       conf.memory_model == Configuration::DCPSO) {
 		run_once(*TB);
 		bool has_error = TB->reset();

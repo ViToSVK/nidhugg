@@ -25,6 +25,7 @@
 #include <memory>
 #include <time.h>
 
+#include "ZBuilderSC.h"
 #include "ZBuilderTSO.h"
 #include "ZBuilderPSO.h"
 #include "ZTrace.h"
@@ -40,6 +41,9 @@ class ZExplorer {
 
   bool info = false;
   const bool tso;
+  // SC flag is passed only to explorer, so it knows which builder to invoke
+  // during extensions; ZGraph is not passed this flag, it handles SC as TSO
+  const bool sc_flag;
 
   class TraceExtension {
    public:
@@ -109,6 +113,7 @@ class ZExplorer {
 
   ~ZExplorer();
 
+  ZExplorer(ZBuilderSC& tb);
   ZExplorer(ZBuilderTSO& tb);
   ZExplorer(ZBuilderPSO& tb);
 
