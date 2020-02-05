@@ -134,7 +134,7 @@ inline const ZEvent * toWriteB(const ZEvent *ev) {
   if (isWriteM(ev)) {
     ev = ev->write_other_ptr;
   }
-  assert(isWriteM(ev));
+  assert(isWriteB(ev));
   return ev;
 }
 

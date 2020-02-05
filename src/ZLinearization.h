@@ -33,6 +33,9 @@ class ZLinearization {
   const ZBasis& ba;
   const ZPartialOrder& po;
   const std::vector<ZEvent>& tr;  // reference-trace for heuristics
+  std::vector<unsigned> tr_aux; // order of auxes in tr
+  
+  void calculateTrAuxOrder();
 
   std::set<ZObs> dummy;   // empty set for useless writes
   std::unordered_map<ZObs, std::set<ZObs>> wr_mapping;
@@ -99,8 +102,10 @@ class ZLinearization {
     const ZLinearization& par;
     ZPrefix main, aux;
     std::unordered_map<SymAddrSize, ZObs> curr_vals;
+    int tr_pos;
 
-    ZState(const ZLinearization& par0, size_t n) : par(par0), main(n), aux(n) {}
+    ZState(const ZLinearization& par0, size_t n)
+      : par(par0), main(n), aux(n), tr_pos(0) {}
 
     size_t size() const {
       return main.size();
@@ -109,11 +114,14 @@ class ZLinearization {
     const ZEvent * currMainEvent(unsigned thr) const;
     const ZEvent * currAuxEvent(unsigned thr) const;
 
+    unsigned trHint() const;
     bool isClosedVar(SymAddrSize ml) const;
     bool canAdvanceAux(unsigned thr) const;
     void advanceAux(unsigned thr, std::vector<ZEvent>& res);
-
-    bool canPushUp(unsigned thr) const;
+    
+    bool isUseless(const ZEvent *ev) const;
+    bool canPushUpAux(unsigned thr) const;
+    bool canPushUpMain(unsigned thr) const;
     void pushUp(std::vector<ZEvent>& res);
 
     bool finished() const;
@@ -121,7 +129,7 @@ class ZLinearization {
   };
 
   void checkBasis() const;
-  bool linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::vector<ZEvent>& res) const;
+  bool linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::vector<ZEvent>& res);
 
  public:
   ZLinearization(const ZAnnotation& annotation,
@@ -131,6 +139,7 @@ class ZLinearization {
     ba(partialOrder.basis), po(partialOrder),
     tr(trace)
   {
+    calculateTrAuxOrder();
     calculateWrMapping();
   }
 
@@ -139,8 +148,12 @@ class ZLinearization {
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
 
-  std::vector<ZEvent> linearizeTSO() const;
+  std::vector<ZEvent> linearizeTSO();
   std::vector<ZEvent> linearizePSO() const;
+  
+  // stats
+  unsigned num_parents = 0;
+  unsigned num_children = 0;
 };
 
 #endif // __Z_LINEARIZATION_H__

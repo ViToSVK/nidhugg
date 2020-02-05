@@ -153,6 +153,9 @@ class ZExplorer {
   double time_closure = 0;
   // Total time spent on closure succ no edge
   double time_closure_no_edge = 0;
+  // Linearization: num of parents and children, to estimate branching factor
+  unsigned total_parents = 0;
+  unsigned total_children = 0;
 
 };
 

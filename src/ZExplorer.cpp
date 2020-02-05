@@ -99,6 +99,7 @@ void ZExplorer::print_stats() const
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
+  std::cout << "Estimated branching factor:        " << (double)total_children/total_parents << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
@@ -400,6 +401,8 @@ bool ZExplorer::extendAndRecur
     ZLinearization linearizer(mutatedAnnotation, mutatedPO, parentTrace.trace);
     auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+    total_parents += linearizer.num_parents;
+    total_children += linearizer.num_children;
     if (linear.empty()) {
       end_err("0a");
       return false;
@@ -410,7 +413,7 @@ bool ZExplorer::extendAndRecur
     // if (info) dumpTrace(mutatedTrace.trace);
     assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
   }
-
+  
   executed_traces++;
   if (mutatedTrace.hasError) {
     assert(!mutationFollowsCurrentTrace);

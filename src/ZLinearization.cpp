@@ -26,6 +26,16 @@ static const bool DEBUG = false;
 #include "ZDebug.h"
 
 
+void ZLinearization::calculateTrAuxOrder() {
+  for (auto& evRef : tr) {
+    if (evRef.auxID() == -1) {
+      continue;
+    }
+    tr_aux.push_back(evRef.threadID());
+  }
+}
+
+
 void ZLinearization::calculateWrMapping() {
   start_err("Calculating wr_mapping...");
   for (auto it = an.begin(); it != an.end(); it++) {
@@ -125,6 +135,18 @@ const ZEvent * ZLinearization::ZState::currAuxEvent(unsigned thr) const {
 }
 
 
+unsigned ZLinearization::ZState::trHint() const {
+  start_err("trHint...");
+  if (tr_pos == -1 || tr_pos >= (int)par.tr_aux.size()) {
+    end_err("0");
+    return 0;
+  }
+  auto res = par.tr_aux.at(tr_pos);
+  end_err();
+  return res;
+}
+
+
 bool ZLinearization::ZState::isClosedVar(SymAddrSize ml) const {
   start_err("isClosedVar...");
   auto it = curr_vals.find(ml);
@@ -161,6 +183,7 @@ bool ZLinearization::ZState::canAdvanceAux(unsigned thr) const {
 void ZLinearization::ZState::advanceAux(unsigned thr, std::vector<ZEvent>& res) {
   start_err("advanceAux...");
   assert(canAdvanceAux(thr) && "Trying to advance non-advancable (check first!)");
+  // Update memory
   const ZEvent *ev = currAuxEvent(thr);
   res.push_back(ev->copy(res.size(), true));
   auto it = curr_vals.find(ev->ml);
@@ -168,13 +191,46 @@ void ZLinearization::ZState::advanceAux(unsigned thr, std::vector<ZEvent>& res) 
     curr_vals.erase(ev->ml);
   }
   curr_vals.emplace(ev->ml, ev->write_other_ptr);
+  // Update tr_pos and aux[thr]
+  if (thr == trHint()) {
+    tr_pos++;
+  }
+  else {
+    tr_pos = -1;
+  }
   aux.at(thr)++;
   end_err();
 }
 
 
-bool ZLinearization::ZState::canPushUp(unsigned thr) const {
-  start_err("canPushUp...");
+bool ZLinearization::ZState::isUseless(const ZEvent *ev) const {
+  start_err("isUseless...");
+  if (!isWriteM(ev)) {
+    end_err("0a");
+    return true;
+  }
+  const std::set<ZObs>& observers = par.getObservers(ev);
+  for (ZObs obs : observers) {
+    if (obs.ev >= main.at(obs.thr)) {
+      end_err("0b");
+      return false;
+    }
+  }
+  end_err("1");
+  return true;
+}
+
+
+bool ZLinearization::ZState::canPushUpAux(unsigned thr) const {
+  start_err("canPushUpAux...");
+  auto res = canAdvanceAux(thr) && isUseless(currAuxEvent(thr));
+  end_err();
+  return res;
+}
+
+
+bool ZLinearization::ZState::canPushUpMain(unsigned thr) const {
+  start_err("canPushUpMain...");
   const ZEvent *ev = currMainEvent(thr);
   if (!ev) {
     end_err("0a");
@@ -211,11 +267,22 @@ void ZLinearization::ZState::pushUp(std::vector<ZEvent>& res) {
   while (!done) {
     done = true;
     for (unsigned thr = 0; thr < n; thr++) {
-      while (canPushUp(thr)) {
-        const ZEvent *ev = currMainEvent(thr);
-        res.push_back(ev->copy(res.size(), true));
-        main.at(thr)++;
-        done = false;
+      bool canMain, canAux;
+      while (
+        canMain = canPushUpMain(thr),
+        canAux = (tr_pos == -1) && canPushUpAux(thr),
+        canMain || canAux
+      ) {
+        if (canMain) {
+          const ZEvent *ev = currMainEvent(thr);
+          res.push_back(ev->copy(res.size(), true));
+          main.at(thr)++;
+          done = false;
+        }
+        if (canAux) {
+          advanceAux(thr, res);
+          done = false;
+        }
       }
     }
   }
@@ -250,7 +317,7 @@ void ZLinearization::ZState::finishOff(std::vector<ZEvent>& res) const {
 }
 
 
-bool ZLinearization::linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::vector<ZEvent>& res) const {
+bool ZLinearization::linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::vector<ZEvent>& res) {
   start_err("linearizeTSO/3...");
   curr.pushUp(res);
   err_msg("main: " + curr.main.str());
@@ -265,12 +332,16 @@ bool ZLinearization::linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::
     end_err("1a");
     return true;
   }
+  num_parents++;
   unsigned n = ba.number_of_threads();
   unsigned orig_size = res.size();
-  for (unsigned thr = 0; thr < n; thr++) {
+  unsigned start_thr = curr.trHint();
+  for (unsigned d = 0; d < n; d++) {
+    unsigned thr = (start_thr + d) % n;
     if (!curr.canAdvanceAux(thr)) {
       continue;
     }
+    num_children++;
     ZState next(curr);
     next.advanceAux(thr, res);
     if (linearizeTSO(next, marked, res)) {
@@ -286,7 +357,7 @@ bool ZLinearization::linearizeTSO(ZState& curr, std::set<ZPrefix>& marked, std::
 }
 
 
-std::vector<ZEvent> ZLinearization::linearizeTSO() const
+std::vector<ZEvent> ZLinearization::linearizeTSO()
 {
   // po.dump();
   assert(ba.size() > 0);
