@@ -41,6 +41,7 @@ public:
     POWER,
     PSO,
     TSO,
+    DCSC, // data centric SC
     DCTSO, // data centric TSO
     DCPSO, // data centric PSO
   };

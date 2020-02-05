@@ -35,8 +35,8 @@
 #include <llvm/LLVMContext.h>
 #endif
 
-#include "ZInterpreterTSO.h"
-#include "ZBuilderTSO.h"
+#include "ZInterpreterSC.h"
+#include "ZBuilderSC.h"
 
 
 static void SetValue(llvm::Value *V, llvm::GenericValue Val, llvm::ExecutionContext &SF) {
@@ -44,17 +44,17 @@ static void SetValue(llvm::Value *V, llvm::GenericValue Val, llvm::ExecutionCont
 }
 
 
-ZInterpreterTSO::ZInterpreterTSO(llvm::Module *M, ZBuilderTSO &TB,
-                                 const Configuration &conf)
+ZInterpreterSC::ZInterpreterSC(llvm::Module *M, ZBuilderSC &TB,
+                               const Configuration &conf)
   : TSOInterpreter(M,TB,conf), TB(TB) {}
 
 
-ZInterpreterTSO::~ZInterpreterTSO() {}
+ZInterpreterSC::~ZInterpreterSC() {}
 
 
-llvm::ExecutionEngine *ZInterpreterTSO::create(llvm::Module *M, ZBuilderTSO &TB,
-                                               const Configuration &conf,
-                                               std::string *ErrorStr) {
+llvm::ExecutionEngine *ZInterpreterSC::create(llvm::Module *M, ZBuilderSC &TB,
+                                              const Configuration &conf,
+                                              std::string *ErrorStr) {
 #ifdef LLVM_MODULE_MATERIALIZE_ALL_PERMANENTLY_ERRORCODE_BOOL
   if(std::error_code EC = M->materializeAllPermanently()){
     // We got an error, just return 0
@@ -85,62 +85,22 @@ llvm::ExecutionEngine *ZInterpreterTSO::create(llvm::Module *M, ZBuilderTSO &TB,
   }
 #endif
 
-  return new ZInterpreterTSO(M,TB,conf);
+  return new ZInterpreterSC(M,TB,conf);
 }
 
 
-void ZInterpreterTSO::runAux(int proc, int aux) {
+void ZInterpreterSC::runAux(int proc, int aux) {
   /* Perform an update from store buffer to memory. */
-
-  assert(aux == 0);
-  assert(tso_threads[proc].store_buffer.size());
+  assert(false && "Auxiliary threads should not exist (and be called) in SC");
 
   void *ref = tso_threads[proc].store_buffer.front().first;
   const SymData &blk = tso_threads[proc].store_buffer.front().second;
-
-  // We consider all Stack writes as invisible and atomic,
-  // hence we do not put them into the store buffer
-  assert((blk.get_ref().addr.block.is_global() ||
-          blk.get_ref().addr.block.is_heap()) &&
-         "No Stack writes are allowed in the store buffer");
-
   TB.atomic_store(blk);
 
-  assert(!DryRun); /**/
-
-  if(!CheckedMemCpy((uint8_t*)ref,(uint8_t*)blk.get_block(),blk.get_ref().size)) {
-    llvm::errs() << "Interpreter: CheckedMemCpy failed during store-update\n";
-    abort(); /**/
-  }
-
-  for(unsigned i = 0; i < tso_threads[proc].store_buffer.size()-1; ++i){
-    tso_threads[proc].store_buffer[i] = tso_threads[proc].store_buffer[i+1];
-  }
-  tso_threads[proc].store_buffer.pop_back();
-
-  if(int(tso_threads[proc].store_buffer.size()) <= tso_threads[proc].partial_buffer_flush){
-    assert(0 <= tso_threads[proc].partial_buffer_flush);
-    /* The real thread was waiting for the buffer to flush. Enable the
-     * real thread. */
-    tso_threads[proc].partial_buffer_flush = -1;
-    TB.mark_available(proc);
-  }
-
-  if(tso_threads[proc].store_buffer.empty()){
-    /* Disable update thread. */
-    TB.mark_unavailable(proc,0);
-    /* If the real thread has terminated, then wake up other threads
-     * which are waiting to join with this one. */
-    if(Threads[proc].ECStack.empty()){
-      for(int p : Threads[proc].AwaitingJoin){
-        TB.mark_available(p);
-      }
-    }
-  }
 }
 
 
-bool ZInterpreterTSO::checkRefuse(llvm::Instruction &I) {
+bool ZInterpreterSC::checkRefuse(llvm::Instruction &I) {
   int tid;
   if(isPthreadJoin(I,&tid)){
     if(0 <= tid && tid < int(Threads.size()) && tid != CurrentThread){
@@ -160,40 +120,13 @@ bool ZInterpreterTSO::checkRefuse(llvm::Instruction &I) {
       // Allow execution (will produce an error trace)
     }
   }
-  /* Refuse if I has fence semantics and the store buffer is
-   * non-empty.
+  /* Store buffer should always be empty in SC,
+   * thus no need to check for fence-refuse.
    */
-  if(isFence(I) && !tso_threads[CurrentThread].store_buffer.empty()){
-    tso_threads[CurrentThread].partial_buffer_flush = 0;
-    TB.refuse_schedule();
-    return true;
-  }
-  /* Refuse if I is a load and the latest entry in the store buffer
-   * which overlaps with the memory location targeted by I does not
-   * target precisely the same bytes as I.
+  assert(tso_threads[CurrentThread].store_buffer.empty() && "Empty buffer in SC");
+  /* Partial but not full overlap of a memory location:
+   * No need to check since buffer is always empty in SC.
    */
-  if(llvm::isa<llvm::LoadInst>(I)){
-    llvm::ExecutionContext &SF = ECStack()->back();
-    llvm::GenericValue SRC = getOperandValue(static_cast<llvm::LoadInst&>(I).getPointerOperand(), SF);
-    llvm::GenericValue *Ptr = (llvm::GenericValue*)GVTOP(SRC);
-    SymAddrSize mr = GetSymAddrSize(Ptr,static_cast<llvm::LoadInst&>(I).getType());
-    for(int i = int(tso_threads[CurrentThread].store_buffer.size())-1; 0 <= i; --i){
-      if(mr.overlaps(tso_threads[CurrentThread].store_buffer[i].second.get_ref())){
-        if(mr != tso_threads[CurrentThread].store_buffer[i].second.get_ref()){
-          llvm::errs() << "Interpreter: Partial but not full overlap of a memory location for a store and load\n";
-          abort(); /**/
-          /* Block until this store buffer entry has disappeared from
-           * the buffer.
-           */
-          tso_threads[CurrentThread].partial_buffer_flush =
-            int(tso_threads[CurrentThread].store_buffer.size()) - i - 1;
-          TB.refuse_schedule();
-          return true;
-        }
-        break;
-      }
-    }
-  }
   /* Refuse if I is a lock and the mutex is already locked
    */
   llvm::GenericValue *ptr;
@@ -215,7 +148,7 @@ bool ZInterpreterTSO::checkRefuse(llvm::Instruction &I) {
 }
 
 
-void ZInterpreterTSO::visitLoadInst(llvm::LoadInst &I){
+void ZInterpreterSC::visitLoadInst(llvm::LoadInst &I){
   llvm::ExecutionContext &SF = ECStack()->back();
   llvm::GenericValue SRC = getOperandValue(I.getPointerOperand(), SF);
   llvm::GenericValue *Ptr = (llvm::GenericValue*)GVTOP(SRC);
@@ -224,19 +157,7 @@ void ZInterpreterTSO::visitLoadInst(llvm::LoadInst &I){
   SymAddrSize Ptr_sas = GetSymAddrSize(Ptr,I.getType());
 
   assert(!DryRun); /**/
-
-  /* Check store buffer for ROWE opportunity. */
-  for(int i = int(tso_threads[CurrentThread].store_buffer.size())-1; 0 <= i; --i){
-    if(Ptr_sas.addr == tso_threads[CurrentThread].store_buffer[i].second.get_ref().addr){
-      /* Read-Own-Write-Early */
-      assert(GetSymAddrSize(Ptr,I.getType()).size == tso_threads[CurrentThread].store_buffer[i].second.get_ref().size);
-      CheckedLoadValueFromMemory(Result,(llvm::GenericValue*)tso_threads[CurrentThread].store_buffer[i].second.get_block(),I.getType());
-      SetValue(&I, Result, SF);
-      // Loading value Result.IntVal.getSExtValue()
-      TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue()); /**/
-      return;
-    }
-  }
+  assert(tso_threads[CurrentThread].store_buffer.empty() && "Empty buffer in SC");
 
   /* Load from memory */
   bool res = CheckedLoadValueFromMemory(Result, Ptr, I.getType());
@@ -250,7 +171,7 @@ void ZInterpreterTSO::visitLoadInst(llvm::LoadInst &I){
 }
 
 
-void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
+void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
   llvm::ExecutionContext &SF = ECStack()->back();
   llvm::GenericValue Val = getOperandValue(I.getOperand(0), SF);
   llvm::GenericValue *Ptr = (llvm::GenericValue *)GVTOP
@@ -263,6 +184,7 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
     return;
   }
 
+  assert(tso_threads[CurrentThread].store_buffer.empty() && "Empty buffer in SC");
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
 
   const SymAddrSize& ml = sd.get_ref();
@@ -270,8 +192,7 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
   if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
      0 <= AtomicFunctionCall ||
      (!ml.addr.block.is_global() && !ml.addr.block.is_heap())) {
-    /* Atomic store */
-    /* We consider all Stack writes as invisible and atomic */
+    /* Stack write */
     if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
       llvm::errs() << "Interpreter: No support for visible Atomic store\n";
       abort(); /**/
@@ -280,24 +201,25 @@ void ZInterpreterTSO::visitStoreInst(llvm::StoreInst &I){
     assert(!DryRun); /**/
     CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
   } else {
-    /* Store to buffer */
+    /* Heap or Global write */
     // Storing value Val.IntVal.getSExtValue()
     assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
-    TB.store(sd, (int) Val.IntVal.getSExtValue());
+    TB.store(sd, (int) Val.IntVal.getSExtValue()); // Calls TB.atomic_store
+
     assert(!DryRun); /**/
-    tso_threads[CurrentThread].store_buffer.emplace_back(Ptr, std::move(sd));
+    CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
   }
 }
 
 
-void ZInterpreterTSO::visitFenceInst(llvm::FenceInst &I){
+void ZInterpreterSC::visitFenceInst(llvm::FenceInst &I){
   if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent){
     TB.fence();
   }
 }
 
 
-void ZInterpreterTSO::visitInlineAsm(llvm::CallSite &CS, const std::string &asmstr){
+void ZInterpreterSC::visitInlineAsm(llvm::CallSite &CS, const std::string &asmstr){
   if(asmstr == "mfence"){
     TB.fence();
   }else if(asmstr == ""){ // Do nothing
