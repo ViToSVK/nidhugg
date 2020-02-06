@@ -92,11 +92,6 @@ llvm::ExecutionEngine *ZInterpreterSC::create(llvm::Module *M, ZBuilderSC &TB,
 void ZInterpreterSC::runAux(int proc, int aux) {
   /* Perform an update from store buffer to memory. */
   assert(false && "Auxiliary threads should not exist (and be called) in SC");
-
-  void *ref = tso_threads[proc].store_buffer.front().first;
-  const SymData &blk = tso_threads[proc].store_buffer.front().second;
-  TB.atomic_store(blk);
-
 }
 
 
@@ -197,7 +192,6 @@ void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
       llvm::errs() << "Interpreter: No support for visible Atomic store\n";
       abort(); /**/
     }
-    //assert(tso_threads[CurrentThread].store_buffer.empty());
     assert(!DryRun); /**/
     CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
   } else {

@@ -94,7 +94,6 @@ class ZBuilderSC : public TSOTraceBuilder {
   // During replay: in which ipids we are, for now, delaying a buffer-write
   std::unordered_set<unsigned> delayed_bwrite;
 
-
   ZEvent& curnode() {
     assert(0 <= prefix_idx);
     assert(prefix_idx < int(prefix.size()));
