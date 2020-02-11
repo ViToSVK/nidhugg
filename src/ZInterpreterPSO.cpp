@@ -341,3 +341,43 @@ void ZInterpreterPSO::visitInlineAsm(llvm::CallSite &CS, const std::string &asms
     throw std::logic_error("Unsupported inline assembly: "+asmstr);
   }
 }
+
+
+bool ZInterpreterPSO::isFence(llvm::Instruction &I){
+  if(llvm::isa<llvm::CallInst>(I)){
+    llvm::CallSite CS(static_cast<llvm::CallInst*>(&I));
+    llvm::Function *F = CS.getCalledFunction();
+    if(F && F->isDeclaration() &&
+       F->getIntrinsicID() == llvm::Intrinsic::not_intrinsic &&
+       conf.extfun_no_fence.count(F->getName().str()) == 0){
+      return true;
+    }
+    if(F && F->getName().str().find("__VERIFIER_atomic_") == 0) return true;
+    {
+      std::string asmstr;
+      if(isInlineAsm(CS,&asmstr) && asmstr == "mfence") return true;
+    }
+  }else if(llvm::isa<llvm::StoreInst>(I)){
+    return false; // IGNORE memory_order_seq_cst in PSO
+    // return static_cast<llvm::StoreInst&>(I).getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent;
+  }else if(llvm::isa<llvm::FenceInst>(I)){
+    return static_cast<llvm::FenceInst&>(I).getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent;
+  }else if(llvm::isa<llvm::AtomicCmpXchgInst>(I)){
+#ifdef LLVM_CMPXCHG_SEPARATE_SUCCESS_FAILURE_ORDERING
+    llvm::AtomicOrdering succ = static_cast<llvm::AtomicCmpXchgInst&>(I).getSuccessOrdering();
+    llvm::AtomicOrdering fail = static_cast<llvm::AtomicCmpXchgInst&>(I).getFailureOrdering();
+    if(succ != LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent || fail != LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent){
+#else
+    if(static_cast<llvm::AtomicCmpXchgInst&>(I).getOrdering() != LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent){
+#endif
+      Debug::warn("PSOInterpreter::isFence::cmpxchg") << "WARNING: Non-sequentially consistent CMPXCHG instruction interpreted as sequentially consistent.\n";
+    }
+    return true;
+  }else if(llvm::isa<llvm::AtomicRMWInst>(I)){
+    if(static_cast<llvm::AtomicRMWInst&>(I).getOrdering() != LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent){
+      Debug::warn("PSOInterpreter::isFence::rmw") << "WARNING: Non-sequentially consistent RMW instruction interpreted as sequentially consistent.\n";
+    }
+    return true;
+  }
+  return false;
+}

@@ -142,6 +142,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
     //dumpTrace(annTrace.trace);
     annTrace.graph.dump();
     annTrace.annotation.dump();
+    annTrace.negative.dump();
     //llvm::errs() << "-------------------------\n\n";
   }
 
@@ -196,17 +197,17 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 {
   start_err("mutateRead...");
   assert(isRead(read));
+  if (info) {
+      llvm::errs() << "Read to mutate:\n";
+      read->dump();
+  }
 
   auto obsCandidates = annTrace.getObsCandidates(read);
   if (obsCandidates.empty()) {
     // All candidates are ruled out by negative annotation
     ++no_mut_choices;
     if (info) {
-      llvm::errs() << "Read to mutate:\n";
-      read->dump();
       llvm::errs() << "All candidates forbidden\n";
-      annTrace.annotation.dump();
-      annTrace.negative.dump();
     }
     end_err("0a");
     return false;
@@ -221,11 +222,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     auto mutatedPO = annTrace.graph.copyPO();
 
     if (info) {
-      llvm::errs() << "Read to mutate:\n";
-      read->dump();
       llvm::errs() << "Observation:\n" << observation.to_string() << "\n";
-      mutatedAnnotation.dump();
-      annTrace.negative.dump();
     }
 
     auto init = std::clock();
@@ -271,12 +268,20 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   start_err("mutateLock...");
   assert(isLock(lock));
 
+  if (info) {
+    llvm::errs() << "Lock to mutate:\n";
+    lock->dump();
+  }
+
   if (!annTrace.annotation.locationHasSomeLock(lock)) {
     // This lock hasn't been touched before
     annTrace.deadlocked = false;
     if (annTrace.negative.forbidsInitialEvent(lock)) {
       // Negative annotation forbids initial unlock
       end_err("0a");
+      if (info) {
+        llvm::errs() << "Negative annotation forbids initial unlock\n";
+      }
       return false;
     }
 
@@ -287,11 +292,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     auto mutatedPO = annTrace.graph.copyPO();
 
     if (info) {
-      llvm::errs() << "Lock to mutate:\n";
-      lock->dump();
       llvm::errs() << "Not locked before\n";
-      mutatedAnnotation.dump();
-      annTrace.negative.dump();
     }
 
     bool mutationFollowsCurrentTrace =
@@ -312,6 +313,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     // This lock is currently locked
     // Trivially unrealizable
     end_err("0b");
+    if (info) {
+      llvm::errs() << "Currently locked\n";
+    }
     return false;
   }
 
@@ -333,12 +337,8 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   auto mutatedPO = annTrace.graph.copyPO();
 
   if (info) {
-    llvm::errs() << "Lock to mutate:\n";
-    lock->dump();
     llvm::errs() << "Currently unlocked by:\n";
     lastUnlock->dump();
-    mutatedAnnotation.dump();
-    annTrace.negative.dump();
   }
 
   auto init = std::clock();
@@ -422,12 +422,12 @@ bool ZExplorer::extendAndRecur
       return false;
     }
     assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
-
+    // if (info) dumpTrace(linear);
     mutatedTrace = extendTrace(std::move(linear));
     // if (info) dumpTrace(mutatedTrace.trace);
     assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
   }
-  
+
   executed_traces++;
   if (mutatedTrace.hasError) {
     assert(!mutationFollowsCurrentTrace);

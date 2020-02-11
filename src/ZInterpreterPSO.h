@@ -60,6 +60,7 @@ class ZInterpreterPSO : public PSOInterpreter {
  protected:
   virtual void runAux(int proc, int aux);
   virtual bool checkRefuse(llvm::Instruction &I);
+  virtual bool isFence(llvm::Instruction &I);
   /* The auxiliary threads under PSO are numbered 0, 1, ... . Each
    * auxiliary thread correspond to the store buffer for memory
    * locations starting with one certain byte in memory. The auxiliary
@@ -68,7 +69,6 @@ class ZInterpreterPSO : public PSOInterpreter {
    */
   /*
   virtual int newThread(const CPid &cpid);
-  virtual bool isFence(llvm::Instruction &I);
   virtual void terminate(llvm::Type *RetTy, llvm::GenericValue Result);
   */
 };

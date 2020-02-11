@@ -118,6 +118,15 @@ std::string ZAnnotation::to_string() const
     res << "\n";
   }
   res << "}\n";
+  if (!lastlock.empty()) {
+    res << "LastLock: {\n";
+    for (const auto& last : lastlock) {
+      res << last.first.to_string() << "  is locked by::  ";
+      res << last.second.to_string();
+      res << "\n";
+    }
+    res << "}\n";
+  }
   return res.str();
 }
 
