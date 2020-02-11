@@ -184,7 +184,7 @@ void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
 
   const SymAddrSize& ml = sd.get_ref();
   // Stores to local memory on stack may not conflict
-  if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
+  if(//I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
      0 <= AtomicFunctionCall ||
      (!ml.addr.block.is_global() && !ml.addr.block.is_heap())) {
     /* Stack write */

@@ -292,7 +292,9 @@ void ZInterpreterPSO::visitStoreInst(llvm::StoreInst &I){
 
   PSOThread &thr = pso_threads[CurrentThread];
 
-  if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
+  // No support for sequentially consistent writes on global/heap variables,
+  // the memory_order_seq_cst constraint will be ignored
+  if(//I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
      0 <= AtomicFunctionCall ||
      (!ml.addr.block.is_global() && !ml.addr.block.is_heap())) {
     /* Atomic store */

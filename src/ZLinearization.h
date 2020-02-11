@@ -122,18 +122,18 @@ class ZLinearization {
   class ZKeyTSO {
    private:
     std::vector<unsigned> vals;
-    
+
     unsigned size() const {
       return vals.size();
     }
-    
+
    public:
     ZKeyTSO(ZPrefix& prefix) : vals(prefix.numThreads()) {
       for (unsigned thr = 0; thr < size(); thr++) {
         vals.at(thr) = prefix.at(thr, 0);
       }
     }
-    
+
     bool operator< (const ZKeyTSO& other) const {
       assert(size() == other.size() && "Can compare only two TSOKeys with same size");
       for (unsigned thr = 0; thr < size(); thr++) {
@@ -155,16 +155,16 @@ class ZLinearization {
       return !((*this) == other);
     }
   };
-  
+
   // Hints the main threadID whose aux we should advance.
   unsigned trHintTSO(const ZState& state) const;
-  
+
   bool linearizeTSO(ZState& curr, std::set<ZKeyTSO>& marked, std::vector<ZEvent>& res);
 
   /* ************* */
   /* PSO only      */
   /* ************* */
-  
+
   // TODO
 
 
@@ -185,8 +185,8 @@ class ZLinearization {
   ZLinearization& operator=(ZLinearization&& oth) = delete;
 
   std::vector<ZEvent> linearizeTSO();
-  std::vector<ZEvent> linearizePSO();
-  
+  std::vector<ZEvent> linearizePSO() const;
+
   // stats
   unsigned num_parents = 0;
   unsigned num_children = 0;
