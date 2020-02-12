@@ -36,17 +36,65 @@ class ZLinearization {
 
   unsigned numEventsInThread(unsigned thr, int aux = -1) const;
 
-  std::set<ZObs> dummy;   // empty set for useless writes
-  std::unordered_map<ZObs, std::set<ZObs>> wr_mapping;
-  std::unordered_map<SymAddrSize, std::set<ZObs>> wr_initial;
+  class WrEntry {
+   public:
+    unsigned first, last;
+    
+    WrEntry() : first(UINT_MAX), last(0) {}
+  };
+  
+  class WrSet {
+   private:
+    std::map<unsigned, WrEntry> thr_map;
+    std::set<ZObs> obs_set;
+   
+   public:
+    const std::set<ZObs>& toSet() const {
+      return obs_set;
+    }
+    
+    void insert(ZObs obs) {
+      WrEntry& entry = thr_map[obs.thr];
+      if (obs.ev < entry.first) {
+        obs_set.erase(ZObs(obs.thr, entry.first));
+        entry.first = obs.ev;
+        obs_set.insert(obs);
+      }
+      if (obs.ev > entry.last) {
+        obs_set.erase(ZObs(obs.thr, entry.last));
+        entry.last = obs.ev;
+        obs_set.insert(obs);
+      }
+    }
+    
+    const WrEntry operator[] (unsigned thr) const {
+      if (!thr_map.count(thr)) {
+        return WrEntry();
+      }
+      return thr_map.at(thr);
+    }
+    
+    unsigned numThreads() const {
+      return thr_map.size();
+    }
+    
+    unsigned getOnlyThread() const {
+      assert(thr_map.size() == 1 && "Can getOnlyThread only if there is 1 thread");
+      return thr_map.begin()->first;
+    }
+  };
+
+  const WrSet dummy;   // empty set for useless writes
+  std::unordered_map<ZObs, WrSet> wr_mapping;
+  std::unordered_map<SymAddrSize, WrSet> wr_initial;
 
   void calculateWrMapping();
 
   /* Returns the observers of (the initial event for variable ml |
    * the event given by (obs | ev)). */
-  const std::set<ZObs>& initialGetObservers(SymAddrSize ml) const;
-  const std::set<ZObs>& getObservers(const ZObs& obs) const;
-  const std::set<ZObs>& getObservers(const ZEvent *ev) const;
+  const WrSet& initialGetObservers(SymAddrSize ml) const;
+  const WrSet& getObservers(const ZObs& obs) const;
+  const WrSet& getObservers(const ZEvent *ev) const;
 
   class ZPrefix {
    private:
@@ -78,23 +126,24 @@ class ZLinearization {
     std::string str() const {
       std::stringstream ss;
       for (unsigned thr = 0; thr < numThreads(); thr++) {
-        for (int aux = -1; aux < numAuxes(thr); aux++) {
-          ss << at(thr, aux) << " ";
+        int numA = numAuxes(thr);
+        for (int aux = -1; aux < numA; aux++) {
+          ss << at(thr, aux) << (aux != numA - 1 ? " " : "");
         }
-        ss << "|";
+        ss << " | ";
       }
       return ss.str();
     }
   };
 
-  class ZState {
+  class State {
    public:
     const ZLinearization& par;
     ZPrefix prefix;
     std::unordered_map<SymAddrSize, ZObs> curr_vals;
     unsigned tr_pos;
 
-    ZState(const ZLinearization& par0, unsigned n)
+    State(const ZLinearization& par0, unsigned n)
       : par(par0), prefix(n), tr_pos(0) {}
 
     // Returns the next event in the given thread, or nullptr if there is none.
@@ -107,6 +156,7 @@ class ZLinearization {
     /* What can we play "for free"? */
     bool isUseless(const ZEvent *ev) const;
     bool canPushUp(unsigned thr, int aux) const;
+    bool allPushedUp() const;
     void pushUp(std::vector<ZEvent>& res);
 
     /* When all main events are already done, what remains is to play
@@ -119,22 +169,22 @@ class ZLinearization {
   /* TSO only      */
   /* ************* */
 
-  class ZKeyTSO {
+  class KeyTSO {
    private:
     std::vector<unsigned> vals;
-
+    
     unsigned size() const {
       return vals.size();
     }
-
+    
    public:
-    ZKeyTSO(ZPrefix& prefix) : vals(prefix.numThreads()) {
+    KeyTSO(State& state) : vals(state.prefix.numThreads()) {
       for (unsigned thr = 0; thr < size(); thr++) {
-        vals.at(thr) = prefix.at(thr, 0);
+        vals.at(thr) = state.prefix.at(thr, 0);
       }
     }
-
-    bool operator< (const ZKeyTSO& other) const {
+    
+    bool operator< (const KeyTSO& other) const {
       assert(size() == other.size() && "Can compare only two TSOKeys with same size");
       for (unsigned thr = 0; thr < size(); thr++) {
         unsigned val1 = vals.at(thr);
@@ -145,27 +195,95 @@ class ZLinearization {
       }
       return false;
     }
-    bool operator> (const ZKeyTSO& other) const {
+    bool operator> (const KeyTSO& other) const {
       return other < (*this);
     }
-    bool operator== (const ZKeyTSO& other) const {
+    bool operator== (const KeyTSO& other) const {
       return !((*this) > other) && !((*this) < other);
     }
-    bool operator!= (const ZKeyTSO& other) const {
+    bool operator!= (const KeyTSO& other) const {
       return !((*this) == other);
     }
   };
-
-  // Hints the main threadID whose aux we should advance.
-  unsigned trHintTSO(const ZState& state) const;
-
-  bool linearizeTSO(ZState& curr, std::set<ZKeyTSO>& marked, std::vector<ZEvent>& res);
+  
+  // Hints the aux thread we should advance.
+  unsigned trHintTSO(const State& state) const;
+  
+  bool linearizeTSO(State& curr, std::set<KeyTSO>& marked, std::vector<ZEvent>& res) const;
 
   /* ************* */
   /* PSO only      */
   /* ************* */
+  
+  class KeyPSO {
+   private:
+    std::vector<unsigned> main_prefix;
+    std::set<std::pair<unsigned, int>> ready_auxes;
+    
+    unsigned numThreads() const {
+      return main_prefix.size();
+    }
+    unsigned numReady() const {
+      return ready_auxes.size();
+    }
 
-  // TODO
+   public:
+    KeyPSO(State& state) : main_prefix(state.prefix.numThreads()) {
+      for (unsigned thr = 0; thr < numThreads(); thr++) {
+        main_prefix.at(thr) = state.prefix.at(thr);
+        for (int aux : state.par.ba.auxes(thr)) {
+          const ZEvent *ev = state.currEvent(thr, aux);
+          if (ev && !state.isUseless(ev)) {
+            ready_auxes.emplace(thr, aux);
+          }
+        }
+      }
+    }
+    
+    bool operator< (const KeyPSO& other) const {
+      assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
+      for (unsigned thr = 0; thr < numThreads(); thr++) {
+        unsigned val1 = main_prefix.at(thr);
+        unsigned val2 = other.main_prefix.at(thr);
+        if (val1 != val2) {
+          return val1 < val2;
+        }
+      }
+      if (numReady() != other.numReady()) {
+        return numReady() < other.numReady();
+      }
+      auto it1 = ready_auxes.begin();
+      auto it2 = other.ready_auxes.begin();
+      while (it1 != ready_auxes.end()) {
+        if (*it1 != *it2) {
+          return *it1 < *it2;
+        }
+        it1++;
+        it2++;
+      }
+      return true;
+    }
+    bool operator> (const KeyPSO& other) const {
+      return other < *this;
+    }
+    bool operator== (const KeyPSO& other) const {
+      return !(*this < other) && !(*this > other);
+    }
+    bool operator!= (const KeyPSO& other) const {
+      return !(*this == other);
+    }
+  };
+  
+  bool canForce(const State& state, unsigned thr) const;
+  void force(State& state, unsigned thr, std::vector<ZEvent>& res) const;
+  
+  std::vector<unsigned> tr_next_main;
+  void calculateTrNextMain();
+  
+  // Hints the next main thread we should force
+  unsigned trHintPSO(const State& state) const;
+  
+  bool linearizePSO(State& curr, std::set<KeyPSO>& marked, std::vector<ZEvent>& res) const;
 
 
  public:
@@ -177,6 +295,7 @@ class ZLinearization {
     tr(trace)
   {
     calculateWrMapping();
+    calculateTrNextMain();
   }
 
   ZLinearization(const ZLinearization& oth) = delete;
@@ -184,12 +303,12 @@ class ZLinearization {
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
 
-  std::vector<ZEvent> linearizeTSO();
+  std::vector<ZEvent> linearizeTSO() const;
   std::vector<ZEvent> linearizePSO() const;
-
+  
   // stats
-  unsigned num_parents = 0;
-  unsigned num_children = 0;
+  mutable unsigned num_parents = 0;
+  mutable unsigned num_children = 0;
 };
 
 #endif // __Z_LINEARIZATION_H__
