@@ -60,9 +60,9 @@ class ZInterpreterTSO : public TSOInterpreter {
  protected:
   virtual void runAux(int proc, int aux);
   virtual bool checkRefuse(llvm::Instruction &I);
+  virtual bool isFence(llvm::Instruction &I);
   /*
   virtual int newThread(const CPid &cpid);
-  virtual bool isFence(llvm::Instruction &I);
   virtual void terminate(llvm::Type *RetTy, llvm::GenericValue Result);
   */
 };
