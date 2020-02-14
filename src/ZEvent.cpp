@@ -28,7 +28,7 @@ ZEvent::ZEvent
     cpid(cpid),
     childs_cpid(),
     fence(false),
-    ml(SymAddr(SymMBlock::Stack(iid.get_pid(), 1337), 1337), 1337),
+    ml(SymAddr(SymMBlock::Stack(std::hash<CPid>()(cpid), 1337), 1337), 1337),
     value(-47),
     _thread_id(1337), /*set at PObuild time*/
     _aux_id((cpid.is_auxiliary()) ? cpid.get_aux_index() : -1),

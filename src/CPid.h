@@ -168,10 +168,10 @@ namespace std{
   struct hash<std::vector<int>>{
     std::size_t operator()(const std::vector<int>& vec) const{
 			using std::size_t;
-      size_t res = vec.size();
-			size_t st = vec.size() < 4 ? vec.size() : 4;
-			for(size_t i = 1; i < st; ++i)
-				res ^= (size_t) vec[i] << (4*i);
+      size_t res = vec.size() % 10;
+			size_t st = vec.size() < 3 ? vec.size() : 3;
+			for(size_t i = 0; i < st; ++i)
+				res += (size_t) (vec[i] * (10^(i+1)));
       return res;
     }
   };
