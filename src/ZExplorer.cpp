@@ -113,7 +113,7 @@ void ZExplorer::print_stats() const
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
-  std::cout << "Estimated branching factor:        " << (double)total_children/total_parents << "\n";
+  std::cout << "Linearization branching factor:    " << (double)total_children/total_parents << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on

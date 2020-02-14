@@ -307,6 +307,19 @@ void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
 /* *************************** */
 
 
+bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
+  assert(size() == other.size() && "Can compare only two TSOKeys with same size");
+  for (unsigned thr = 0; thr < size(); thr++) {
+    unsigned val1 = vals.at(thr);
+    unsigned val2 = other.vals.at(thr);
+    if (val1 != val2) {
+      return val1 < val2;
+    }
+  }
+  return false;
+}
+
+
 unsigned ZLinearization::trHintTSO(const State& state) const {
   start_err("trHintTSO...");
   if (state.tr_pos == tr.size()) {
@@ -390,6 +403,46 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const
 /* *************************** */
 /* LINEARIZE PSO               */
 /* *************************** */
+
+
+ZLinearization::KeyPSO::KeyPSO(const State& state)
+  : main_prefix(state.prefix.numThreads()) 
+{
+  for (unsigned thr = 0; thr < numThreads(); thr++) {
+    main_prefix.at(thr) = state.prefix.at(thr);
+    for (int aux : state.par.ba.auxes(thr)) {
+      const ZEvent *ev = state.currEvent(thr, aux);
+      if (ev && !state.isUseless(ev)) {
+        ready_auxes.emplace(thr, aux);
+      }
+    }
+  }
+}
+
+
+bool ZLinearization::KeyPSO::operator< (const KeyPSO& other) const {
+  assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
+  for (unsigned thr = 0; thr < numThreads(); thr++) {
+    unsigned val1 = main_prefix.at(thr);
+    unsigned val2 = other.main_prefix.at(thr);
+    if (val1 != val2) {
+      return val1 < val2;
+    }
+  }
+  if (numReady() != other.numReady()) {
+    return numReady() < other.numReady();
+  }
+  auto it1 = ready_auxes.begin();
+  auto it2 = other.ready_auxes.begin();
+  while (it1 != ready_auxes.end()) {
+    if (*it1 != *it2) {
+      return *it1 < *it2;
+    }
+    it1++;
+    it2++;
+  }
+  return true;
+}
 
 
 bool ZLinearization::canForce(const State& state, unsigned thr) const {
