@@ -1,5 +1,6 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2020 Truc Lam Bui
  *
  * This file is part of Nidhugg.
  *
@@ -25,8 +26,113 @@
 static const bool DEBUG = false;
 #include "ZDebug.h"
 
-#define TSO_MEMO
-#define PSO_MEMO
+
+#define KEY_TSO KeyTSO
+#define KEY_PSO MainReqsKeyPSO
+
+#ifndef KEY_TSO
+  #define KEY_TSO DummyKey
+#endif
+
+#ifndef KEY_PSO
+  #define KEY_PSO DummyKey
+#endif
+
+
+/* *************************** */
+/* COMMON COMPARISON OPERATORS */
+/* *************************** */
+
+
+template<class T>
+bool operator< (const std::vector<T>& left, const std::vector<T>& right) {
+  unsigned n = left.size();
+  if (n != right.size()) {
+    return n < right.size();
+  }
+  for (unsigned i = 0; i < n; i++) {
+    if (left.at(i) != right.at(i)) {
+      return left.at(i) < right.at(i);
+    }
+  }
+  return false;
+}
+
+template<class T>
+bool operator> (const std::vector<T>& left, const std::vector<T>& right) {
+  return right < left;
+}
+
+template<class T>
+bool operator!= (const std::vector<T>& left, const std::vector<T>& right) {
+  return left < right || left > right;
+}
+
+template<class T>
+bool operator== (const std::vector<T>& left, const std::vector<T>& right) {
+  return !(left != right);
+}
+
+
+template<class T>
+bool operator< (const std::set<T>& left, const std::set<T>& right) {
+  if (left.size() != right.size()) {
+    return left.size() < right.size();
+  }
+  auto it2 = right.begin();
+  for (auto it1 = left.begin(); it1 != left.end(); it1++, it2++) {
+    if (*it1 != *it2) {
+      return *it1 < *it2;
+    }
+  }
+  return false;
+}
+
+template<class T>
+bool operator> (const std::set<T>& left, const std::set<T>& right) {
+  return right < left;
+}
+
+template<class T>
+bool operator!= (const std::set<T>& left, const std::set<T>& right) {
+  return left < right || left > right;
+}
+
+template<class T>
+bool operator== (const std::set<T>& left, const std::set<T>& right) {
+  return !(left != right);
+}
+
+
+template<class K, class V>
+bool operator< (const std::map<K, V>& left, const std::map<K, V>& right) {
+  unsigned n = left.size();
+  if (n != right.size()) {
+    return n < right.size();
+  }
+  auto it2 = right.begin();
+  for (auto it1 = left.begin(); it1 != left.end(); it1++, it2++) {
+    if (*it1 != *it2) {
+      return *it1 < *it2;
+    }
+  }
+  return false;
+}
+
+template<class K, class V>
+bool operator> (const std::map<K, V>& left, const std::map<K, V>& right) {
+  return right < left;
+}
+
+template<class K, class V>
+bool operator!= (const std::map<K, V>& left, const std::map<K, V>& right) {
+  return left < right || left > right;
+}
+
+template<class K, class V>
+bool operator== (const std::map<K, V>& left, const std::map<K, V>& right) {
+  return !(left != right);
+}
 
 
 /* *************************** */
@@ -309,14 +415,7 @@ void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
 
 bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
   assert(size() == other.size() && "Can compare only two TSOKeys with same size");
-  for (unsigned thr = 0; thr < size(); thr++) {
-    unsigned val1 = vals.at(thr);
-    unsigned val2 = other.vals.at(thr);
-    if (val1 != val2) {
-      return val1 < val2;
-    }
-  }
-  return false;
+  return vals < other.vals;
 }
 
 
@@ -337,22 +436,20 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
 }
 
 
-bool ZLinearization::linearizeTSO(State& curr, std::set<KeyTSO>& marked, std::vector<ZEvent>& res) const {
+template<class T>
+bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const {
   start_err("linearizeTSO/3...");
   
-  // Push-up as much as possible (the boring stuff)
+  // Push-up as much as possible (the boring stuff), then update marked
+  // and check for victory
   curr.pushUp(res);
   err_msg("prefix: " + curr.prefix.str());
-
-#ifdef TSO_MEMO
-  KeyTSO key(curr);
+  T key(curr);
   if (marked.count(key)) {
     end_err("0a");
     return false;
   }
   marked.insert(key);
-#endif
-
   if (curr.finished()) {
     curr.finishOff(res);
     end_err("1a");
@@ -385,18 +482,23 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<KeyTSO>& marked, std::ve
 }
 
 
+template<class T>
 std::vector<ZEvent> ZLinearization::linearizeTSO() const
 {
   start_err("linearizeTSO/0...");
   // po.dump();
   assert(ba.size() > 0);
   State start(*this, ba.number_of_threads());
-  std::set<KeyTSO> marked;
+  std::set<T> marked;
   std::vector<ZEvent> res;
-  linearizeTSO(start, marked, res);
+  linearizeTSO<T>(start, marked, res);
   end_err();
   // dumpTrace(res);
   return res;
+}
+
+std::vector<ZEvent> ZLinearization::linearizeTSO() const {
+  return linearizeTSO<KEY_TSO>();
 }
 
 
@@ -405,7 +507,7 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const
 /* *************************** */
 
 
-ZLinearization::KeyPSO::KeyPSO(const State& state)
+ZLinearization::RdyAuxesKeyPSO::RdyAuxesKeyPSO(const State& state)
   : main_prefix(state.prefix.numThreads()) 
 {
   for (unsigned thr = 0; thr < numThreads(); thr++) {
@@ -419,29 +521,121 @@ ZLinearization::KeyPSO::KeyPSO(const State& state)
   }
 }
 
-
-bool ZLinearization::KeyPSO::operator< (const KeyPSO& other) const {
+bool ZLinearization::RdyAuxesKeyPSO::operator< (const RdyAuxesKeyPSO& other) const {
   assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
+  if (main_prefix != other.main_prefix) {
+    return main_prefix < other.main_prefix;
+  }
+  return ready_auxes < other.ready_auxes;
+}
+
+
+ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
+  : main_prefix(state.prefix.numThreads())
+{
   for (unsigned thr = 0; thr < numThreads(); thr++) {
-    unsigned val1 = main_prefix.at(thr);
-    unsigned val2 = other.main_prefix.at(thr);
-    if (val1 != val2) {
-      return val1 < val2;
+    main_prefix.at(thr) = state.prefix.at(thr);
+  }
+  for (unsigned thr = 0; thr < numThreads(); thr++) {
+    std::map<unsigned, unsigned> reqs;
+    // Find the next fence and bwrite (between curr_pos and the fence)
+    const ZEvent* next_fence = nullptr;
+    bool has_bwrite = false;
+    for (unsigned pos = main_prefix.at(thr); pos < state.par.numEventsInThread(thr); pos++) {
+      const ZEvent* ev = state.par.ba.getEvent(thr, -1, pos);
+      if (ev->fence) {
+        next_fence = ev;
+        break;
+      }
+      if (isWriteB(ev)) {
+        has_bwrite = true;
+      }
     }
-  }
-  if (numReady() != other.numReady()) {
-    return numReady() < other.numReady();
-  }
-  auto it1 = ready_auxes.begin();
-  auto it2 = other.ready_auxes.begin();
-  while (it1 != ready_auxes.end()) {
-    if (*it1 != *it2) {
-      return *it1 < *it2;
+    /* If no next fence, leave empty. If has_bwrite, put \bot. Otherwise
+     * go through all future mwrite Wm's ancestors of the fence, get their
+     * observers, and observers of whatever write is sitting on Wm's variable.
+     * Merge. */
+    if (!next_fence) {
+      continue;
     }
-    it1++;
-    it2++;
+    if (has_bwrite) {
+      reqs.emplace(thr, UINT_MAX);
+    }
+    else {
+      for (int aux : state.par.ba.auxes(thr)) {
+        if (aux == -1) {
+          continue;
+        }
+        std::pair<const ZEvent *, int> p = state.par.po.pred(next_fence, thr, aux);
+        const ZEvent *wm = p.first;
+        int last_pred = p.second;
+        int curr_pos = state.prefix.at(thr, aux);
+        if (last_pred < curr_pos) {
+          continue;
+        }
+        // Collect all the observers
+        std::vector<ZObs> observers;
+        { // the blocking read
+          auto it = state.curr_vals.find(wm->ml);
+          const WrSet& wr_set = (it != state.curr_vals.end() ?
+            state.par.getObservers(it->second) : state.par.initialGetObservers(wm->ml)
+          );
+          for (ZObs obs : wr_set.toSet()) {
+            observers.push_back(obs);
+          }
+        }
+        { // the future mwrite ancestors of Wm
+          for (int pos = last_pred - 1; pos >= curr_pos; pos--) {
+            const ZEvent *ev = state.par.ba.getEvent(thr, aux, pos);
+            if (!isWriteM(ev)) {
+              continue;
+            }
+            const WrSet& wr_set = state.par.getObservers(ev);
+            for (ZObs obs : wr_set.toSet()) {
+              observers.push_back(obs);
+            }
+          }
+          // in other threads
+          for (unsigned thr2 = 0; thr2 < numThreads(); thr2++) {
+            if (thr2 == thr) {
+              continue;
+            }
+            int aux2 = state.par.ba.auxForMl(wm->ml, thr2);
+            int last_pred2 = state.par.po.pred(wm, thr2, aux2).second;
+            int curr_pos2 = state.prefix.at(thr2, aux2);
+            for (int pos2 = last_pred2; pos2 >= curr_pos2; pos2--) {
+              const ZEvent *ev = state.par.ba.getEvent(thr2, aux2, pos2);
+              if (!isWriteM(ev)) {
+                continue;
+              }
+              const WrSet& wr_set = state.par.getObservers(ev);
+              for (ZObs obs : wr_set.toSet()) {
+                observers.push_back(obs);
+              }
+            }
+          }
+        }
+        // merge the observers into reqs
+        for (ZObs obs : observers) {
+          if (obs.ev < state.prefix.at(obs.thr)) {
+            continue;
+          }
+          auto it = reqs.find(obs.thr);
+          unsigned nval = (it == reqs.end() ? obs.ev : std::max(obs.ev, it->second));
+          reqs[obs.thr] = nval;
+        }
+      }
+    }
+    main_reqs.emplace(thr, reqs);
   }
-  return true;
+}
+
+bool ZLinearization::MainReqsKeyPSO::operator< (const MainReqsKeyPSO& other) const {
+  assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
+  if (main_prefix != other.main_prefix) {
+    return main_prefix < other.main_prefix;
+  }
+  return main_reqs < other.main_reqs;
 }
 
 
@@ -537,22 +731,20 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
 }
 
 
-bool ZLinearization::linearizePSO(State& curr, std::set<KeyPSO>& marked, std::vector<ZEvent>& res) const {
+template<class T>
+bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const {
   start_err("linearizePSO/3...");
   
-  // Push-up as much as possible (the boring stuff)
+  // Push-up as much as possible (the boring stuff), then update marked
+  // and check for victory
   curr.pushUp(res);
   err_msg("prefix: " + curr.prefix.str());
-
-#ifdef PSO_MEMO
-  KeyPSO key(curr);
+  T key(curr);
   if (marked.count(key)) {
     end_err("0a");
     return false;
   }
   marked.insert(key);
-#endif
-
   if (curr.finished()) {
     curr.finishOff(res);
     end_err("1a");
@@ -585,16 +777,21 @@ bool ZLinearization::linearizePSO(State& curr, std::set<KeyPSO>& marked, std::ve
 }
 
 
+template<class T>
 std::vector<ZEvent> ZLinearization::linearizePSO() const
 {
   start_err("linearizePSO/0...");
   // po.dump();
   assert(ba.size() > 0);
   State start(*this, ba.number_of_threads());
-  std::set<KeyPSO> marked;
+  std::set<T> marked;
   std::vector<ZEvent> res;
-  linearizePSO(start, marked, res);
+  linearizePSO<T>(start, marked, res);
   end_err();
   // dumpTrace(res);
   return res;
+}
+
+std::vector<ZEvent> ZLinearization::linearizePSO() const {
+  return linearizePSO<KEY_PSO>();
 }

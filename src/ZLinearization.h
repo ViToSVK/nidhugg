@@ -1,5 +1,6 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
  * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2020 Truc Lam Bui
  *
  * This file is part of Nidhugg.
  *
@@ -96,12 +97,12 @@ class ZLinearization {
   const WrSet& getObservers(const ZObs& obs) const;
   const WrSet& getObservers(const ZEvent *ev) const;
 
-  class ZPrefix {
+  class Prefix {
    private:
     std::vector<std::vector<unsigned>> vals;
 
    public:
-    ZPrefix(unsigned n) : vals(n) {}
+    Prefix(unsigned n) : vals(n) {}
 
     unsigned numThreads() const {
       return vals.size();
@@ -139,8 +140,8 @@ class ZLinearization {
   class State {
    public:
     const ZLinearization& par;
-    ZPrefix prefix;
-    std::unordered_map<SymAddrSize, ZObs> curr_vals;
+    Prefix prefix;
+    std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
     unsigned tr_pos;
 
     State(const ZLinearization& par0, unsigned n)
@@ -163,6 +164,15 @@ class ZLinearization {
      * the auxiliary events, in (almost) arbitrary order. */
     bool finished() const;
     void finishOff(std::vector<ZEvent>& res) const;
+  };
+
+  class DummyKey {
+   public:
+    DummyKey(const State& state) {}
+    
+    bool operator< (const DummyKey& other) const {
+      return true;
+    }
   };
 
   /* ************* */
@@ -199,13 +209,14 @@ class ZLinearization {
   // Hints the aux thread we should advance.
   unsigned trHintTSO(const State& state) const;
   
-  bool linearizeTSO(State& curr, std::set<KeyTSO>& marked, std::vector<ZEvent>& res) const;
+  template<class T>
+  bool linearizeTSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const;
 
   /* ************* */
   /* PSO only      */
   /* ************* */
   
-  class KeyPSO {
+  class RdyAuxesKeyPSO {
    private:
     std::vector<unsigned> main_prefix;
     std::set<std::pair<unsigned, int>> ready_auxes;
@@ -213,21 +224,42 @@ class ZLinearization {
     unsigned numThreads() const {
       return main_prefix.size();
     }
-    unsigned numReady() const {
-      return ready_auxes.size();
-    }
 
    public:
-    KeyPSO(const State& state);
+    RdyAuxesKeyPSO(const State& state);
     
-    bool operator< (const KeyPSO& other) const;
-    bool operator> (const KeyPSO& other) const {
+    bool operator< (const RdyAuxesKeyPSO& other) const;
+    bool operator> (const RdyAuxesKeyPSO& other) const {
       return other < *this;
     }
-    bool operator== (const KeyPSO& other) const {
+    bool operator== (const RdyAuxesKeyPSO& other) const {
       return !(*this < other) && !(*this > other);
     }
-    bool operator!= (const KeyPSO& other) const {
+    bool operator!= (const RdyAuxesKeyPSO& other) const {
+      return !(*this == other);
+    }
+  };
+  
+  class MainReqsKeyPSO {
+   private:
+    std::vector<unsigned> main_prefix;
+    std::map<unsigned, std::map<unsigned, unsigned>> main_reqs;
+    
+    unsigned numThreads() const {
+      return main_prefix.size();
+    }
+    
+   public:
+    MainReqsKeyPSO(const State& state);
+    
+    bool operator< (const MainReqsKeyPSO& other) const;
+    bool operator> (const MainReqsKeyPSO& other) const {
+      return other < *this;
+    }
+    bool operator== (const MainReqsKeyPSO& other) const {
+      return !(*this < other) && !(*this > other);
+    }
+    bool operator!= (const MainReqsKeyPSO& other) const {
       return !(*this == other);
     }
   };
@@ -241,8 +273,12 @@ class ZLinearization {
   // Hints the next main thread we should force
   unsigned trHintPSO(const State& state) const;
   
-  bool linearizePSO(State& curr, std::set<KeyPSO>& marked, std::vector<ZEvent>& res) const;
+  template<class T>
+  bool linearizePSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const;
 
+  /* ********** */
+  /* MAIN STUFF */
+  /* ********** */
 
  public:
   ZLinearization(const ZAnnotation& annotation,
@@ -261,7 +297,12 @@ class ZLinearization {
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
 
+  template<class T>
   std::vector<ZEvent> linearizeTSO() const;
+  std::vector<ZEvent> linearizeTSO() const;
+  
+  template<class T>
+  std::vector<ZEvent> linearizePSO() const;
   std::vector<ZEvent> linearizePSO() const;
   
   // stats
