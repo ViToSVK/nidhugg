@@ -22,7 +22,9 @@
 #include <cassert>
 #include <sstream>
 
-CPid::CPid() : aux_idx(-1) {}
+CPid::CPid() : aux_idx(-1) {
+  _hash = compute_hash();
+}
 
 CPid::CPid(const std::vector<int> &pvec){
   assert(pvec.size() > 0);
@@ -31,6 +33,7 @@ CPid::CPid(const std::vector<int> &pvec){
   ++b;
   proc_seq = std::vector<int>(b,pvec.end());
   aux_idx = -1;
+  _hash = compute_hash();
 }
 
 CPid::CPid(const std::initializer_list<int> &il){
@@ -40,6 +43,7 @@ CPid::CPid(const std::initializer_list<int> &il){
   ++b;
   proc_seq = std::vector<int>(b,il.end());
   aux_idx = -1;
+  _hash = compute_hash();
 }
 
 CPid::CPid(const std::vector<int> &pvec, int i){
@@ -50,6 +54,7 @@ CPid::CPid(const std::vector<int> &pvec, int i){
   ++b;
   proc_seq = std::vector<int>(b,pvec.end());
   aux_idx = i;
+  _hash = compute_hash();
 }
 
 CPid CPid::spawn(int pn1) const{
@@ -57,6 +62,7 @@ CPid CPid::spawn(int pn1) const{
   assert(0 <= pn1);
   CPid c = *this;
   c.proc_seq.push_back(pn1);
+  c._hash = c.compute_hash();
   return c;
 }
 
@@ -65,6 +71,7 @@ CPid CPid::aux(int i) const{
   assert(0 <= i);
   CPid c = *this;
   c.aux_idx = i;
+  c._hash = c.compute_hash();
   return c;
 }
 
@@ -93,6 +100,7 @@ CPid CPid::parent() const{
   }else{
     cp.proc_seq.pop_back();
   }
+  cp._hash = cp.compute_hash();
   return cp;
 }
 
@@ -100,20 +108,61 @@ bool CPid::has_parent() const{
   return proc_seq.size() || is_auxiliary();
 }
 
+std::size_t CPid::get_hash() const{
+  assert(compute_hash() == _hash);
+  return _hash;
+}
+
+std::size_t CPid::compute_hash() const{
+  std::size_t res = proc_seq.size() * 2 + 1;
+  if (proc_seq.size() > 0)
+    res += (std::size_t) (proc_seq[0] / 10);
+  res %= 10;
+  assert(res < 10);
+  res *= 10000;
+  if (proc_seq.size() > 0)
+    res += (1000 * (proc_seq[0] % 10));
+  std::size_t max = 0;
+  for (unsigned i = 1; i < proc_seq.size(); ++i)
+    if (proc_seq[i] > 0 && (std::size_t) proc_seq[i] > max)
+      max = (std::size_t) proc_seq[i];
+  res += (100 * (max % 100));
+  if (aux_idx < 0) {
+    assert(aux_idx == -1);
+    res += 99;
+  } else
+    res += (aux_idx % 100);
+  assert(res >= 10000 && res < 100000);
+  return res;
+}
+
 int CPid::compare(const CPid &c) const{
+  std::size_t h = get_hash();
+  std::size_t ch = c.get_hash();
+  if(h < ch) return -1;
+  if(h > ch) return 1;
+
+  auto bad_hash = [&]()
+  {
+    llvm::errs() << "CPID hash clash: ";
+    llvm::errs() << to_string() << " :: " << get_hash() << " --- ";
+    llvm::errs() << c.to_string() << " :: " << c.get_hash() << "\n";
+    assert(false && "CPID hash clash");
+  };
+
   unsigned i = 0;
   while(i < proc_seq.size() && i < c.proc_seq.size()){
-    if(proc_seq[i] < c.proc_seq[i]) return -1;
-    if(proc_seq[i] > c.proc_seq[i]) return 1;
+    if(proc_seq[i] < c.proc_seq[i]) { bad_hash(); return -1; }
+    if(proc_seq[i] > c.proc_seq[i]) { bad_hash(); return 1; }
     ++i;
   }
-  if(i < c.proc_seq.size()) return -1;
-  if(i < proc_seq.size()) return 1;
+  if(i < c.proc_seq.size()) { bad_hash(); return -1; }
+  if(i < proc_seq.size()) { bad_hash(); return 1; }
   if(aux_idx == c.aux_idx || (!is_auxiliary() && !c.is_auxiliary())){
     return 0;
   }
-  if(aux_idx < c.aux_idx) return -1;
-  return 1;
+  if(aux_idx < c.aux_idx) { bad_hash(); return -1; }
+  bad_hash(); return 1;
 }
 
 int CPid::get_aux_index() const{

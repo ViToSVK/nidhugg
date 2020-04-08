@@ -75,7 +75,7 @@ public:
    */
   std::vector<int> get_proc_seq() const;
 
-	friend struct std::hash<CPid>;
+  friend struct std::hash<CPid>;
 
   std::string to_string() const;
 
@@ -86,6 +86,7 @@ public:
   bool operator<=(const CPid &c) const { return compare(c) <= 0; };
   bool operator>(const CPid &c) const { return compare(c) > 0; };
   bool operator>=(const CPid &c) const { return compare(c) >= 0; };
+  std::size_t get_hash() const;
 private:
   /* For a CPid <p0.p1.....pn> or <p0.p1.....pn/i>, the vector
    * proc_seq is [p1,...,pn]. */
@@ -94,7 +95,10 @@ private:
    * <p0.....pn/i> of an auxilliary process, aux_idx == i.
    */
   int aux_idx;
+  /* Hash */
+  std::size_t _hash;
 
+  std::size_t compute_hash() const;
   int compare(const CPid &c) const;
 };
 
@@ -165,23 +169,25 @@ private:
 
 namespace std{
   template <>
-  struct hash<std::vector<int>>{
-    std::size_t operator()(const std::vector<int>& vec) const{
-			using std::size_t;
-      size_t res = vec.size() % 10;
-			size_t st = vec.size() < 3 ? vec.size() : 3;
-			for(size_t i = 0; i < st; ++i)
-				res += (size_t) (vec[i] * (10^(i+1)));
-      return res;
+  struct hash<CPid>{
+    std::size_t operator()(const CPid& k) const{
+      return k.get_hash();
     }
   };
 
   template <>
-  struct hash<CPid>{
-    std::size_t operator()(const CPid& k) const{
-      size_t res = hash<std::vector<int>>()(k.proc_seq);
-      res += 1 + k.aux_idx;
-			return res;
+  struct hash<std::vector<int>>{
+    std::size_t operator()(const std::vector<int>& vec) const{
+      std::size_t res = vec.size() % 10;
+      std::size_t st = vec.size() < 4 ? vec.size() : 4;
+      for(std::size_t i = 0; i < st; ++i) {
+        assert(res <= 9999999);
+        res *= 100;
+        assert(i < 4 || vec.size() % 10 == 0 || res >= 100000000);
+        if (vec[i] > 0)
+          res += (std::size_t) (vec[i] % 100);
+      }
+      return res;
     }
   };
 }
