@@ -38,6 +38,7 @@ libnidhugg_a_SOURCES = \
   TSOTraceBuilder.cpp TSOTraceBuilder.h \
   VClock.cpp VClock.h VClock.tcc \
   vecset.h vecset.tcc \
+  ZEventID.cpp ZEventID.h \
   ZEvent.cpp ZEvent.h \
   ZHelpers.h \
   ZAnnotation.cpp ZAnnotation.h \

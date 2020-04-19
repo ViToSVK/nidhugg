@@ -75,7 +75,7 @@ public:
    */
   std::vector<int> get_proc_seq() const;
 
-  friend struct std::hash<CPid>;
+  std::size_t get_hash() const;
 
   std::string to_string() const;
 
@@ -86,7 +86,8 @@ public:
   bool operator<=(const CPid &c) const { return compare(c) <= 0; };
   bool operator>(const CPid &c) const { return compare(c) > 0; };
   bool operator>=(const CPid &c) const { return compare(c) >= 0; };
-  std::size_t get_hash() const;
+  int compare(const CPid &c) const;
+
 private:
   /* For a CPid <p0.p1.....pn> or <p0.p1.....pn/i>, the vector
    * proc_seq is [p1,...,pn]. */
@@ -99,7 +100,6 @@ private:
   std::size_t _hash;
 
   std::size_t compute_hash() const;
-  int compare(const CPid &c) const;
 };
 
 inline std::ostream &operator<<(std::ostream &os, const CPid &c){

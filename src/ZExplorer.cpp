@@ -129,6 +129,10 @@ void ZExplorer::print_stats() const
 
 bool ZExplorer::explore()
 {
+  #ifndef NDEBUG
+    std::cout << "RUNNING DEBUG VERSION\n";
+  #endif
+
   if (initial)
     return exploreRec(*initial);
   return false;
