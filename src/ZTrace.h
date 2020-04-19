@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -68,15 +68,7 @@ class ZTrace {
   }
 
   const ZEvent *getEvent(const ZObs& obs) const {
-    return graph.getBasis().getEvent(obs);
-  }
-
-  bool isRoot(unsigned thr_id) const {
-    return graph.getBasis().isRoot(thr_id);
-  }
-
-  bool isRoot(const ZEvent *ev) const {
-    return graph.getBasis().isRoot(ev);
+    return graph.getEvent(obs);
   }
 
 
@@ -87,7 +79,7 @@ class ZTrace {
   ZTrace();
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-         int star_root_index, bool assumeblocked, bool tso);
+         bool assumeblocked, bool tso);
 
   ZTrace(const ZTrace& parentTrace,
          std::vector<ZEvent>&& new_trace,

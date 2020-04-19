@@ -190,6 +190,14 @@ namespace std{
       return res;
     }
   };
+
+  template <typename A, typename B>
+  struct hash<std::pair<A, B>>{
+    std::size_t operator()(const std::pair<A, B>& pair) const{
+      return (hash<A>()(pair.first) << 12) +
+             hash<B>()(pair.second);
+    }
+  };
 }
 
 #endif

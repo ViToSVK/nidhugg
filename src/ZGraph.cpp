@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -18,42 +18,59 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <list>
-
 #include "ZHelpers.h"
 #include "ZGraph.h"
 #include "ZBuilderTSO.h"
 
+static const bool DEBUG = false;
+#include "ZDebug.h"
+
 
 // Empty
 ZGraph::ZGraph()
-  : tso(true), basis(*this), po(this->basis), cache()
+  : tso(true),
+    init(ZEvent(true)),
+    lines(),
+    thread_aux_to_line_id(),
+    threads_auxes(),
+    pso_thr_mlauxes(),
+    proc_seq_to_thread_id(),
+    event_to_position(),
+    po(*this),
+    cache()
 {
-  assert(&(basis.graph) == this);
-  assert(&(po.basis) == &basis);
   assert(empty());
 }
 
 
 // Initial
-ZGraph::ZGraph(const std::vector<ZEvent>& trace, int star_root_index, bool tso)
+ZGraph::ZGraph(const std::vector<ZEvent>& trace, bool tso)
   : tso(tso),
-    basis(*this, star_root_index),
-    po(this->basis),
+    init(ZEvent(true)),
+    lines(),
+    thread_aux_to_line_id(),
+    threads_auxes(),
+    pso_thr_mlauxes(),
+    proc_seq_to_thread_id(),
+    event_to_position(),
+    po(*this),
     cache()
 {
-  assert(&(basis.graph) == this);
-  assert(&(po.basis) == &basis);
+  assert(empty());
   traceToPO(trace, nullptr);
-  assert(basis.root() < basis.size() &&
-         "Root index too big (not enough threads in the initial trace)");
 }
 
 
 // Moving
 ZGraph::ZGraph(ZGraph&& oth)
   : tso(oth.tso),
-    basis(std::move(oth.basis)),
+    init(std::move(oth.init)),
+    lines(std::move(oth.lines)),
+    thread_aux_to_line_id(std::move(oth.thread_aux_to_line_id)),
+    threads_auxes(std::move(oth.threads_auxes)),
+    pso_thr_mlauxes(std::move(oth.pso_thr_mlauxes)),
+    proc_seq_to_thread_id(std::move(oth.proc_seq_to_thread_id)),
+    event_to_position(std::move(oth.event_to_position)),
     po(std::move(oth.po)),
     cache(std::move(oth.cache))
 {
@@ -61,6 +78,7 @@ ZGraph::ZGraph(ZGraph&& oth)
 }
 
 
+// Extending
 // Partial order that will be moved as original
 // Trace and annotation that will extend this copy of the graph
 ZGraph::ZGraph
@@ -69,13 +87,323 @@ ZGraph::ZGraph
  const std::vector<ZEvent>& trace,
  const ZAnnotation& annotation)
   : tso(oth.tso),
-    basis(oth.basis, *this),
-    po(std::move(po), this->basis),
+    init(ZEvent(true)),
+    lines(oth.lines),
+    thread_aux_to_line_id(oth.thread_aux_to_line_id),
+    threads_auxes(oth.threads_auxes),
+    pso_thr_mlauxes(oth.pso_thr_mlauxes),
+    proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
+    event_to_position(oth.event_to_position),
+    po(std::move(po), *this),
     cache()
 {
-  assert(&(this->basis.graph) == this);
-  assert(&(this->po.basis) == &(this->basis));
   traceToPO(trace, &annotation);
+}
+
+
+/* *************************** */
+/* LINES                       */
+/* *************************** */
+
+const LineT& ZGraph::operator()(std::pair<unsigned, int> ids) const
+{
+  assert(ids.first != INT_MAX && "Called for initial event");
+  auto it = thread_aux_to_line_id.find(ids);
+  assert(it != thread_aux_to_line_id.end());
+  return lines[it->second];
+}
+
+
+const LineT& ZGraph::operator()(unsigned thread_id, int aux_id) const
+{
+  return operator()(std::pair<unsigned, int>(thread_id, aux_id));
+}
+
+
+const ZEvent * ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
+{
+  assert(thread_id != INT_MAX && "Called for initial event");
+  assert(hasThreadAux(thread_id, aux_id));
+  const LineT& line = this->operator()(thread_id, aux_id);
+  assert(event_id < line.size());
+  assert(hasEvent(line[event_id]));
+  return line[event_id];
+}
+
+
+const ZEvent * ZGraph::getEvent(const ZObs& obs) const
+{
+  return getEvent(obs.thr, -1, obs.ev);
+}
+
+
+const ZEvent * ZGraph::getUnlockOfThisLock(const ZObs& obs) const
+{
+  unsigned curEv = obs.ev;
+  auto lock = getEvent(obs.thr, -1, curEv);
+  assert(isLock(lock));
+
+  while (curEv + 1 < (*this)(obs.thr, -1).size()) {
+    curEv++;
+    auto res = getEvent(obs.thr, -1, curEv);
+    if (isUnlock(res) && sameMl(lock, res))
+      return res;
+  }
+
+  return nullptr;
+}
+
+
+void ZGraph::addLine(const ZEvent *ev)
+{
+  assert(ev);
+  assert(!hasEvent(ev));
+  assert(ev->threadID() < 20 && "Thread ID not set up yet");
+  assert(!hasThreadAux(ev->threadID(), ev->auxID()));
+
+  auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
+  thread_aux_to_line_id.emplace(key, lines.size());
+  assert(ev->threadID() <= threads_auxes.size());
+  if (ev->threadID() == threads_auxes.size())
+    threads_auxes.push_back(std::set<int>());
+  assert(!threads_auxes.at(ev->threadID()).count(ev->auxID()));
+  threads_auxes[ev->threadID()].emplace(ev->auxID());
+  lines.push_back(LineT());
+  lines.back().reserve(16);
+}
+
+
+void ZGraph::addEvent(const ZEvent *ev)
+{
+  assert(ev);
+  assert(!hasEvent(ev));
+  assert(ev->threadID() < 20 && "Thread ID not set up yet");
+  assert(hasThreadAux(ev->threadID(), ev->auxID()));
+
+  auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
+  auto it = thread_aux_to_line_id.find(key);
+  assert(it != thread_aux_to_line_id.end());
+  LineT& line = lines[it->second];
+
+  unsigned event_id = line.size();
+  assert(event_id == ev->eventID());
+  assert(tso || ev->auxID() == -1 || line.empty() || sameMl(line[0], ev));
+  event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
+  line.push_back(ev);
+  assert(hasEvent(ev));
+}
+
+
+void ZGraph::replaceEvent(const ZEvent *oldEv, const ZEvent *newEv)
+{
+  assert(oldEv && newEv);
+  assert(oldEv != newEv && (*oldEv == *newEv)
+         && "different pointers but same thread/aux/eventID");
+  assert(oldEv->kind == newEv->kind &&
+         oldEv->cpid == newEv->cpid &&
+         oldEv->ml == newEv->ml);
+  assert(hasEvent(oldEv) && !hasEvent(newEv));
+
+  auto line_event = event_to_position[oldEv];
+  event_to_position.erase(oldEv);
+  event_to_position.emplace(newEv, line_event);
+
+  assert(line_event.first < lines.size() &&
+         line_event.second < lines[line_event.first].size() &&
+         lines[line_event.first][line_event.second] == oldEv);
+  lines[line_event.first][line_event.second] = newEv;
+  assert(!hasEvent(oldEv) && hasEvent(newEv));
+}
+
+
+void ZGraph::shrink()
+{
+  lines.shrink_to_fit();
+  for (unsigned i=0; i<lines.size(); ++i)
+    lines[i].shrink_to_fit();
+}
+
+
+unsigned ZGraph::lineID(unsigned thread_id, int aux_id) const
+{
+  assert(thread_id != INT_MAX && "Called for initial event");
+  assert(hasThreadAux(thread_id, aux_id));
+  auto key = std::pair<unsigned,int>(thread_id, aux_id);
+  auto it = thread_aux_to_line_id.find(key);
+  assert(it != thread_aux_to_line_id.end());
+  return it->second;
+}
+
+
+unsigned ZGraph::lineID(const ZEvent *ev) const
+{
+  assert(ev);
+  assert(!isInitial(ev) && "Called for initial event");
+  return lineID(ev->threadID(), ev->auxID());
+}
+
+
+bool ZGraph::hasThreadAux(std::pair<unsigned, int> ids) const
+{
+  assert(ids.first != INT_MAX && "Called for initial event");
+  assert(threads_auxes.size() <= ids.first ||
+         !threads_auxes.at(ids.first).count(ids.second) ||
+         thread_aux_to_line_id.count(ids));
+  assert(!thread_aux_to_line_id.count(ids) ||
+         threads_auxes.at(ids.first).count(ids.second));
+  return thread_aux_to_line_id.count(ids);
+}
+
+
+bool ZGraph::hasThreadAux(unsigned thread_id, int aux_id) const
+{
+  return hasThreadAux(std::pair<unsigned, int>(thread_id, aux_id));
+}
+
+
+std::vector<unsigned> ZGraph::real_sizes_minus_one() const
+{
+  std::vector<unsigned> res;
+  for (unsigned thr = 0; thr < number_of_threads(); ++thr) {
+    assert(!(*this)(thr, -1).empty());
+    res.push_back((*this)(thr, -1).size() - 1);
+  }
+  return res;
+}
+
+
+unsigned ZGraph::number_of_threads() const
+{
+  return threads_auxes.size();
+}
+
+
+const std::set<int>& ZGraph::auxes(unsigned thread_id) const
+{
+  assert(thread_id != INT_MAX && "Called for initial event");
+  assert(thread_id < threads_auxes.size());
+  return threads_auxes[thread_id];
+}
+
+
+int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
+{
+  assert(thr < number_of_threads());
+  auto axs = auxes(thr);
+  assert(!axs.empty());
+  if (axs.size() == 1) {
+    // No write events in this thread
+    return -1;
+  }
+  if (axs.size() == 2 && tso) {
+    #ifndef NDEBUG
+    auto it = axs.begin();
+    while (*it == -1) {
+      ++it;
+      assert(it != axs.end());
+    }
+    assert(*it == 0);
+    #endif
+    return 0;
+  }
+  // PSO below
+  assert(!tso);
+  assert(pso_thr_mlauxes.count(thr));
+  for (auto aux : axs) {
+    if (aux != -1) {
+      assert(!((*this)(thr, aux).empty()));
+      const ZEvent *first = (*this)(thr, aux)[0];
+      assert(isWriteM(first));
+      if (first->ml == ml)
+        return aux;
+    }
+  }
+  // This thread has no event for this ml
+  return -1;
+}
+
+
+int ZGraph::psoGetAux(const ZEvent* writeM)
+{
+  assert(!tso && isWriteM(writeM));
+  unsigned thr_idx = writeM->threadID();
+  assert(thr_idx < 100);
+  int aux_idx = -1;
+  if (!pso_thr_mlauxes.count(thr_idx)) {
+    // First aux
+    pso_thr_mlauxes.emplace
+      (thr_idx, std::vector<SymAddrSize>());
+    pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
+    aux_idx = 0;
+  } else {
+    for (unsigned ax = 0; ax < pso_thr_mlauxes[thr_idx].size(); ++ax)
+      if (pso_thr_mlauxes[thr_idx][ax] == writeM->ml) {
+        aux_idx = ax;
+        break;
+      }
+    if (aux_idx == -1) {
+      // New aux
+      aux_idx = pso_thr_mlauxes[thr_idx].size();
+      pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
+    }
+  }
+  assert(aux_idx >= 0);
+  return aux_idx;
+}
+
+
+// <threadID, added_with_this_call?>
+std::pair<unsigned, bool> ZGraph::getThreadID(const std::vector<int>& proc_seq)
+{
+  auto it = proc_seq_to_thread_id.find(proc_seq);
+  if (it == proc_seq_to_thread_id.end()) {
+    unsigned res = proc_seq_to_thread_id.size();
+    proc_seq_to_thread_id.emplace_hint(it, proc_seq, res);
+    return {res, true};
+  };
+  return {it->second, false};
+}
+
+
+// <threadID, added_with_this_call?>
+std::pair<unsigned, bool> ZGraph::getThreadID(const ZEvent *ev)
+{
+  assert(ev);
+  assert(!isInitial(ev) && "Called for initial event");
+  return getThreadID(ev->cpid.get_proc_seq());
+}
+
+
+unsigned ZGraph::getThreadIDnoAdd(const std::vector<int>& proc_seq) const
+{
+  auto it = proc_seq_to_thread_id.find(proc_seq);
+  if (it == proc_seq_to_thread_id.end())
+    return 1337;
+  else
+    return it->second;
+}
+
+
+unsigned ZGraph::getThreadIDnoAdd(const ZEvent * ev) const
+{
+  assert(ev);
+  assert(!isInitial(ev) && "Called for initial event");
+  return getThreadIDnoAdd(ev->cpid.get_proc_seq());
+}
+
+
+bool ZGraph::hasEvent(const ZEvent *ev) const
+{
+  assert(ev);
+  if (ev == initial())
+    return true;
+  auto it = event_to_position.find(ev);
+  if (it == event_to_position.end())
+    return false;
+  assert(lines[it->second.first][it->second.second] == ev);
+  assert(lineID(ev) == it->second.first);
+  assert(ev->eventID() == it->second.second);
+  return true;
 }
 
 
@@ -88,8 +416,9 @@ ZGraph::ZGraph
 void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
                        const ZAnnotation *annotationPtr)
 {
+  err_msg("starting trace-to-po");
   assert(!trace.empty());
-  assert(trace.size() >= basis.events_size());
+  assert(trace.size() >= events_size());
 
   std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thraux;
   ipid_to_thraux.reserve(8);
@@ -169,7 +498,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       thr_idx = ipidit->second.first;
       assert(ev->auxID() == ipidit->second.second);
     } else {
-      thr_idx = basis.getThreadID(ev).first;
+      thr_idx = getThreadID(ev).first;
       // add to ipid cache for faster lookup next time
       ipid_to_thraux.emplace(ev->iid.get_pid(),
                              std::pair<unsigned, int>(thr_idx,
@@ -179,7 +508,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     ev->_thread_id = thr_idx;
     if (!tso && isWriteM(ev)) {
       // Handle aux for pso
-      int aux_idx = basis.psoGetAux(ev);
+      int aux_idx = psoGetAux(ev);
       ev->_aux_id = aux_idx;
     }
 
@@ -189,8 +518,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     //
     // Check if we already haven't added a thraux-predecessor of this event
     if (thraux_with_event_we_dont_add.count(thraux)) {
-      assert(!basis.hasThreadAux(thraux) ||
-             cur_evidx.at(thraux) == basis(thraux).size());
+      assert(!hasThreadAux(thraux) ||
+             cur_evidx.at(thraux) == (*this)(thraux).size());
       continue;
     }
     // Check if thraux already has an unannotated read
@@ -198,8 +527,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         thraux.second == -1) {
       // This event happens after something we need to
       // annotate first, so we don't add it into the graph
-      assert(!basis.hasThreadAux(thraux) ||
-             cur_evidx.at(thraux) == basis(thraux).size());
+      assert(!hasThreadAux(thraux) ||
+             cur_evidx.at(thraux) == (*this)(thraux).size());
       thraux_with_event_we_dont_add.insert(thraux);
       continue;
     }
@@ -211,7 +540,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       if (childs_proc_it == proc_seq_within_po.end()) {
         dontInclude = true;
       } else {
-        auto thr_added = basis.getThreadID(ev->childs_cpid.get_proc_seq());
+        auto thr_added = getThreadID(ev->childs_cpid.get_proc_seq());
         assert(!thr_added.second);
         auto childs_thraux = std::pair<unsigned, int>(thr_added.first, -1);
         // It is enough to check the presence of the real thread
@@ -219,8 +548,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
           dontInclude = true;
       }
       if (dontInclude) {
-        assert(!basis.hasThreadAux(thraux) ||
-               cur_evidx.at(thraux) == basis(thraux).size());
+        assert(!hasThreadAux(thraux) ||
+               cur_evidx.at(thraux) == (*this)(thraux).size());
         thraux_with_event_we_dont_add.insert(thraux);
         continue;
       }
@@ -232,8 +561,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       if (!store_buffer.count(ev->threadID()) ||
           !store_buffer[ev->threadID()].count(ev->ml) ||
           store_buffer[ev->threadID()][ev->ml].empty()) {
-        assert(!basis.hasThreadAux(thraux) ||
-               cur_evidx.at(thraux) == basis(thraux).size());
+        assert(!hasThreadAux(thraux) ||
+               cur_evidx.at(thraux) == (*this)(thraux).size());
         thraux_with_event_we_dont_add.insert(thraux);
         continue;
       }
@@ -241,13 +570,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
     // We will add the event
     // First, add line if not already present
-    if (!basis.hasThreadAux(thraux)) {
+    if (!hasThreadAux(thraux)) {
       // A new thread/aux appeared,
       // we've checked above that it is allowed
       assert(!cur_evidx.count(thraux));
       cur_evidx.emplace(thraux, 0);
 
-      basis.addLine(ev);
+      addLine(ev);
       po.addLine(ev);
     }
 
@@ -258,9 +587,9 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     unsigned ev_idx = cur_evidx[thraux];
 
     assert(ev->eventID() == ev_idx);
-    if (ev_idx == basis(thraux).size()) {
+    if (ev_idx == (*this)(thraux).size()) {
       // New event
-      basis.addEvent(ev);
+      addEvent(ev);
       po.addEvent(ev);
 
       // XXX: function pointer calls not handled
@@ -271,10 +600,10 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
     } else {
       // Already known event
-      const ZEvent *oldev = basis.getEvent(ev->threadID(),
-                                           ev->auxID(),
-                                           ev->eventID());
-      basis.replaceEvent(oldev, ev);
+      const ZEvent *oldev = getEvent(ev->threadID(),
+                                     ev->auxID(),
+                                     ev->eventID());
+      replaceEvent(oldev, ev);
     }
 
     ++cur_evidx[thraux];
@@ -296,7 +625,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     //
     if (isSpawn(ev)) {
       proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
-      assert(basis.number_of_threads() > 0);
+      assert(number_of_threads() > 0);
       assert(ev->fence);
     }
 
@@ -434,24 +763,24 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
   } // end of loop for traversing trace and creating nodes
 
-  basis.shrink();
+  shrink();
   po.shrink();
 
   #ifndef NDEBUG
-  assert(basis.size() == cur_evidx.size());
+  assert(size() == cur_evidx.size());
   for (auto& thraux_numevents : cur_evidx) {
-    assert(thraux_numevents.second == basis(thraux_numevents.first).size()
-           && "Didn't go through entire original part of the basis");
+    assert(thraux_numevents.second == (*this)(thraux_numevents.first).size()
+           && "Didn't go through entire original part of the (*this)");
   }
   #endif
 
   // EDGES - spawns
   for (const ZEvent *spwn : spawns) {
-    auto thr_added = basis.getThreadID(spwn->childs_cpid.get_proc_seq());
+    auto thr_added = getThreadID(spwn->childs_cpid.get_proc_seq());
     assert(!thr_added.second);
-    for (int aux : basis.auxes(thr_added.first)) {
-      assert(!basis(thr_added.first, aux).empty());
-      const ZEvent *nthr = basis.getEvent(thr_added.first, aux, 0);
+    for (int aux : auxes(thr_added.first)) {
+      assert(!(*this)(thr_added.first, aux).empty());
+      const ZEvent *nthr = getEvent(thr_added.first, aux, 0);
 
       assert(!po.hasEdge(nthr, spwn));
       if (!po.hasEdge(spwn, nthr))
@@ -461,12 +790,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
   // EDGES - joins
   for (const ZEvent *jn : joins) {
-    auto thr_joined = basis.getThreadID(jn->childs_cpid.get_proc_seq());
+    auto thr_joined = getThreadID(jn->childs_cpid.get_proc_seq());
     assert(!thr_joined.second);
-    for (int aux : basis.auxes(thr_joined.first)) {
-      assert(!basis(thr_joined.first, aux).empty());
-      unsigned lastev_idx = basis(thr_joined.first, aux).size() - 1;
-      const ZEvent *wthr = basis.getEvent(thr_joined.first, aux, lastev_idx);
+    for (int aux : auxes(thr_joined.first)) {
+      assert(!(*this)(thr_joined.first, aux).empty());
+      unsigned lastev_idx = (*this)(thr_joined.first, aux).size() - 1;
+      const ZEvent *wthr = getEvent(thr_joined.first, aux, lastev_idx);
 
       assert(!po.hasEdge(jn, wthr));
       if (!po.hasEdge(wthr, jn))
@@ -510,7 +839,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
 int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const
 {
-  assert(thr < basis.number_of_threads());
+  assert(thr < number_of_threads());
   assert(cache.wm.count(ml));
   if (evX < 0)
     return -1;
@@ -582,12 +911,12 @@ const ZEvent * ZGraph::getTailW
 int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
 {
   assert(isRead(read));
-  assert(basis.hasEvent(read));
-  assert(thr < basis.number_of_threads());
+  assert(hasEvent(read));
+  assert(thr < number_of_threads());
   assert(thr != read->threadID());
   assert(cache.wm.count(read->ml));
 
-  int aux = basis.auxForMl(read->ml, thr);
+  int aux = auxForMl(read->ml, thr);
   if (aux == -1) {
     assert(!cache.wm.at(read->ml).count(thr));
     return -1;
@@ -595,9 +924,9 @@ int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPart
   assert(aux == 0 || cache.wm.at(read->ml).count(thr));
 
   int su = partial.succ(read, thr, aux).second;
-  if (su >= (int) basis(thr, aux).size()) {
+  if (su >= (int) (*this)(thr, aux).size()) {
     assert(su == INT_MAX);
-    su = (int) basis(thr, aux).size();
+    su = (int) (*this)(thr, aux).size();
   }
   // TailW index to cache.wm
   return getTailWindex(read->ml, thr, su - 1);
@@ -606,6 +935,8 @@ int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPart
 
 const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
 {
+  assert(isRead(read));
+  assert(hasEvent(read));
   int idx = getLatestNotAfterIndex(read, thr, partial);
   if (idx == -1)
     return nullptr;
@@ -622,11 +953,10 @@ const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const
 const ZEvent * ZGraph::getLocalBufferW(const ZEvent *read) const
 {
   assert(isRead(read));
-  assert(basis.hasEvent(read));
+  assert(hasEvent(read));
   assert(cache.readWB.count(read));
   const ZEvent *local = cache.readWB.at(read);
   assert(!local || isWriteB(local));
-
   return local;
 }
 
@@ -635,10 +965,9 @@ std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotatio
 {
   auto res = std::list<const ZEvent *>();
   unsigned thr_id = 0;
-  while (basis.hasThreadAux(thr_id, -1)) {
-    assert(!basis(thr_id, -1).empty());
-    auto lastEv = basis.getEvent(thr_id, -1,
-                                 basis(thr_id, -1).size() - 1);
+  while (hasThreadAux(thr_id, -1)) {
+    assert(!(*this)(thr_id, -1).empty());
+    auto lastEv = getEvent(thr_id, -1, (*this)(thr_id, -1).size() - 1);
     if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
         (isLock(lastEv) && !annotation.isLastLock(lastEv)))
       res.push_back(lastEv);
@@ -656,7 +985,7 @@ std::list<ZObs> ZGraph::getObsCandidates
 (const ZEvent *read, const ZAnnotationNeg& negative) const
 {
   assert(isRead(read));
-  assert(basis.hasEvent(read));
+  assert(hasEvent(read));
 
   std::list<ZObs> res;
 
@@ -665,32 +994,32 @@ std::list<ZObs> ZGraph::getObsCandidates
   // From the value (evid) and below, everything is covered from read by some other write
   std::unordered_map
     <std::pair<unsigned, int>, int> covered;
-  for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr)
-    for (int covaux : basis.auxes(covthr))
+  for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr)
+    for (int covaux : auxes(covthr))
       covered.emplace(std::pair<unsigned, int>(covthr, covaux), -1);
 
   // Handle other threads
-  for (unsigned tid = 0; tid < basis.number_of_threads(); ++tid) {
-    int auxid = basis.auxForMl(read->ml, tid);
+  for (unsigned tid = 0; tid < number_of_threads(); ++tid) {
+    int auxid = auxForMl(read->ml, tid);
     if (read->threadID() != tid && auxid >= 0) {
       int su = po.succ(read, tid, auxid).second;
-      if (su >= (int) basis(tid, auxid).size()) {
+      if (su >= (int) (*this)(tid, auxid).size()) {
         assert(su == INT_MAX);
-        su = (int) basis(tid, auxid).size();
+        su = (int) (*this)(tid, auxid).size();
       }
       // Dumb
       /*
       int curr = su - 1;
       while (curr >= 0) {
-        const ZEvent *rem = basis(tid, auxid)[curr];
+        const ZEvent *rem = (*this)(tid, auxid)[curr];
         assert(isWriteM(rem) && !po.hasEdge(read, rem));
         if (po.hasEdge(rem, read)) {
           if (sameMl(read, rem)) {
             mayBeCovered.emplace(rem);
             // Update cover
-            for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+            for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
               if (covthr != rem->threadID()) {
-                for (int covaux : basis.auxes(covthr)) {
+                for (int covaux : auxes(covthr)) {
                   int newcov = po.pred(rem, covthr, covaux).second;
                   auto covta = std::pair<unsigned, int>(covthr, covaux);
                   assert(covered.count(covta));
@@ -722,9 +1051,9 @@ std::list<ZObs> ZGraph::getObsCandidates
           assert((int) rem->eventID() <= po.pred(read, tid, auxid).second);
           mayBeCovered.emplace(rem);
           // Update cover
-          for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+          for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
             if (covthr != rem->threadID()) {
-              for (int covaux : basis.auxes(covthr)) {
+              for (int covaux : auxes(covthr)) {
                 int newcov = po.pred(rem, covthr, covaux).second;
                 auto covta = std::pair<unsigned, int>(covthr, covaux);
                 assert(covered.count(covta));
@@ -753,9 +1082,9 @@ std::list<ZObs> ZGraph::getObsCandidates
            localB->eventID() < read->eventID());
     const ZEvent *localM = localB->write_other_ptr;
     // Update cover caused by localB
-    for (unsigned covthr = 0; covthr < basis.number_of_threads(); ++covthr) {
+    for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
       if (covthr != localB->threadID()) {
-        for (int covaux : basis.auxes(covthr)) {
+        for (int covaux : auxes(covthr)) {
           int newcov = po.pred(localB, covthr, covaux).second;
           auto covta = std::pair<unsigned, int>(covthr, covaux);
           assert(covered.count(covta));
@@ -835,447 +1164,4 @@ std::list<ZObs> ZGraph::getObsCandidates
 
   res.sort();
   return res;
-}
-
-
-std::vector<ZEvent> ZGraph::linearizeTSO
-(const ZPartialOrder& partial, const ZAnnotation& annotation) const
-{
-  assert(tso);
-  assert(basis.auxes(basis.root()).size() <= 2 && "TSO");
-
-  std::vector<ZEvent> result;
-  unsigned resultsize = 0;
-
-  std::unordered_map<std::pair<unsigned, int>, unsigned>
-    current, until;
-
-  for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
-    for (int aux : basis.auxes(thr)) {
-      assert(aux <= 0);
-      current.emplace(std::pair<unsigned, int>(thr, aux), 0);
-      assert(!basis(thr, aux).empty());
-      auto lastEv = basis(thr, aux)[basis(thr, aux).size() - 1];
-      if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
-          (isLock(lastEv) && !annotation.isLastLock(lastEv))) {
-        // These events should be 'rediscovered' by the
-        // TraceBuilder as something to annotate
-        // Also locks can't be force-replayed if the
-        // location is already held
-        until.emplace(std::pair<unsigned, int>(thr, aux),
-                      basis(thr, aux).size() - 1);
-        resultsize += basis(thr, aux).size() - 1;
-      } else {
-        until.emplace(std::pair<unsigned, int>(thr, aux),
-                      basis(thr, aux).size());
-        resultsize += basis(thr, aux).size();
-      }
-    }
-  result.reserve(resultsize);
-
-  assert(basis.hasThreadAux(basis.root(), -1));
-  bool rootBufferExists =
-    basis.hasThreadAux(basis.root(), 0);
-
-  bool done = false;
-  while (!done) {
-    std::list<const ZEvent *> leaves, laux;
-
-    for (unsigned thr=0; thr<basis.number_of_threads(); ++thr) {
-      if (!basis.isRoot(thr)) {
-        for (int aux : basis.auxes(thr)) {
-          std::pair<unsigned, int> thau(thr, aux);
-          if (current[thau] < until[thau]) {
-            auto ev = basis(thau)[current[thau]];
-            if (aux == -1)
-              leaves.push_back(ev);
-            else {
-              assert(aux == 0);
-              laux.push_front(ev);
-            }
-          }
-        }
-      }
-    }
-    for (const auto& la : laux)
-      leaves.push_front(la);
-
-    // Some leaf thread makes one step,
-    // and before that step, all steps
-    // of other thraux that have
-    // to HB because of 'partial' are made
-
-    const ZEvent *noreq = nullptr;
-    const ZEvent *minreq = nullptr;
-    int req = INT_MAX;
-
-    for (const auto& lev : leaves) {
-      // Is lev minimal from leaves?
-      bool minimal = true;
-      for (const auto& loth : leaves) {
-        if (lev != loth && partial.hasEdge(loth, lev)) {
-          minimal = false;
-          break;
-        }
-      }
-
-      if (!minimal)
-        continue;
-
-      assert(minimal);
-      // Collect info what root buffer needs to HB this event
-      if (!rootBufferExists) {
-        // No root buffer events, we have a no-requirement event
-        noreq = lev;
-        break;
-      } else {
-        std::pair<unsigned, int> rootthau(basis.root(), 0);
-        int id = partial.pred(lev, basis.root(), 0).second;
-        assert(id + 1 <= (int) until[rootthau]);
-        if (id < (int) current[rootthau]) {
-          // We have a no-requirement event
-          noreq = lev;
-          break;
-        } else if (id < req) {
-          // We have a new minimal-requirement event
-          minreq = lev;
-          req = id;
-        }
-      }
-    }
-
-    if (noreq || !rootBufferExists) {
-      // There are be only rootMain requirements
-      std::pair<unsigned, int> rootthau(basis.root(), -1);
-      int id = !noreq ? until[rootthau] - 1
-        : partial.pred(noreq, basis.root(), -1).second;
-      assert(id + 1 <= (int) until[rootthau]);
-      while (id >= (int) current[rootthau]) {
-        const ZEvent *rMain = basis(rootthau)[current[rootthau]];
-        result.push_back(rMain->copy(result.size(), true));
-        ++current[rootthau];
-      }
-      if (noreq) {
-        result.push_back(noreq->copy(result.size(), true));
-        std::pair<unsigned, int> leafthau(noreq->threadID(), noreq->auxID());
-        assert(basis.hasThreadAux(leafthau) && current.count(leafthau));
-        ++current[leafthau];
-      } else {
-        // Leaves are finished and there is no rootBuffer
-        assert(!noreq && !minreq && !rootBufferExists && leaves.empty());
-        assert(result.size() == resultsize);
-        done = true;
-      }
-    } else {
-      // There are rootMain and rootBuffer requirements
-      assert(!noreq && rootBufferExists && (minreq || leaves.empty()));
-      std::pair<unsigned, int> rMainThau(basis.root(), -1);
-      std::pair<unsigned, int> rBufferThau(basis.root(), 0);
-      int rMainId = !minreq ? until[rMainThau] - 1
-        : partial.pred(minreq, basis.root(), -1).second;
-      assert(rMainId + 1 <= (int) until[rMainThau]);
-      int rBuffferId = !minreq ? until[rBufferThau] - 1
-        : partial.pred(minreq, basis.root(), 0).second;
-      assert(rBuffferId + 1 <= (int) until[rBufferThau]);
-      while (rMainId >= (int) current[rMainThau] ||
-             rBuffferId >= (int) current[rBufferThau]) {
-        const ZEvent * rMain = rMainId >= (int) current[rMainThau]
-          ? basis(rMainThau)[current[rMainThau]] : nullptr;
-        const ZEvent * rBuffer = rBuffferId >= (int) current[rBufferThau]
-          ? basis(rBufferThau)[current[rBufferThau]] : nullptr;
-        assert(rMain || rBuffer);
-        if (rBuffer && (!rMain || !partial.hasEdge(rMain, rBuffer))) {
-          result.push_back(rBuffer->copy(result.size(), true));
-          ++current[rBufferThau];
-        } else {
-          result.push_back(rMain->copy(result.size(), true));
-          ++current[rMainThau];
-        }
-      }
-      if (minreq) {
-        result.push_back(minreq->copy(result.size(), true));
-        std::pair<unsigned, int> leafthau(minreq->threadID(), minreq->auxID());
-        assert(basis.hasThreadAux(leafthau) && current.count(leafthau));
-        ++current[leafthau];
-      } else {
-        // Finished
-        assert(result.size() == resultsize);
-        done = true;
-      }
-    }
-  }
-
-  //dumpTrace(result);
-  return result;
-}
-
-
-std::vector<ZEvent> ZGraph::linearizePSO
-(const ZPartialOrder& partial, const ZAnnotation& annotation) const
-{
-  assert(!tso);
-  ZPartialOrder lin = copyPO(partial);
-  unsigned root = basis.root();
-
-  // (1) For all conflicting unordered pairs (i) leaf-event (ii) root memory-write,
-  //     order the leaf event before the root memory-write
-  for (unsigned thr = 0; thr < basis.number_of_threads(); ++thr) {
-    if (thr != root) {
-      for (int aux : basis.auxes(thr)) {
-        if (aux != -1) {
-          // Leaf buffer
-          assert(!basis(thr, aux).empty() && isWriteM(basis(thr, aux)[0]));
-          const auto& ml = basis(thr, aux)[0]->ml;
-          int raux = basis.auxForMl(ml, root);
-          if (raux != -1) {
-            // All events of thr,aux go before unordered events from root,raux
-            for (int ev_id = basis(thr, aux).size() - 1; ev_id >= 0; --ev_id) {
-              const ZEvent *leaf = basis(thr, aux)[ev_id];
-              int pred = lin.pred(leaf, root, raux).second;
-              if (pred + 1 < (int) basis(root, raux).size()) {
-                const ZEvent *newsucc = basis(root, raux)[pred + 1];
-                assert(!lin.hasEdge(newsucc, leaf));
-                if (!lin.hasEdge(leaf, newsucc))
-                  lin.addEdge(leaf, newsucc);
-              }
-            }
-          }
-        } else {
-          // Leaf main thread
-          for (int ev_id = basis(thr, aux).size() - 1; ev_id >= 0; --ev_id) {
-            const ZEvent *leaf = basis(thr, aux)[ev_id];
-            if (!isRead(leaf) || !annotation.defines(leaf)) // No need for buffer-writes
-              continue;
-            int raux = basis.auxForMl(leaf->ml, root);
-            if (raux == -1)
-              continue;
-            int pred = lin.pred(leaf, root, raux).second;
-            if (pred + 1 < (int) basis(root, raux).size()) {
-              const ZEvent *newsucc = basis(root, raux)[pred + 1];
-              assert(!lin.hasEdge(newsucc, leaf));
-              if (!lin.hasEdge(leaf, newsucc))
-                lin.addEdge(leaf, newsucc);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // (2) Linearize arbitrarily
-  std::vector<ZEvent> result;
-  unsigned resultsize = 0;
-
-  std::unordered_map<std::pair<unsigned, int>, unsigned>
-    until;
-  std::set<const ZEvent *, ZEventPtrComp> next;
-
-  for (unsigned thr=0; thr<basis.number_of_threads(); ++thr)
-    for (int aux : basis.auxes(thr)) {
-      assert(!basis(thr, aux).empty());
-      auto lastEv = basis(thr, aux)[basis(thr, aux).size() - 1];
-      if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
-          (isLock(lastEv) && !annotation.isLastLock(lastEv))) {
-        // These events should be 'rediscovered' by the
-        // TraceBuilder as something to annotate
-        // Also locks can't be force-replayed if the
-        // location is already held
-        until.emplace(std::pair<unsigned, int>(thr, aux),
-                      basis(thr, aux).size() - 1);
-        resultsize += basis(thr, aux).size() - 1;
-        if (((int) basis(thr, aux).size()) - 1 > 0)
-          next.insert(basis(thr, aux)[0]);
-      } else {
-        until.emplace(std::pair<unsigned, int>(thr, aux),
-                      basis(thr, aux).size());
-        resultsize += basis(thr, aux).size();
-        next.insert(basis(thr, aux)[0]);
-      }
-    }
-  result.reserve(resultsize);
-
-  while (!next.empty()) {
-    // Find an arbitrary head event
-    const ZEvent *head = nullptr;
-    for (const auto& ev : next) {
-      if (!head || lin.hasEdge(ev, head))
-        head = ev;
-    }
-    #ifndef NDEBUG
-    for (const auto& ev : next)
-      assert(ev == head || !lin.hasEdge(ev, head));
-    #endif
-
-    assert(next.count(head));
-    next.erase(head);
-    result.push_back(head->copy(result.size(), true));
-    std::pair<unsigned, int> thau(head->threadID(), head->auxID());
-    assert(until.count(thau));
-    if (head->eventID() + 1 < until[thau]) {
-      assert(head->eventID() + 1 < basis(thau).size());
-      next.insert(basis(thau)[head->eventID() + 1]);
-    }
-  }
-
-  assert(result.size() == resultsize);
-  //dumpTrace(result);
-  return result;
-}
-
-
-bool ZGraph::isObservable(const ZEvent *ev, const ZPartialOrder& partial) const
-{
-  assert(isWriteM(ev));
-  assert(isWriteB(ev->write_other_ptr));
-
-  // In local thread
-  for (unsigned evIdx = ev->write_other_ptr->eventID() + 1;
-       evIdx < basis(ev->threadID(), -1).size(); ++evIdx) {
-    const ZEvent *read = basis(ev->threadID(), -1)[evIdx];
-    if (isWriteB(read) && sameMl(ev, read)) {
-      // no read between ev and the subsequent conflicting write
-      break;
-    }
-    if (!isRead(read) || !sameMl(ev, read))
-      continue;
-    assert(cache.readWB.at(read) == ev->write_other_ptr);
-    // ev observable by read if unordered or happening after read
-    if (!partial.hasEdge(ev, read))
-      return true;
-    // might be covered from read by write in other thread
-    assert(isRead(read) && sameMl(ev, read) && partial.hasEdge(ev, read));
-    bool evCovered = isCoveredFromByOtherThread(ev, read, partial);
-    if (!evCovered) {
-      // ev observable by read
-      return true;
-    } else {
-      // ev covered from read and hence covered
-      // also from all potential local reads after
-      // this one, stop searching in local thread
-      break;
-    }
-  }
-
-  // In remote threads
-  for (unsigned thIdx = 0; thIdx < basis.number_of_threads(); ++thIdx) {
-    if (thIdx == ev->threadID())
-      continue;
-
-    // Search for conflicting reads in thIdx
-    for (int evIdx = partial.pred(ev, thIdx, -1).second + 1;
-         evIdx < (int) basis(thIdx, -1).size(); ++evIdx) {
-      const ZEvent *read = basis(thIdx, -1)[evIdx];
-      assert(!partial.hasEdge(read, ev));
-      if (!isRead(read) || !sameMl(ev, read))
-        continue;
-
-      if (!partial.hasEdge(ev, read)) {
-        // Unordered, ev can be covered from read
-        // only by a read-local write
-        assert(!partial.areOrdered(ev, read));
-        const ZEvent *writeRlocal = cache.readWB.at(read);
-        if (!writeRlocal) {
-          // ev observable by read
-          return true;
-        }
-        assert(isWriteB(writeRlocal));
-        writeRlocal = writeRlocal->write_other_ptr;
-        assert(isWriteM(writeRlocal));
-        if (!partial.hasEdge(ev, writeRlocal) &&
-            !partial.hasEdge(read, writeRlocal)) {
-          // ev observable by read
-          return true;
-        }
-        // Not observable
-        if (partial.hasEdge(read, writeRlocal)) {
-          // ev not observable by read, but could be
-          // by some other read in this same thread,
-          // continue searching
-          continue;
-        } else {
-          assert(partial.hasEdge(ev, writeRlocal));
-          // since ev -> writeRlocal, it will be covered
-          // by writeRlocal also to all later reads
-          // in this thread
-          break;
-        }
-
-      } else {
-        // ev -> read, last chance in this thread
-        // (1) Not covered by other threads
-        if (isCoveredFromByOtherThread(ev, read, partial)) {
-          // since ev -> read, it has no chance with reads after read in this thread
-          break;
-        }
-        // (2) Not covered by ev-thread
-        int auxIdx = basis.auxForMl(read->ml, ev->threadID());
-        assert(auxIdx != -1 && auxIdx == ev->auxID());
-        int pr = partial.pred(read, ev->threadID(), auxIdx).second;
-        const ZEvent *othW = getTailW(read->ml, ev->threadID(), pr);
-        assert(othW && isWriteM(othW));
-        if (othW != ev) {
-          // ev -> othW -> read
-          assert(sameMl(othW, ev) && othW->eventID() > ev->eventID() &&
-                 partial.hasEdge(othW, read));
-          // since ev -> read, it has no chance with reads after read in this thread
-          break;
-        }
-        // (3) Not covered by read-thread
-        const ZEvent *writeRlocal = cache.readWB.at(read);
-        if (!writeRlocal) {
-          // ev observable by read
-          return true;
-        }
-        assert(isWriteB(writeRlocal));
-        writeRlocal = writeRlocal->write_other_ptr;
-        assert(isWriteM(writeRlocal));
-        if (!partial.hasEdge(ev, writeRlocal) &&
-            !partial.hasEdge(read, writeRlocal)) {
-          // ev observable by read
-          return true;
-        }
-        assert(partial.hasEdge(ev, writeRlocal) ||
-               partial.hasEdge(read, writeRlocal));
-        // since ev -> read, it has no chance with reads after read in this thread
-        break;
-      }
-
-    } // evIdx loop
-  } // thIdx loop
-
-  return false;
-}
-
-
-// Is 'writeEv' covered from 'readEv' in 'partial'
-// by some other conflicting write othW? (writeEv -> othW -> readEv)
-// This function checks for othW only in threads different from
-// thread of writeEv and thread of readEv
-bool ZGraph::isCoveredFromByOtherThread
-(const ZEvent *writeEv, const ZEvent *readEv,
- const ZPartialOrder& partial) const
-{
-  assert(isWriteM(writeEv) && isRead(readEv) &&
-         sameMl(writeEv, readEv) && partial.hasEdge(writeEv, readEv));
-  for (unsigned thIdx = 0; thIdx < basis.number_of_threads(); ++thIdx) {
-    // Only checks different threads!!!
-    if (thIdx == writeEv->threadID() || thIdx == readEv->threadID())
-      continue;
-    int auxIdx = basis.auxForMl(readEv->ml, thIdx);
-    if (auxIdx == -1)
-      continue;
-    int pr = partial.pred(readEv, thIdx, auxIdx).second;
-    const ZEvent *othW = getTailW(readEv->ml, thIdx, pr);
-    if (!othW)
-      continue;
-    assert(isWriteM(othW));
-    assert(sameMl(writeEv, othW));
-    assert(partial.hasEdge(othW, readEv));
-    if (partial.hasEdge(writeEv, othW)) {
-      // writeEv -> othW -> readEv
-      // Hence writeEv covered
-      return true;
-    }
-  }
-  return false;
 }

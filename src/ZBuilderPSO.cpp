@@ -62,8 +62,7 @@ bool ZBuilderPSO::reset()
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
 
-  // Construct the explorer with:
-  // the initial trace, this original TB, the star_root_index
+  // Construct the explorer with the original TB, holding the initial trace
   ZExplorer explorer = ZExplorer(*this);
 
   // Call the main method

@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,14 +21,15 @@
 #ifndef _Z_PARTIAL_ORDER_H_
 #define _Z_PARTIAL_ORDER_H_
 
-#include "ZBasis.h"
+#include "ZAnnotationNeg.h"
 
 
+class ZGraph;
 class ZPartialOrder {
  public:
-  // ZBASIS REFERENCE (given at constructor-time)
-  const ZBasis& basis;  ////
-  static ZBasis basisDummy;
+  // ZGRAPH REFERENCE (given at constructor-time)
+  const ZGraph& graph;  ////
+  static ZGraph graphDummy;
 
 
   // SUCCESSOR PREDECESSOR
@@ -81,11 +82,11 @@ class ZPartialOrder {
 
  public:
   // Initial
-  ZPartialOrder(const ZBasis& basis);
+  ZPartialOrder(const ZGraph& graph);
   // Empty
   ZPartialOrder();
   // When extending
-  ZPartialOrder(ZPartialOrder&& oth, const ZBasis& basis);
+  ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph);
   // Chrono orderings
   ZPartialOrder(const ZPartialOrder& oth);
 

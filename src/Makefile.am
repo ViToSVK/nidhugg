@@ -43,10 +43,9 @@ libnidhugg_a_SOURCES = \
   ZHelpers.h \
   ZAnnotation.cpp ZAnnotation.h \
   ZAnnotationNeg.cpp ZAnnotationNeg.h \
-  ZTrace.cpp ZTrace.h \
-  ZBasis.cpp ZBasis.h \
   ZPartialOrder.cpp ZPartialOrder.h \
   ZGraph.cpp ZGraph.h \
+  ZTrace.cpp ZTrace.h \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
   ZInterpreterSC.cpp ZInterpreterSC.h \

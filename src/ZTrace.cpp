@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -29,12 +29,12 @@ ZTrace::ZTrace()
 
 ZTrace::ZTrace
 (std::vector<ZEvent>&& initial_trace,
- int star_root_index, bool assumeblocked, bool tso)
+ bool assumeblocked, bool tso)
   : parent(nullptr),
     trace(std::move(initial_trace)),
     annotation(),
     negative(),
-    graph(this->trace, star_root_index, tso),
+    graph(this->trace, tso),
     assumeblocked(assumeblocked),
     deadlocked(false)
 {}

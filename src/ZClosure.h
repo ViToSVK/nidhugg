@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -29,8 +29,8 @@ class ZClosure {
 
  ZClosure(const ZAnnotation& annotation,
           ZPartialOrder& partialOrder)
-  : an(annotation), gr(partialOrder.basis.graph),
-    ba(partialOrder.basis), po(partialOrder) {}
+  : an(annotation), gr(partialOrder.graph),
+    po(partialOrder) {}
 
   ZClosure(const ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure& oth) = delete;
@@ -65,15 +65,10 @@ class ZClosure {
     (const ZEvent *ev, const ZObs& obs);
 
   const ZAnnotation& an;
-
   const ZGraph& gr;
-
-  const ZBasis& ba;
-
   ZPartialOrder& po;
 
   unsigned added_edges = 0;
-
   unsigned iterations = 0;
 };
 

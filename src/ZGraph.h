@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -24,15 +24,86 @@
 #include <list>
 
 #include "ZPartialOrder.h"
-#include "ZAnnotationNeg.h"
+
+
+typedef std::vector<const ZEvent *> LineT;
+typedef std::vector<LineT> LinesT;
 
 
 class ZGraph {
+  friend class ZPartialOrder;
+  // TSO/PSO
  public:
   const bool tso;
 
+
+  // LINES (changed at recursion child with new ZEvent pointers from new trace)
+ private:
+  const ZEvent init; ////
+  LinesT lines; ////
+ public:
+  const ZEvent *initial() const { return &init; }
+  const LineT& operator()(std::pair<unsigned, int> ids) const;
+  const LineT& operator()(unsigned thread_id, int aux_id) const;
+  //
+  const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
+  const ZEvent *getEvent(const ZObs& obs) const;
+  const ZEvent *getUnlockOfThisLock(const ZObs& obs) const;
+  void addLine(const ZEvent *ev);
+  void addEvent(const ZEvent *ev);
+  void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);
+  void shrink();
+
+
+  // THREAD_AUX->LINE_ID (retained accross recursion children)
+ private:
+  std::unordered_map<std::pair<unsigned, int>, unsigned> thread_aux_to_line_id; ////
+  std::vector<std::set<int>> threads_auxes; ////
+  std::unordered_map<unsigned, std::vector<SymAddrSize>> pso_thr_mlauxes; ////
+  unsigned lineID(unsigned thread_id, int aux_id) const;
+  unsigned lineID(const ZEvent *ev) const;
+ public:
+  bool hasThreadAux(std::pair<unsigned, int> ids) const;
+  bool hasThreadAux(unsigned thread_id, int aux_id) const;
+  std::vector<unsigned> real_sizes_minus_one() const;
+  unsigned number_of_threads() const;
+  // All auxiliary indices for thread_id
+  const std::set<int>& auxes(unsigned thread_id) const;
+  // Auxiliary index for the ml in thread thr
+  // Returns -1 if thr has no writes
+  // Otherwise, the answer is always 0 in TSO
+  int auxForMl(const SymAddrSize& ml, unsigned thr) const;
+  int psoGetAux(const ZEvent* writeM);
+
+  // PROCSEQ->THREAD_ID (retained accross recursion children)
+ private:
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
+ public:
+  // <threadID, added_with_this_call?>
+  std::pair<unsigned, bool> getThreadID(const std::vector<int>& proc_seq);
+  std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
+  unsigned getThreadIDnoAdd(const std::vector<int>& proc_seq) const;
+  unsigned getThreadIDnoAdd(const ZEvent * ev) const;
+
+
+  // EVENT->POSITION (changed at recursion child with new ZEvent pointers from new trace)
+ private:
+  std::unordered_map<const ZEvent *, std::pair<unsigned, unsigned>> event_to_position; ////
+ public:
+  bool hasEvent(const ZEvent *ev) const;
+
+
+  // PO
+ private:
+  ZPartialOrder po;
+ public:
+  const ZPartialOrder& getPo() const { return po; }
+  ZPartialOrder copyPO() const { return ZPartialOrder(po); }
+
+
+  // CACHE
   class Cache {
-  public:
+   public:
     // ML -> thr -> thread-ordered memory-writes
     std::unordered_map
       <SymAddrSize, std::unordered_map
@@ -46,27 +117,19 @@ class ZGraph {
       return (wm.empty() && readWB.empty());
     }
   };
-
  private:
-  ZBasis basis;
-  ZPartialOrder po;
   Cache cache;
-
  public:
-  const ZBasis& getBasis() const { return basis; }
-  const ZPartialOrder& getPo() const { return po; }
   const Cache& getCache() const { return cache; }
 
-  bool empty() const {
-    return (basis.empty() && po.empty() && cache.empty());
-  }
 
-  ZPartialOrder copyPO() const {
-    return ZPartialOrder(po);
-  }
-
-  ZPartialOrder copyPO(const ZPartialOrder& partial) const {
-    return ZPartialOrder(partial);
+  bool empty() const { return (lines.empty() && po.empty() && cache.empty()); }
+  size_t size() const { return lines.size(); }
+  size_t events_size() const {
+    size_t res = 0;
+    for (auto& ln : lines)
+      res += ln.size();
+    return res;
   }
 
   /* *************************** */
@@ -77,10 +140,11 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::vector<ZEvent>& trace, int star_root_index, bool tso);
+  ZGraph(const std::vector<ZEvent>& trace, bool tso);
   // Moving
   ZGraph(ZGraph&& oth);
 
+  // Extending
   // Partial order that will be moved as original
   // Trace and annotation that will extend this copy of the graph
   ZGraph(const ZGraph& oth,
@@ -140,18 +204,8 @@ class ZGraph {
   std::list<ZObs> getObsCandidates(const ZEvent *read,
                                    const ZAnnotationNeg& negative) const;
 
-  // Linearizes a partial order
-  std::vector<ZEvent> linearizeTSO
-    (const ZPartialOrder& po, const ZAnnotation& annotation) const;
-  std::vector<ZEvent> linearizePSO
-    (const ZPartialOrder& po, const ZAnnotation& annotation) const;
 
-
-  // Observability
-  bool isObservable(const ZEvent *ev, const ZPartialOrder& partial) const;
-  bool isCoveredFromByOtherThread(const ZEvent *writeEv, const ZEvent *readEv,
-                                  const ZPartialOrder& partial) const;
-
+  std::string to_string() const { return po.to_string(); }
   void dump() const { po.dump(); }
 
 };

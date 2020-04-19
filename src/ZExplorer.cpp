@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -59,8 +59,7 @@ ZExplorer::ZExplorer(ZBuilderSC& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index,
-                         tb.someThreadAssumeBlocked, tso);
+    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked, tso);
 }
 
 
@@ -73,8 +72,7 @@ ZExplorer::ZExplorer(ZBuilderTSO& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index,
-                         tb.someThreadAssumeBlocked, tso);
+    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked, tso);
 }
 
 
@@ -87,8 +85,7 @@ ZExplorer::ZExplorer(ZBuilderPSO& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(tb.prefix), tb.star_root_index,
-                         tb.someThreadAssumeBlocked, tso);
+    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked, tso);
 }
 
 
@@ -177,7 +174,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
       }
     }
     annTrace.negative.update
-      (ev, annTrace.graph.getBasis().real_sizes_minus_one());
+      (ev, annTrace.graph.real_sizes_minus_one());
   }
 
   // Done with this recursion node
@@ -311,7 +308,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
   // The lock has been touched before
   auto lastLockObs = annTrace.annotation.getLastLock(lock);
-  auto lastUnlock = annTrace.graph.getBasis().getUnlockOfThisLock(lastLockObs);
+  auto lastUnlock = annTrace.graph.getUnlockOfThisLock(lastLockObs);
 
   if (!lastUnlock) {
     // This lock is currently locked
@@ -457,12 +454,14 @@ bool ZExplorer::extendAndRecur
 
   clock_t init = std::clock();
   assert(!mutatedTrace.empty() && !mutatedPO.empty());
+  err_msg("creating extension");
   ZTrace mutatedZTrace
     (parentTrace,
      std::move(mutatedTrace.trace),
      std::move(mutatedAnnotation),
      std::move(mutatedPO),
      mutatedTrace.hasAssumeBlockedThread);
+  err_msg("created extension");
   assert(mutatedTrace.empty() && mutatedPO.empty() &&
          mutatedAnnotation.empty());
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -491,10 +490,10 @@ ZExplorer::reuseTrace
       if (isRead(ev) && (!mutatedAnnotation.defines(&ev)))
         somethingToAnnotate = true;
       else if (isLock(ev)) {
-        if (!parentTrace.graph.getBasis().hasEvent(&ev))
+        if (!parentTrace.graph.hasEvent(&ev))
           somethingToAnnotate = true;
         else if (ev.eventID() == // last in its thraux
-                 (parentTrace.graph.getBasis())(ev.threadID(), ev.auxID()).size() - 1
+                 (parentTrace.graph)(ev.threadID(), ev.auxID()).size() - 1
                  && !mutatedAnnotation.isLastLock(&ev))
           somethingToAnnotate = true;
       }
@@ -594,7 +593,7 @@ bool ZExplorer::respectsAnnotation
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
     // ev->threadID() not set, have to get it
-    unsigned thrid = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+    unsigned thrid = parentTrace.graph.getThreadIDnoAdd(ev);
     ev->_thread_id = thrid;
     if (isWriteB(ev) && thrid != 1337)
       bw_pos.emplace(ZObs(thrid, ev->eventID()), ev->traceID());
@@ -604,18 +603,18 @@ bool ZExplorer::respectsAnnotation
     if (isRead(ev)) {
       if (annotation.defines(ev->threadID(), ev->eventID())) {
         const ZObs& obs = annotation.getObs(ev->threadID(), ev->eventID());
-        const ZEvent *obsB = parentTrace.graph.getBasis().initial();
+        const ZEvent *obsB = parentTrace.graph.initial();
         if (obs.thr != INT_MAX) {
           assert(bw_pos.count(obs));
           obsB = &(trace.at(bw_pos.at(obs)));
         }
         const ZEvent *obsM = (isInitial(obsB))
-          ? parentTrace.graph.getBasis().initial() : &(trace.at(obsB->write_other_trace_id));
+          ? parentTrace.graph.initial() : &(trace.at(obsB->write_other_trace_id));
         assert(obsB->value == obsM->value);
         assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
                                    sameMl(obsB, obsM) && sameMl(ev, obsB)));
         const ZEvent *realObservation = (ev->observed_trace_id == -1)
-          ? parentTrace.graph.getBasis().initial() : &(trace.at(ev->observed_trace_id));
+          ? parentTrace.graph.initial() : &(trace.at(ev->observed_trace_id));
         if (realObservation != obsB && realObservation != obsM) {
           parentTrace.dump();
           llvm::errs() << "Closed annotated partial order\n";
@@ -669,7 +668,7 @@ bool ZExplorer::linearizationRespectsAnn
 
   for (unsigned i=0; i<trace.size(); ++i) {
     const ZEvent *ev = &(trace.at(i));
-    ev->_thread_id = parentTrace.graph.getBasis().getThreadIDnoAdd(ev);
+    ev->_thread_id = parentTrace.graph.getThreadIDnoAdd(ev);
     assert(ev->threadID() < 1337);
 
     if (isWriteB(ev)) {
@@ -726,19 +725,19 @@ bool ZExplorer::linearizationRespectsAnn
     if (isRead(ev)) {
       assert(annotation.defines(ev->threadID(), ev->eventID()));
       const ZObs& obs = annotation.getObs(ev->threadID(), ev->eventID());
-      const ZEvent *obsB = parentTrace.graph.getBasis().initial();
+      const ZEvent *obsB = parentTrace.graph.initial();
       if (obs.thr != INT_MAX) {
         assert(bw_pos.count(obs));
         obsB = &(trace.at(bw_pos.at(obs)));
         assert(isWriteB(obsB));
       }
       const ZEvent *obsM = (isInitial(obsB))
-        ? parentTrace.graph.getBasis().initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
+        ? parentTrace.graph.initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
       assert(obsB->value == obsM->value);
       assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
                                  sameMl(obsB, obsM) && sameMl(ev, obsB)));
       const ZEvent *realObservation = (realObs.at(i) == -1)
-        ? parentTrace.graph.getBasis().initial() : &(trace.at(realObs.at(i)));
+        ? parentTrace.graph.initial() : &(trace.at(realObs.at(i)));
       if (realObservation != obsB && realObservation != obsM) {
         parentTrace.dump();
         llvm::errs() << "Closed annotated partial order\n";

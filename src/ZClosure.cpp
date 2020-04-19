@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -26,7 +26,7 @@
 std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZObs& obs) {
   if(obs.thr == INT_MAX)
     return {nullptr,nullptr};
-  auto buffer_part = ba.getEvent(obs.thr, -1, obs.ev);
+  auto buffer_part = gr.getEvent(obs.thr, -1, obs.ev);
   assert(isWriteB(buffer_part));
   auto write_part = buffer_part->write_other_ptr;
   assert(isWriteM(write_part));
@@ -64,14 +64,14 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
   // Idea: Iterate on all (but self) threads, in each thread i:
   // get 'memory_pred' - conflicting memory-write predecessor of read in thread i
   // add edge if not already present, that 'memory_pred' -> 'write_memory'
-  unsigned totThreads =  ba.number_of_threads();
+  unsigned totThreads =  gr.number_of_threads();
   unsigned readThread = read->threadID();
   unsigned writeThread = write_memory ? write_memory->threadID() : INT_MAX;
   auto location = read->ml; // SymAddrSize of read
   bool change = false;
   for(unsigned i=0; i < totThreads; ++i) { // looping over all threads
     if(i != readThread and i != writeThread) { // all but read thread and observation-write thread
-      int readaux = ba.auxForMl(location, i);
+      int readaux = gr.auxForMl(location, i);
       if(readaux == -1) continue;
       int lastEvid = po.pred(read,i,readaux).second ; // Hardcode Aux gets Event id of pred
       if(lastEvid != -1) { // {0,1,2,..,lastEvid} happen before read
@@ -90,7 +90,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
     }
   }
   if(write_memory and readThread != writeThread) { // checking for impossibility due to write thread
-    int writeaux = ba.auxForMl(location, writeThread);
+    int writeaux = gr.auxForMl(location, writeThread);
     if(writeaux != -1) {
       int lastEvid = po.pred(read,writeThread,writeaux).second ; // Hardcode Aux gets Event id of pred
       if(lastEvid != -1) { // {0,1,2,..,lastEvid} happen before read
@@ -129,7 +129,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
   // Idea: Iterate on all (but self and writeM) threads, for each thread i:
   // get 'bad_writeM' - conflicting memory-write successor of write_memory
   // add edge if not already present, that 'read' -> 'bad_writeM'
-  unsigned totThreads =  ba.number_of_threads();
+  unsigned totThreads =  gr.number_of_threads();
   unsigned readThread = read->threadID();
   unsigned writeThread = write_memory ? write_memory->threadID():INT_MAX;
   bool change = false;
@@ -254,7 +254,7 @@ bool ZClosure::close(const ZEvent *newread) {
         // hence the partial order is closed
         return true;
       }
-      auto read = ba.getEvent(read_obs.first.thr, -1, read_obs.first.ev);
+      auto read = gr.getEvent(read_obs.first.thr, -1, read_obs.first.ev);
       if ((!newread || newread != read) && !po.isClosureSafe(read)) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }
@@ -330,7 +330,7 @@ void ZClosure::preClose(const ZEvent *ev, const ZObs& obs) {
     // Handle initial-event observation separately
     // Nothing to do in preClosure (rule1)
   } else {
-    preClose(ev, po.basis.getEvent(obs));
+    preClose(ev, gr.getEvent(obs));
   }
   // po.dump();
 }
