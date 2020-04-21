@@ -146,7 +146,7 @@ const ZEvent * ZGraph::getUnlockOfThisLock(const ZObs& obs) const
   while (curEv + 1 < (*this)(obs.thr, -1).size()) {
     curEv++;
     auto res = getEvent(obs.thr, -1, curEv);
-    if (isUnlock(res) && sameMl(lock, res))
+    if (isUnlock(res) && same_ml(lock, res))
       return res;
   }
 
@@ -187,7 +187,7 @@ void ZGraph::addEvent(const ZEvent *ev)
 
   unsigned event_id = line.size();
   assert(event_id == ev->event_id());
-  assert(tso || ev->aux_id() == -1 || line.empty() || sameMl(line[0], ev));
+  assert(tso || ev->aux_id() == -1 || line.empty() || same_ml(line[0], ev));
   event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
   line.push_back(ev);
   assert(hasEvent(ev));
@@ -663,7 +663,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
              store_buffer[ev->thread_id()].count(ev->ml));
       assert(!ev->write_other_ptr);
       ev->write_other_ptr = store_buffer[ev->thread_id()][ev->ml].front();
-      assert(isWriteB(ev->write_other_ptr) && sameMl(ev, ev->write_other_ptr));
+      assert(isWriteB(ev->write_other_ptr) && same_ml(ev, ev->write_other_ptr));
       assert(!ev->write_other_ptr->write_other_ptr);
       ev->write_other_ptr->write_other_ptr = ev;
       assert(ev->write_other_ptr->trace_id() == ev->write_other_trace_id);
@@ -728,13 +728,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
     if (isLock(ev)) {
       // Check if ev is not annotated yet
-      if (!annotationPtr || !(annotationPtr->locationHasSomeLock(ev))) {
+      if (!annotationPtr || !(annotationPtr->location_has_some_lock(ev))) {
         // No annotated lock has held this location yet
         // This will be the last node for the corresponding thread
         has_unannotated_read_or_lock.insert(ev->thread_id());
       } else {
         // Some lock has already happened on this location
-        if (annotationPtr->isLastLock(ev)) {
+        if (annotationPtr->is_last_lock(ev)) {
           // This is the last annotated lock for this location
           assert(!found_last_lock_for_location.count(ev->ml));
           found_last_lock_for_location.insert(ev->ml);
@@ -943,7 +943,7 @@ const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const
 
   assert(idx < (int) cache.wm.at(read->ml).at(thr).size());
   auto res = cache.wm.at(read->ml).at(thr)[idx];
-  assert(isWriteM(res) && sameMl(res, read) &&
+  assert(isWriteM(res) && same_ml(res, read) &&
          res->thread_id() == thr && res->aux_id() != -1 &&
          !partial.hasEdge(read, res));
   return res;
@@ -969,7 +969,7 @@ std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotatio
     assert(!(*this)(thr_id, -1).empty());
     auto lastEv = getEvent(thr_id, -1, (*this)(thr_id, -1).size() - 1);
     if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
-        (isLock(lastEv) && !annotation.isLastLock(lastEv)))
+        (isLock(lastEv) && !annotation.is_last_lock(lastEv)))
       res.push_back(lastEv);
     thr_id++;
   }
@@ -1014,7 +1014,7 @@ std::list<ZObs> ZGraph::getObsCandidates
         const ZEvent *rem = (*this)(tid, auxid)[curr];
         assert(isWriteM(rem) && !po.hasEdge(read, rem));
         if (po.hasEdge(rem, read)) {
-          if (sameMl(read, rem)) {
+          if (same_ml(read, rem)) {
             mayBeCovered.emplace(rem);
             // Update cover
             for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
@@ -1033,7 +1033,7 @@ std::list<ZObs> ZGraph::getObsCandidates
           }
           curr--;
         } else {
-          if (sameMl(read, rem))
+          if (same_ml(read, rem))
             notCovered.emplace(rem);
           curr--;
         }
@@ -1044,7 +1044,7 @@ std::list<ZObs> ZGraph::getObsCandidates
       assert(wm_idx == getLatestNotAfterIndex(read, tid, po));
       while (wm_idx > -1) {
         const ZEvent *rem = cache.wm.at(read->ml).at(tid).at(wm_idx);
-        assert(rem && isWriteM(rem) && sameMl(read, rem));
+        assert(rem && isWriteM(rem) && same_ml(read, rem));
         assert(!po.hasEdge(read, rem));
         if (po.hasEdge(rem, read)) {
           // Others in this thread are covered from read by rem
@@ -1076,7 +1076,7 @@ std::list<ZObs> ZGraph::getObsCandidates
   const ZEvent *localB = cache.readWB.at(read);
   if (localB) {
     // There is a local write for read
-    assert(isWriteB(localB) && sameMl(localB, read) &&
+    assert(isWriteB(localB) && same_ml(localB, read) &&
            localB->thread_id() == read->thread_id() &&
            localB->aux_id() == -1 &&
            localB->event_id() < read->event_id());
@@ -1095,7 +1095,7 @@ std::list<ZObs> ZGraph::getObsCandidates
     }
     // Delete remotes that happen *before* localM
     // (no chance for them, those after localM are safe)
-    assert(isWriteM(localM) && sameMl(localB, localM) &&
+    assert(isWriteM(localM) && same_ml(localB, localM) &&
            po.hasEdge(localB, localM));
     for (auto it = notCovered.begin(); it != notCovered.end(); ) {
       const ZEvent *rem = *it;
@@ -1129,7 +1129,7 @@ std::list<ZObs> ZGraph::getObsCandidates
     // No local write for read
     if (mayBeCovered.empty()) {
       // Consider initial event if not forbidden
-      if (!negative.forbidsInitialEvent(read))
+      if (!negative.forbids_initial(read))
         res.emplace_back(INT_MAX, INT_MAX);
     }
   }
@@ -1138,7 +1138,7 @@ std::list<ZObs> ZGraph::getObsCandidates
   for (const auto& remM : notCovered) {
     assert(isWriteM(remM));
     const ZEvent *remB = remM->write_other_ptr;
-    assert(isWriteB(remB) && sameMl(remB, remM) &&
+    assert(isWriteB(remB) && same_ml(remB, remM) &&
            po.hasEdge(remB, remM));
     // Add if not forbidden
     if (!negative.forbids(read, remB))
@@ -1154,7 +1154,7 @@ std::list<ZObs> ZGraph::getObsCandidates
     if ((int) remM->event_id() > covered[covta]) {
       // Not covered
       const ZEvent *remB = remM->write_other_ptr;
-      assert(isWriteB(remB) && sameMl(remB, remM) &&
+      assert(isWriteB(remB) && same_ml(remB, remM) &&
              po.hasEdge(remB, remM));
       // Add if not forbidden
       if (!negative.forbids(read, remB))

@@ -26,16 +26,11 @@ ZEvent::ZEvent
  int instruction_id, int event_id, int trace_id)
   : kind(Kind::DUMMY),
     _id(ZEventID(cpid, event_id)),
-    _thread_id(-1), /*set at PObuild time*/
-    _aux_id((cpid.is_auxiliary()) ? cpid.get_aux_index() : -1),
     _trace_id(trace_id),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
-    childs_cpid(),
-    fence(false),
-    ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    value(-1),
+    _observed_trace_id(-1),
+    _childs_cpid(),
+    _ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
+    _value(-1),
     //
     iid(iid),
     size(1),
@@ -50,16 +45,11 @@ ZEvent::ZEvent
 ZEvent::ZEvent(bool initial)
   : kind(Kind::INITIAL),
     _id(ZEventID(CPid(), -1)),
-    _thread_id(-1),
-    _aux_id(-1),
     _trace_id(-1),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr),
-    childs_cpid(),
-    fence(false),
-    ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    value(-1),
+    _observed_trace_id(-1),
+    _childs_cpid(),
+    _ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
+    _value(-1),
     //
     iid(),
     size(-1),
@@ -71,86 +61,70 @@ ZEvent::ZEvent(bool initial)
 }
 
 
-ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
+ZEvent::ZEvent(const ZEvent& oth, int trace_id,
+               int observed_trace_id, int value)
   : kind(oth.kind),
-    _id(oth._id),
-    _thread_id(-1), /*set at PObuild time*/
-    _aux_id(oth._aux_id),
+    _id(oth.id()),
     _trace_id(trace_id),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
-    childs_cpid(oth.childs_cpid),
-    fence(oth.fence),
-    ml(oth.ml),
-    value(-1),
+    _observed_trace_id(observed_trace_id),
+    _childs_cpid(oth.childs_cpid()),
+    _ml(oth.ml()),
+    _value(value),
     //
-    iid(oth.iid), /*guide interpreter*/
-    size(oth.size), /*guide interpreter*/
+    iid(oth.iid), /*guide trace-builder*/
+    size(oth.size), /*guide trace-builder*/
     md(nullptr),
     may_conflict(oth.may_conflict),
-    instruction_id(oth.instruction_id) /*guide interpreter*/
+    instruction_id(oth.instruction_id) /*guide trace-builder*/
 {
   assert(iid.get_pid() >= 0);
-  if (!blank) {
-    // The observed trace ID stays the same
-    // as we are reusing the whole trace
-    observed_trace_id = oth.observed_trace_id;
-    write_other_trace_id = oth.write_other_trace_id;
-    value = oth.value;
-  }
 }
 
 
 std::string ZEvent::to_string(bool write_cpid) const
 {
   if (this->kind == ZEvent::Kind::INITIAL)
-    return "-1_<>_[-1,-1,-1] initial_event";
+    return "-1::<>_-1 initial_event";
 
   std::stringstream res;
 
-  res << trace_id() << "_";
+  res << trace_id() << "::";
   if (write_cpid)
     res << cpid() << "_";
-  res << "[" << thread_id() << "," << aux_id() << "," << event_id() << "]";
+  res << event_id();
   switch(kind) {
    case ZEvent::Kind::DUMMY :
      res << " <s:" << size << ">";
      break;
    case ZEvent::Kind::READ :
-     res << " read <- " << ml.addr.to_string()
-         << " <O:" << observed_trace_id << "> <val:" << value << ">";
+     res << " read " << ml().addr.to_string()
+         << " <O:" << observed_trace_id() << "> <val:" << value() << ">";
      break;
-   case ZEvent::Kind::WRITEB :
-     res << " writeB -> " << ml.addr.to_string() << " <val:" << value << ">";
-     break;
-   case ZEvent::Kind::WRITEM :
-     res << " writeM -> " << ml.addr.to_string()
-         << " <B:" << write_other_trace_id << "> <val:" << value << ">";
+   case ZEvent::Kind::WRITE :
+     res << " write " << ml().addr.to_string() << " <val:" << value() << ">";
      break;
    case ZEvent::Kind::SPAWN :
-     res << " spawn " << childs_cpid;
+     res << " spawn " << childs_cpid();
      break;
    case ZEvent::Kind::JOIN :
-     res << " join " << childs_cpid;
+     res << " join " << childs_cpid();
      break;
    case ZEvent::Kind::M_INIT :
-     res << " mutexinit " << ml.addr.to_string();
+     res << " mutexinit " << ml().addr.to_string();
      break;
    case ZEvent::Kind::M_DESTROY :
-     res << " mutexdestroy " << ml.addr.to_string();
+     res << " mutexdestroy " << ml().addr.to_string();
      break;
    case ZEvent::Kind::M_LOCK :
-     res << " lock " << ml.addr.to_string();
+     res << " lock " << ml().addr.to_string()
+         << " <O:" << observed_trace_id() << ">";
      break;
    case ZEvent::Kind::M_UNLOCK :
-     res << " unlock " << ml.addr.to_string();
+     res << " unlock " << ml().addr.to_string();
      break;
    default :
      res << " unknown";
   }
-  if (fence)
-    res << " fence";
 
   return res.str();
 }
@@ -158,7 +132,7 @@ std::string ZEvent::to_string(bool write_cpid) const
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev)
 {
-  out << ev.to_string();
+  out << ev.to_string(true);
   return out;
 }
 

@@ -21,6 +21,8 @@
 #ifndef _Z_PARTIAL_ORDER_H_
 #define _Z_PARTIAL_ORDER_H_
 
+#include <vector>
+
 #include "ZAnnotationNeg.h"
 
 

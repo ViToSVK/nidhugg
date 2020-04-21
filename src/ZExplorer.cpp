@@ -212,7 +212,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     } else {
       const ZEvent *obsB = annTrace.getEvent(observation);
       assert(isWriteB(obsB) && isWriteM(obsB->write_other_ptr) &&
-             sameMl(read, obsB) && sameMl(read, obsB->write_other_ptr));
+             same_ml(read, obsB) && same_ml(read, obsB->write_other_ptr));
       mutationFollowsCurrentTrace = (read->value == obsB->value);
       // DC (read->observed_trace_id == obsB->trace_id() ||
       // DC  read->observed_trace_id == obsB->write_other_ptr->trace_id());
@@ -248,10 +248,10 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     lock->dump();
   }
 
-  if (!annTrace.annotation.locationHasSomeLock(lock)) {
+  if (!annTrace.annotation.location_has_some_lock(lock)) {
     // This lock hasn't been touched before
     annTrace.deadlocked = false;
-    if (annTrace.negative.forbidsInitialEvent(lock)) {
+    if (annTrace.negative.forbids_initial(lock)) {
       // Negative annotation forbids initial unlock
       end_err("0a");
       if (info) {
@@ -263,7 +263,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     // Trivially realizable
     ++mutations_considered;
     ZAnnotation mutatedAnnotation(annTrace.annotation);
-    mutatedAnnotation.setLastLock(lock);
+    mutatedAnnotation.set_last_lock(lock);
     auto mutatedPO = annTrace.graph.copyPO();
 
     if (info) {
@@ -281,7 +281,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   }
 
   // The lock has been touched before
-  auto lastLockObs = annTrace.annotation.getLastLock(lock);
+  auto lastLockObs = annTrace.annotation.last_lock(lock);
   auto lastUnlock = annTrace.graph.getUnlockOfThisLock(lastLockObs);
 
   if (!lastUnlock) {
@@ -296,7 +296,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
   // This lock is currently unlocked by lastUnlock
   assert(lastUnlock && isUnlock(lastUnlock) &&
-         sameMl(lock, lastUnlock));
+         same_ml(lock, lastUnlock));
   annTrace.deadlocked = false;
 
   if (annTrace.negative.forbids(lock, lastUnlock)) {
@@ -308,7 +308,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   // Realizable
   ++mutations_considered;
   ZAnnotation mutatedAnnotation(annTrace.annotation);
-  mutatedAnnotation.setLastLock(lock);
+  mutatedAnnotation.set_last_lock(lock);
   auto mutatedPO = annTrace.graph.copyPO();
 
   if (info) {
@@ -468,7 +468,7 @@ ZExplorer::reuseTrace
           somethingToAnnotate = true;
         else if (ev.event_id() == // last in its thraux
                  (parentTrace.graph)(ev.thread_id(), ev.aux_id()).size() - 1
-                 && !mutatedAnnotation.isLastLock(&ev))
+                 && !mutatedAnnotation.is_last_lock(&ev))
           somethingToAnnotate = true;
       }
     }
@@ -547,7 +547,7 @@ bool ZExplorer::respectsAnnotation
           ? parentTrace.graph.initial() : &(trace.at(obsB->write_other_trace_id));
         assert(obsB->value == obsM->value);
         assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
-                                   sameMl(obsB, obsM) && sameMl(ev, obsB)));
+                                   same_ml(obsB, obsM) && same_ml(ev, obsB)));
         const ZEvent *realObservation = (ev->observed_trace_id == -1)
           ? parentTrace.graph.initial() : &(trace.at(ev->observed_trace_id));
         if (realObservation != obsB && realObservation != obsM) {
@@ -652,7 +652,7 @@ bool ZExplorer::linearizationRespectsAnn
   // Check whether last locks are consistent with annotation
   for (auto entry : lastLock) {
     const ZEvent *ev = &(trace.at(entry.second));
-    assert(annotation.isLastLock(ev));
+    assert(annotation.is_last_lock(ev));
   }
 
   for (unsigned i=0; i<trace.size(); ++i) {
@@ -670,7 +670,7 @@ bool ZExplorer::linearizationRespectsAnn
         ? parentTrace.graph.initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
       assert(obsB->value == obsM->value);
       assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
-                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
+                                 same_ml(obsB, obsM) && same_ml(ev, obsB)));
       const ZEvent *realObservation = (realObs.at(i) == -1)
         ? parentTrace.graph.initial() : &(trace.at(realObs.at(i)));
       if (realObservation != obsB && realObservation != obsM) {

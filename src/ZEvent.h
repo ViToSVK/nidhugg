@@ -50,62 +50,48 @@ class ZEvent {
   // Constructor for initial event
   ZEvent(bool initial);
 
- private:
-  // Returns a 'copy' of the event
-  // If blank: the event will be a part of replay_trace
-  // If not blank: the event is used as if it came from an interpreter
-  ZEvent(const ZEvent& oth, int trace_id, bool blank);
+  // Copy of the event, with custom-set trace id, observed trace id, value
+  ZEvent(const ZEvent& oth, int trace_id,
+         int observed_trace_id, int value);
 
- public:
-  ZEvent copy(int id, bool blank) const {
-    return ZEvent(*this, id, blank);
-  }
+  ZEvent(const ZEvent& oth) = default;
+  ZEvent(ZEvent&& oth) = default;
+  ZEvent& operator=(const ZEvent& oth) = delete;
+  ZEvent& operator=(ZEvent&& oth) = delete;
 
   enum class Kind {
     DUMMY, INITIAL,
-    READ, WRITEB, WRITEM,
+    READ, WRITE,
     SPAWN, JOIN,
     M_INIT, M_LOCK, M_UNLOCK, M_DESTROY
   } kind;
 
   /* A complex identifier of the thread that executed this event
    * + Sequential number (within the thread) of this event (starting with 0) */
- private:
   ZEventID _id;
- public:
   const ZEventID& id() const { return _id; }
   const CPid& cpid() const { return _id.cpid(); }
   int event_id() const { return _id.event_id(); }
-  /* Thread ID in our partial order */
-  mutable int _thread_id;
-  int thread_id() const { return _thread_id; }
-  /* Aux ID in our partial order */
-  mutable int _aux_id;
-  int aux_id() const { return _aux_id; }
   /* Trace ID of the event (index into the trace this event is part of) */
   int _trace_id;
   int trace_id() const { return _trace_id; }
   /* Trace ID of the observed event (lock observes unlock)
    * -1 means the initial event was observed */
-  int observed_trace_id;
-  /* Trace ID of its memory-write if this is a buffer-write
-   * Trace ID of its buffer-write if this is a memory-write */
-  mutable int write_other_trace_id;
-  /* Point to this other event */
-  mutable const ZEvent * write_other_ptr;
+  int _observed_trace_id;
+  int observed_trace_id() const { return _observed_trace_id; }
   /* CPid of the process that either:
    * 1) this event spawned (then this event is pthread_create) or
    * 2) this event joined (then this event is pthread_join) */
-  CPid childs_cpid;
-  /* Whether a fence happens immediately before the last
-     (i.e. the visible) instruction of this event */
-  bool fence;
+  CPid _childs_cpid;
+  const CPid& childs_cpid() const { return _childs_cpid; }
   /* Memory location (if any) modified/read by this event */
-  SymAddrSize ml;
+  SymAddrSize _ml;
+  const SymAddrSize& ml() const { return _ml; }
   /* The value read/written by this event */
-  int value;
+  int _value;
+  int value() const { return _value; }
 
-  /* Below for trace-builder */
+  /* Guide trace-builder */
 
   /* A simple identifier of the thread that executed this event */
   IID<int> iid;
@@ -120,22 +106,14 @@ class ZEvent {
    * The first instruction of the thread is number 1 !!! */
   int instruction_id;
 
-  bool operator==(const ZEvent& oth) const {
-    return (thread_id() == oth.thread_id() &&
-            aux_id() == oth.aux_id() &&
-            event_id() == oth.event_id());
-  }
+  bool operator==(const ZEvent& c) const { return (id() == c.id()); }
+  bool operator!=(const ZEvent &c) const { return (id() != c.id()); }
+  bool operator<(const ZEvent &c) const { return (id() < c.id()); }
+  bool operator<=(const ZEvent &c) const { return (id() <= c.id()); }
+  bool operator>(const ZEvent &c) const { return (id() > c.id()); }
+  bool operator>=(const ZEvent &c) const { return (id() >= c.id()); }
 
-  bool operator<(const ZEvent& oth) const { // Aux first
-    int maux = - aux_id();
-    int oth_maux = - oth.aux_id();
-    int ev = event_id();
-    int oth_ev = oth.event_id();
-    return std::tie(_thread_id, maux, ev)
-      < std::tie(oth._thread_id, oth_maux, oth_ev);
-  }
-
-  std::string to_string(bool write_cpid = true) const;
+  std::string to_string(bool write_cpid) const;
   void dump() const;
 };
 

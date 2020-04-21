@@ -8,12 +8,12 @@
 
 
 /* helper functions */
-inline bool sameMl(const ZEvent *ev1, const ZEvent *ev2) {
+inline bool same_ml(const ZEvent *ev1, const ZEvent *ev2) {
   assert(ev1 && ev2);
-  return ev1->ml == ev2->ml;
+  return ev1->ml() == ev2->ml();
 }
-inline bool sameMl(const ZEvent& ev1, const ZEvent& ev2) {
-  return ev1.ml == ev2.ml;
+inline bool same_ml(const ZEvent& ev1, const ZEvent& ev2) {
+  return ev1.ml() == ev2.ml();
 }
 
 //
@@ -38,25 +38,13 @@ inline bool isRead(const ZEvent& ev) {
 
 //
 
-inline bool isWriteB(const ZEvent *ev) {
+inline bool isWrite(const ZEvent *ev) {
   assert(ev);
-  return ev->kind == ZEvent::Kind::WRITEB;
+  return ev->kind == ZEvent::Kind::WRITE;
 }
-inline bool isWriteB(const ZEvent& ev) {
-  return ev.kind == ZEvent::Kind::WRITEB;
+inline bool isWrite(const ZEvent& ev) {
+  return ev.kind == ZEvent::Kind::WRITE;
 }
-
-
-//
-
-inline bool isWriteM(const ZEvent *ev) {
-  assert(ev);
-  return ev->kind == ZEvent::Kind::WRITEM;
-}
-inline bool isWriteM(const ZEvent& ev) {
-  return ev.kind == ZEvent::Kind::WRITEM;
-}
-
 
 //
 
@@ -116,26 +104,6 @@ inline bool isUnlock(const ZEvent *ev) {
 }
 inline bool isUnlock(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_UNLOCK;
-}
-
-//
-
-/* conversion functions */
-
-inline const ZEvent * toWriteM(const ZEvent *ev) {
-  if (isWriteB(ev)) {
-    ev = ev->write_other_ptr;
-  }
-  assert(isWriteM(ev));
-  return ev;
-}
-
-inline const ZEvent * toWriteB(const ZEvent *ev) {
-  if (isWriteM(ev)) {
-    ev = ev->write_other_ptr;
-  }
-  assert(isWriteB(ev));
-  return ev;
 }
 
 //

@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -29,85 +29,27 @@
 #include "ZHelpers.h"
 
 
-// Captures the buffer-write part of the
-// observation - hence auxID is always -1
-// Special case: INT_MAX,INT_MAX for initial event
-class ZObs {
- public:
-  ZObs() = delete;
-  ZObs(unsigned thread_idx, unsigned event_idx)
-    : thr(thread_idx), ev(event_idx) {}
-  ZObs(const ZEvent *ev)
-    : thr(ev->thread_id()), ev(ev->event_id())
-    { assert(ev->aux_id() == -1); }
-
-  ZObs(const ZObs& oth) = default;
-  ZObs(ZObs&& oth) = default;
-  ZObs& operator=(const ZObs& oth) = delete;
-  ZObs& operator=(ZObs&& oth) = delete;
-
-  const unsigned thr;
-  const unsigned ev;
-
-  std::string to_string() const {
-    std::stringstream res;
-    res << "[" << thr << ",-1," << ev << "]";
-    return res.str();
-  }
-
-  bool isInitial() const {
-    return thr == INT_MAX && ev == INT_MAX;
-  }
-
-  bool operator==(const ZObs& oth) const {
-    return (thr == oth.thr && ev == oth.ev);
-  }
-  bool operator!=(const ZObs& oth) const {
-    return !(*this == oth);
-  }
-
-  bool operator<(const ZObs& oth) const {
-    return std::tie(thr, ev)
-      < std::tie(oth.thr, oth.ev);
-  }
-};
-
-
-namespace std {
-  template <>
-  struct hash<ZObs> {
-    std::size_t operator()(const ZObs& obs) const {
-      return (hash<unsigned>()(obs.thr) << 12) +
-             hash<unsigned>()(obs.ev);
-    }
-  };
-}
-
-
 class ZAnnotation {
  public:
-
-  using MappingT = std::map<ZObs, ZObs>;
-  using LastLockT = std::unordered_map<SymAddrSize, ZObs>;
+  using MappingT = std::map<ZEventID, ZEventID>;
+  using LastLockT = std::unordered_map<SymAddrSize, ZEventID>;
 
  private:
-
   MappingT mapping;
   LastLockT lastlock;
 
  public:
-
   ZAnnotation() = default;
   ZAnnotation(const ZAnnotation&) = default;
-  ZAnnotation& operator=(const ZAnnotation&) = delete;
   ZAnnotation(ZAnnotation&& a) = default;
+  ZAnnotation& operator=(const ZAnnotation&) = delete;
   ZAnnotation& operator=(ZAnnotation&& a) = delete;
 
-  bool empty() const { return mapping.empty(); }
+  bool empty() const { return mapping.empty() && lastlock.empty(); }
   size_t size() const { return mapping.size(); }
 
-  typedef MappingT::iterator iterator;
-  typedef MappingT::const_iterator const_iterator;
+  using iterator = MappingT::iterator;
+  using const_iterator = MappingT::const_iterator;
   iterator begin() { return mapping.begin(); }
   const_iterator begin() const { return mapping.begin(); }
   iterator end() { return mapping.end(); }
@@ -116,35 +58,30 @@ class ZAnnotation {
   std::string to_string() const;
   void dump() const;
 
-
   /* *************************** */
   /* MAPPING                     */
   /* *************************** */
 
-  void add(const ZEvent *ev, const ZObs& obs);
+  void add(const ZEventID& ev_id, const ZEventID& obs_id);
+  void add(const ZEvent *ev, const ZEvent *obs);
 
-  void add(const ZEvent *ev, const ZEvent *obsEv);
-
-  bool defines(unsigned thrid, unsigned evid) const;
-
+  bool defines(const ZEventID& ev_id) const;
   bool defines(const ZEvent *ev) const;
 
-  const ZObs& getObs(unsigned thrid, unsigned evid) const;
-
-  const ZObs& getObs(const ZEvent *ev) const;
-
+  const ZEventID& obs(const ZEventID& ev_id) const;
+  const ZEventID& obs(const ZEvent *ev) const;
 
   /* *************************** */
   /* LAST LOCK                   */
   /* *************************** */
 
-  void setLastLock(const ZEvent *ev);
+  void set_last_lock(const ZEvent *ev);
 
-  const ZObs& getLastLock(const ZEvent *ev) const;
+  const ZEventID& last_lock(const ZEvent *ev) const;
 
-  bool isLastLock(const ZEvent *ev) const;
+  bool is_last_lock(const ZEvent *ev) const;
 
-  bool locationHasSomeLock(const ZEvent *ev) const;
+  bool location_has_some_lock(const ZEvent *ev) const;
 };
 
 #endif // _Z_ANNOTATION_H_

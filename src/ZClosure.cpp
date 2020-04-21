@@ -145,13 +145,13 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
         while(l<r) { // gives r if fail
           int mid=(l+r)>>1;
           auto res = cache.wm.at(read->ml).at(i)[mid];
-          assert(isWriteM(res) && sameMl(res, read) &&
+          assert(isWriteM(res) && same_ml(res, read) &&
                  res->thread_id() == i && res->aux_id() != -1);
           if(po.hasEdge(write_memory,res)) r=mid;
           else l=mid+1;
         } // after the loop, l = r = x
         auto res = cache.wm.at(read->ml).at(i)[l];
-        assert(isWriteM(res) && sameMl(res, read) &&
+        assert(isWriteM(res) && same_ml(res, read) &&
                res->thread_id() == i && res->aux_id() != -1);
         if(po.hasEdge(write_memory,res)) {
           if(po.hasEdge(res,read))
@@ -164,7 +164,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
         }
       } else {  // initial-event observation
         auto res = cache.wm.at(read->ml).at(i)[0]; // adding edge from first one
-        assert(isWriteM(res) && sameMl(res, read) &&
+        assert(isWriteM(res) && same_ml(res, read) &&
                res->thread_id() == i && res->aux_id() != -1);
         if(po.hasEdge(res,read))
           return {true,false}; // Impossible - reverse edge already present
@@ -188,13 +188,13 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
       while(l<r) { // gives r if fail
         int mid=(l+r)>>1;
         auto res = cache.wm.at(read->ml).at(writeThread)[mid];
-        assert(isWriteM(res) && sameMl(res, read) &&
+        assert(isWriteM(res) && same_ml(res, read) &&
             res->thread_id() == writeThread && res->aux_id() != -1);
         if(res->event_id()>memId) r=mid;
         else l=mid+1;
       } // after the loop, l = r = x
       auto res = cache.wm.at(read->ml).at(writeThread)[l];
-      assert(isWriteM(res) && sameMl(res, read) &&
+      assert(isWriteM(res) && same_ml(res, read) &&
             res->thread_id() == writeThread && res->aux_id() != -1);
       if(res->event_id()>memId) {
         if(po.hasEdge(res,read))
@@ -292,7 +292,7 @@ bool ZClosure::close(const ZEvent *newread) {
 /* *************************** */
 
 void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv) {
-  assert(sameMl(ev, obsEv));
+  assert(same_ml(ev, obsEv));
   assert((isRead(ev) && isWriteB(obsEv)) ||
          (isLock(ev) && isUnlock(obsEv)));
 

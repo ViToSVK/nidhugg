@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,12 +21,17 @@
 #ifndef _Z_ANNOTATIONNEG_H_
 #define _Z_ANNOTATIONNEG_H_
 
-#include <vector>
-
 #include "ZAnnotation.h"
 
 
 class ZAnnotationNeg {
+ public:
+  using NegativeT = std::map<CPid, int>;
+  using MappingT = std::map<ZEventID, NegativeT>;
+
+ private:
+  MappingT mapping;
+
  public:
   ZAnnotationNeg() = default;
   ZAnnotationNeg(const ZAnnotationNeg& oth) = default;
@@ -34,29 +39,27 @@ class ZAnnotationNeg {
   ZAnnotationNeg& operator=(const ZAnnotationNeg&) = delete;
   ZAnnotationNeg& operator=(ZAnnotationNeg&& a) = delete;
 
-  bool forbidsInitialEvent(const ZEvent *readev) const;
-
-  bool forbids(const ZEvent *readev, const ZEvent *writeev) const;
-
-  void update(const ZEvent *readev, std::vector<unsigned>&& newneg);
-
   bool empty() const { return mapping.empty(); }
 
-  std::string to_string() const;
-  void dump() const;
-
-  using MappingT = std::map<ZObs, std::vector<unsigned>>;
-  typedef MappingT::iterator iterator;
-  typedef MappingT::const_iterator const_iterator;
-
+  using iterator = MappingT::iterator;
+  using const_iterator = MappingT::const_iterator;
   iterator begin() { return mapping.begin(); }
   const_iterator begin() const { return mapping.begin(); }
   iterator end() { return mapping.end(); }
   const_iterator end() const { return mapping.end(); }
 
- private:
-  MappingT mapping;
+  std::string to_string() const;
+  void dump() const;
 
+  /* *************************** */
+  /* MAPPING                     */
+  /* *************************** */
+
+  bool forbids_initial(const ZEvent *ev) const;
+
+  bool forbids(const ZEvent *ev, const ZEvent *obs) const;
+
+  void update(const ZEvent *ev, NegativeT&& upd);
 };
 
 #endif // _Z_ANNOTATIONNEG_H_

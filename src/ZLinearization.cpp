@@ -195,7 +195,7 @@ unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
   LineT line = gr(thr, aux);
   const ZEvent *lastEv = line.back();
   bool ahead = (isRead(lastEv) && !an.defines(lastEv)) ||
-               (isLock(lastEv) && !an.isLastLock(lastEv));
+               (isLock(lastEv) && !an.is_last_lock(lastEv));
   unsigned res = line.size() - ahead;
   end_err("1");
   return res;

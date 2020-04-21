@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,49 +21,44 @@
 #include "ZAnnotationNeg.h"
 
 
-bool ZAnnotationNeg::forbidsInitialEvent(const ZEvent *readev) const
+bool ZAnnotationNeg::forbids_initial(const ZEvent *ev) const
 {
-  assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  return mapping.count(key);
+  assert(isRead(ev) || isLock(ev));
+  return mapping.count(ev->id());
 }
 
 
-bool ZAnnotationNeg::forbids(const ZEvent *readev, const ZEvent *writeev) const
+bool ZAnnotationNeg::forbids(const ZEvent *ev, const ZEvent *obs) const
 {
-  assert(writeev && !isInitial(writeev) &&
+  assert(obs && !isInitial(obs) &&
          "Call the special function for init event");
-  assert((isRead(readev) && isWriteB(writeev)) ||
-         (isLock(readev) && isUnlock(writeev)));
-  assert(readev->aux_id() == -1 && writeev->aux_id() == -1);
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  auto it = mapping.find(key);
+  assert((isRead(ev) && isWrite(obs)) ||
+         (isLock(ev) && isUnlock(obs)));
+  auto it = mapping.find(ev->id());
   if (it == mapping.end())
     return false;
-  if (writeev->thread_id() >= it->second.size())
+  auto it2 = it->second.find(obs->cpid());
+  if (it2 == it->second.end())
     return false;
-
-  return (it->second[writeev->thread_id()]
-          >= writeev->event_id());
+  return (it2->second >= obs->event_id());
 }
 
 
-void ZAnnotationNeg::update(const ZEvent *readev, std::vector<unsigned>&& newneg)
+void ZAnnotationNeg::update(const ZEvent *ev, NegativeT&& upd)
 {
-  assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  auto it = mapping.find(key);
-  if (it == mapping.end())
-    mapping.emplace_hint(it, key, newneg);
-  else {
-    assert(it->second.size() <= newneg.size());
-    it->second.reserve(newneg.size());
-    for (unsigned i = 0; i < newneg.size(); ++i)
-      if (i < it->second.size()) {
-        assert(it->second[i] <= newneg[i]);
-        it->second[i] = newneg[i];
-      } else
-        it->second.push_back(newneg[i]);
+  assert(isRead(ev) || isLock(ev));
+  auto it = mapping.find(ev->id());
+  if (it == mapping.end()) {
+    mapping.emplace_hint(it, ev->id(), upd);
+    return;
+  }
+  assert(it != mapping.end());
+  assert(it->second.size() <= upd.size());
+  for (const auto& cpid_limit : upd) {
+    assert(it->second.find(cpid_limit.first) == it->second.end() ||
+           it->second.at(cpid_limit.first) <= cpid_limit.second);
+    it->second[cpid_limit.first] = cpid_limit.second;
+    assert(it->second.at(cpid_limit.first) == cpid_limit.second);
   }
 }
 
@@ -75,8 +70,9 @@ std::string ZAnnotationNeg::to_string() const
   res << "Negative: {\n";
   for (auto& an : *this) {
     res << an.first.to_string() << "  forbids::  ";
-    for (unsigned thr = 0; thr < an.second.size(); thr++)
-      res << "[" << thr << ",-1," << an.second[thr] << "] ";
+    for (const auto& cpid_limit : an.second)
+      res << cpid_limit.first.to_string() << "_"
+          << cpid_limit.second << " ";
     res << "\n";
   }
   res << "}\n";
