@@ -26,8 +26,6 @@
 #include <time.h>
 
 #include "ZBuilderSC.h"
-#include "ZBuilderTSO.h"
-#include "ZBuilderPSO.h"
 #include "ZTrace.h"
 #include "ZClosure.h"
 #include "ZLinearization.h"
@@ -114,8 +112,6 @@ class ZExplorer {
   ~ZExplorer();
 
   ZExplorer(ZBuilderSC& tb);
-  ZExplorer(ZBuilderTSO& tb);
-  ZExplorer(ZBuilderPSO& tb);
 
  private:
 

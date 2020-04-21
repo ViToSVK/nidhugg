@@ -20,7 +20,7 @@
 
 #include "Debug.h"
 #include "ZTrace.h"
-#include "ZBuilderTSO.h"
+#include "ZBuilderSC.h"
 #include "ZExplorer.h"
 
 static const bool DEBUG = false;

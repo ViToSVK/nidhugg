@@ -63,32 +63,6 @@ ZExplorer::ZExplorer(ZBuilderSC& tb)
 }
 
 
-ZExplorer::ZExplorer(ZBuilderTSO& tb)
-  : originalTB(&tb), tso(true), sc_flag(false)
-{
-  if (tb.someThreadAssumeBlocked)
-    assume_blocked_thread = 1;
-
-  if (tb.somethingToAnnotate.empty())
-    executed_traces_full = 1;
-  else
-    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked, tso);
-}
-
-
-ZExplorer::ZExplorer(ZBuilderPSO& tb)
-  : originalTB(&tb), tso(false), sc_flag(false)
-{
-  if (tb.someThreadAssumeBlocked)
-    assume_blocked_thread = 1;
-
-  if (tb.somethingToAnnotate.empty())
-    executed_traces_full = 1;
-  else
-    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked, tso);
-}
-
-
 void ZExplorer::print_stats() const
 {
   std::cout << "\n";
@@ -518,48 +492,9 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
 {
   start_err("extendTrace...");
   assert(originalTB);
-  if (tso && sc_flag) {
-    clock_t init = std::clock();
-    ZBuilderSC TB(*(originalTB->config), originalTB->M, std::move(tr));
-    auto traceExtension = TraceExtension(TB.extendGivenTrace());
-    time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
-    interpreter_used++;
-
-    if (TB.has_error()) {
-      // ERROR FOUND
-      originalTB->error_trace = TB.get_trace();
-      traceExtension.hasError = true;
-    }
-
-    if (TB.someThreadAssumeBlocked)
-      traceExtension.hasAssumeBlockedThread = true;
-
-    end_err("?a");
-    return traceExtension;
-  }
-  else if (tso && !sc_flag) {
-    clock_t init = std::clock();
-    ZBuilderTSO TB(*(originalTB->config), originalTB->M, std::move(tr));
-    auto traceExtension = TraceExtension(TB.extendGivenTrace());
-    time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
-    interpreter_used++;
-
-    if (TB.has_error()) {
-      // ERROR FOUND
-      originalTB->error_trace = TB.get_trace();
-      traceExtension.hasError = true;
-    }
-
-    if (TB.someThreadAssumeBlocked)
-      traceExtension.hasAssumeBlockedThread = true;
-
-    end_err("?a");
-    return traceExtension;
-  }
-
-  assert(!tso);
+  assert(tso && sc_flag);
   clock_t init = std::clock();
-  ZBuilderPSO TB(*(originalTB->config), originalTB->M, std::move(tr));
+  ZBuilderSC TB(*(originalTB->config), originalTB->M, std::move(tr));
   auto traceExtension = TraceExtension(TB.extendGivenTrace());
   time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
   interpreter_used++;
@@ -573,7 +508,7 @@ ZExplorer::extendTrace(std::vector<ZEvent>&& tr)
   if (TB.someThreadAssumeBlocked)
     traceExtension.hasAssumeBlockedThread = true;
 
-  end_err("?b");
+  end_err("?a");
   return traceExtension;
 }
 
