@@ -139,14 +139,14 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
     unsigned p = replay_trace[prefix_idx].iid.get_pid();
     // If below assertion fails, search for p' tied to r_t[p_i].cpid,
     // scan r_t down and swap p with p' in all found events
-    assert(replay_trace[prefix_idx].cpid ==
+    assert(replay_trace[prefix_idx].cpid() ==
            threads[p].cpid && "IPID<->CPID correspondence has changed");
     // Mark that thread p owns the new event
     threads[p].event_indices.push_back(prefix_idx);
     // Create the new event
-    assert(replay_trace[prefix_idx].instruction_order ==
+    assert(replay_trace[prefix_idx].instruction_id ==
            threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-    assert(replay_trace[prefix_idx].eventID() ==
+    assert(replay_trace[prefix_idx].event_id() ==
            threads[p].executed_events && "Inconsistent scheduling");
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
                         threads[p].cpid,
@@ -155,7 +155,7 @@ bool ZBuilderTSO::schedule_replay_trace(int *proc, int *aux)
                         prefix.size());
     // Mark that thread executes a new event
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
@@ -297,7 +297,7 @@ void ZBuilderTSO::update_prefix(unsigned p)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 }
@@ -433,7 +433,7 @@ void ZBuilderTSO::join(int tgt_proc)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -682,7 +682,7 @@ void ZBuilderTSO::mutex_lock(const SymAddrSize &ml)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -762,7 +762,7 @@ void ZBuilderTSO::add_failed_lock_attempts() {
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
     assert(curnode().size == 1);
     assert(curnode().kind == ZEvent::Kind::DUMMY);

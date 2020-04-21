@@ -24,7 +24,7 @@
 bool ZAnnotationNeg::forbidsInitialEvent(const ZEvent *readev) const
 {
   assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->threadID(), readev->eventID());
+  auto key = ZObs(readev->thread_id(), readev->event_id());
   return mapping.count(key);
 }
 
@@ -35,23 +35,23 @@ bool ZAnnotationNeg::forbids(const ZEvent *readev, const ZEvent *writeev) const
          "Call the special function for init event");
   assert((isRead(readev) && isWriteB(writeev)) ||
          (isLock(readev) && isUnlock(writeev)));
-  assert(readev->auxID() == -1 && writeev->auxID() == -1);
-  auto key = ZObs(readev->threadID(), readev->eventID());
+  assert(readev->aux_id() == -1 && writeev->aux_id() == -1);
+  auto key = ZObs(readev->thread_id(), readev->event_id());
   auto it = mapping.find(key);
   if (it == mapping.end())
     return false;
-  if (writeev->threadID() >= it->second.size())
+  if (writeev->thread_id() >= it->second.size())
     return false;
 
-  return (it->second[writeev->threadID()]
-          >= writeev->eventID());
+  return (it->second[writeev->thread_id()]
+          >= writeev->event_id());
 }
 
 
 void ZAnnotationNeg::update(const ZEvent *readev, std::vector<unsigned>&& newneg)
 {
   assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->threadID(), readev->eventID());
+  auto key = ZObs(readev->thread_id(), readev->event_id());
   auto it = mapping.find(key);
   if (it == mapping.end())
     mapping.emplace_hint(it, key, newneg);

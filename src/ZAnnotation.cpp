@@ -24,7 +24,7 @@
 void ZAnnotation::add(const ZEvent *ev, const ZObs& obs)
 {
   assert(isRead(ev));
-  auto key = ZObs(ev->threadID(), ev->eventID());
+  auto key = ZObs(ev->thread_id(), ev->event_id());
   auto it = mapping.find(key);
   assert(it == mapping.end());
   mapping.emplace_hint(it, key, obs);
@@ -34,7 +34,7 @@ void ZAnnotation::add(const ZEvent *ev, const ZObs& obs)
 void ZAnnotation::add(const ZEvent *ev, const ZEvent *obsEv)
 {
   assert(isRead(ev) && isWriteB(obsEv));
-  add(ev, ZObs(obsEv->threadID(), obsEv->eventID()));
+  add(ev, ZObs(obsEv->thread_id(), obsEv->event_id()));
 }
 
 
@@ -48,7 +48,7 @@ bool ZAnnotation::defines(unsigned thrid, unsigned evid) const
 bool ZAnnotation::defines(const ZEvent *ev) const
 {
   assert(isRead(ev));
-  return defines(ev->threadID(), ev->eventID());
+  return defines(ev->thread_id(), ev->event_id());
 }
 
 
@@ -64,7 +64,7 @@ const ZObs& ZAnnotation::getObs(unsigned thrid, unsigned evid) const
 const ZObs& ZAnnotation::getObs(const ZEvent *ev) const
 {
   assert(isRead(ev));
-  return getObs(ev->threadID(), ev->eventID());
+  return getObs(ev->thread_id(), ev->event_id());
 }
 
 
@@ -75,7 +75,7 @@ void ZAnnotation::setLastLock(const ZEvent *ev)
   if (it != lastlock.end())
     it = lastlock.erase(it);
   lastlock.emplace_hint(it, ev->ml,
-                        ZObs(ev->threadID(), ev->eventID()));
+                        ZObs(ev->thread_id(), ev->event_id()));
 }
 
 
@@ -96,7 +96,7 @@ bool ZAnnotation::isLastLock(const ZEvent *ev) const
     return false;
   else
     return (it->second ==
-            ZObs(ev->threadID(), ev->eventID()));
+            ZObs(ev->thread_id(), ev->event_id()));
 }
 
 

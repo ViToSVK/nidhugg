@@ -65,8 +65,8 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
   // get 'memory_pred' - conflicting memory-write predecessor of read in thread i
   // add edge if not already present, that 'memory_pred' -> 'write_memory'
   unsigned totThreads =  gr.number_of_threads();
-  unsigned readThread = read->threadID();
-  unsigned writeThread = write_memory ? write_memory->threadID() : INT_MAX;
+  unsigned readThread = read->thread_id();
+  unsigned writeThread = write_memory ? write_memory->thread_id() : INT_MAX;
   auto location = read->ml; // SymAddrSize of read
   bool change = false;
   for(unsigned i=0; i < totThreads; ++i) { // looping over all threads
@@ -97,7 +97,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
         auto memory_pred = gr.getTailW(location,writeThread,lastEvid);  // last write of thread i on same location as read
         if(memory_pred) { // not nullptr
           assert(isWriteM(memory_pred));
-          if(memory_pred->eventID() > write_memory->eventID())
+          if(memory_pred->event_id() > write_memory->event_id())
             return {true,false}; // Impossible - reverse edge already present
         }
       }
@@ -130,8 +130,8 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
   // get 'bad_writeM' - conflicting memory-write successor of write_memory
   // add edge if not already present, that 'read' -> 'bad_writeM'
   unsigned totThreads =  gr.number_of_threads();
-  unsigned readThread = read->threadID();
-  unsigned writeThread = write_memory ? write_memory->threadID():INT_MAX;
+  unsigned readThread = read->thread_id();
+  unsigned writeThread = write_memory ? write_memory->thread_id():INT_MAX;
   bool change = false;
   for(unsigned i=0; i < totThreads; ++i) {  // looping over all threads
     if(i != readThread and i != writeThread) {  // all but read thread
@@ -146,13 +146,13 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
           int mid=(l+r)>>1;
           auto res = cache.wm.at(read->ml).at(i)[mid];
           assert(isWriteM(res) && sameMl(res, read) &&
-                 res->threadID() == i && res->auxID() != -1);
+                 res->thread_id() == i && res->aux_id() != -1);
           if(po.hasEdge(write_memory,res)) r=mid;
           else l=mid+1;
         } // after the loop, l = r = x
         auto res = cache.wm.at(read->ml).at(i)[l];
         assert(isWriteM(res) && sameMl(res, read) &&
-               res->threadID() == i && res->auxID() != -1);
+               res->thread_id() == i && res->aux_id() != -1);
         if(po.hasEdge(write_memory,res)) {
           if(po.hasEdge(res,read))
             return {true,false}; // Impossible - reverse edge already present
@@ -165,7 +165,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
       } else {  // initial-event observation
         auto res = cache.wm.at(read->ml).at(i)[0]; // adding edge from first one
         assert(isWriteM(res) && sameMl(res, read) &&
-               res->threadID() == i && res->auxID() != -1);
+               res->thread_id() == i && res->aux_id() != -1);
         if(po.hasEdge(res,read))
           return {true,false}; // Impossible - reverse edge already present
         if(!po.hasEdge(read,res)) {
@@ -184,19 +184,19 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
       assert(lastBefore < (int) cache.wm.at(read->ml).at(writeThread).size());
       // Binary search in cache events to get first wM after write
       int l=0,r=lastBefore;
-      unsigned memId = write_memory->eventID();
+      unsigned memId = write_memory->event_id();
       while(l<r) { // gives r if fail
         int mid=(l+r)>>1;
         auto res = cache.wm.at(read->ml).at(writeThread)[mid];
         assert(isWriteM(res) && sameMl(res, read) &&
-            res->threadID() == writeThread && res->auxID() != -1);
-        if(res->eventID()>memId) r=mid;
+            res->thread_id() == writeThread && res->aux_id() != -1);
+        if(res->event_id()>memId) r=mid;
         else l=mid+1;
       } // after the loop, l = r = x
       auto res = cache.wm.at(read->ml).at(writeThread)[l];
       assert(isWriteM(res) && sameMl(res, read) &&
-            res->threadID() == writeThread && res->auxID() != -1);
-      if(res->eventID()>memId) {
+            res->thread_id() == writeThread && res->aux_id() != -1);
+      if(res->event_id()>memId) {
         if(po.hasEdge(res,read))
           return {true,false}; // Impossible - reverse edge already present
         if(!po.hasEdge(read,res)) {
@@ -303,7 +303,7 @@ void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv) {
   }
 
   assert(isRead(ev) && obsEv->write_other_ptr);
-  if (ev->threadID() != obsEv->threadID()) {
+  if (ev->thread_id() != obsEv->thread_id()) {
     auto obsMem = obsEv->write_other_ptr;
     assert(isWriteM(obsMem));
     assert(!po.hasEdge(ev, obsMem));

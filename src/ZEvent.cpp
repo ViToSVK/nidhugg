@@ -23,26 +23,25 @@
 
 ZEvent::ZEvent
 (const IID<int> &iid, const CPid& cpid,
- unsigned instruction_order, unsigned event_order, unsigned trace_id)
+ int instruction_id, int event_id, int trace_id)
   : kind(Kind::DUMMY),
-    cpid(cpid),
-    childs_cpid(),
-    fence(false),
-    ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % UINT16_MAX, 1337), 1337), 1337),
-    value(-47),
-    _thread_id(1337), /*set at PObuild time*/
+    _id(ZEventID(cpid, event_id)),
+    _thread_id(-1), /*set at PObuild time*/
     _aux_id((cpid.is_auxiliary()) ? cpid.get_aux_index() : -1),
-    _event_id(event_order),
     _trace_id(trace_id),
     observed_trace_id(-1),
     write_other_trace_id(-1),
     write_other_ptr(nullptr), /*set at PObuild time*/
+    childs_cpid(),
+    fence(false),
+    ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
+    value(-1),
     //
     iid(iid),
     size(1),
     md(nullptr),
     may_conflict(false),
-    instruction_order(instruction_order)
+    instruction_id(instruction_id)
 {
   assert(iid.get_pid() >= 0);
 }
@@ -50,15 +49,23 @@ ZEvent::ZEvent
 
 ZEvent::ZEvent(bool initial)
   : kind(Kind::INITIAL),
-    ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    value(-47),
-    _thread_id(INT_MAX),
+    _id(ZEventID(CPid(), -1)),
+    _thread_id(-1),
     _aux_id(-1),
-    _event_id(INT_MAX),
     _trace_id(-1),
     observed_trace_id(-1),
     write_other_trace_id(-1),
-    write_other_ptr(nullptr)
+    write_other_ptr(nullptr),
+    childs_cpid(),
+    fence(false),
+    ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
+    value(-1),
+    //
+    iid(),
+    size(-1),
+    md(nullptr),
+    may_conflict(false),
+    instruction_id(-1)
 {
   assert(initial);
 }
@@ -66,24 +73,23 @@ ZEvent::ZEvent(bool initial)
 
 ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
   : kind(oth.kind),
-    cpid(oth.cpid),
-    childs_cpid(oth.childs_cpid),
-    fence(oth.fence),
-    ml(oth.ml),
-    value(-47),
-    _thread_id(1337), /*set at PObuild time*/
+    _id(oth._id),
+    _thread_id(-1), /*set at PObuild time*/
     _aux_id(oth._aux_id),
-    _event_id(oth._event_id),
     _trace_id(trace_id),
     observed_trace_id(-1),
     write_other_trace_id(-1),
     write_other_ptr(nullptr), /*set at PObuild time*/
+    childs_cpid(oth.childs_cpid),
+    fence(oth.fence),
+    ml(oth.ml),
+    value(-1),
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
     md(nullptr),
     may_conflict(oth.may_conflict),
-    instruction_order(oth.instruction_order) /*guide interpreter*/
+    instruction_id(oth.instruction_id) /*guide interpreter*/
 {
   assert(iid.get_pid() >= 0);
   if (!blank) {
@@ -99,14 +105,14 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
 std::string ZEvent::to_string(bool write_cpid) const
 {
   if (this->kind == ZEvent::Kind::INITIAL)
-    return "-1_<>_[INT_MAX,-1,INT_MAX] initial_event";
+    return "-1_<>_[-1,-1,-1] initial_event";
 
   std::stringstream res;
 
-  res << traceID() << "_";
+  res << trace_id() << "_";
   if (write_cpid)
-    res << cpid << "_";
-  res << "[" << threadID() << "," << auxID() << "," << eventID() << "]";
+    res << cpid() << "_";
+  res << "[" << thread_id() << "," << aux_id() << "," << event_id() << "]";
   switch(kind) {
    case ZEvent::Kind::DUMMY :
      res << " <s:" << size << ">";

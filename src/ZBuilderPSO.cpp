@@ -125,21 +125,21 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
     assert(replay_trace.size() > prefix.size());
     assert(prefix_idx == (int) prefix.size());
     if (prefix_idx == 0) {
-      cpidMainToIpid.emplace(replay_trace[prefix_idx].cpid.get_proc_seq(),
+      cpidMainToIpid.emplace(replay_trace[prefix_idx].cpid().get_proc_seq(),
                              replay_trace[prefix_idx].iid.get_pid());
     }
     const ZEvent& toReplay = replay_trace[prefix_idx];
-    assert(cpidMainToIpid.count(toReplay.cpid.get_proc_seq()));
+    assert(cpidMainToIpid.count(toReplay.cpid().get_proc_seq()));
     assert(!isWriteM(toReplay) ||
-           (cpidMlToIpid.count(toReplay.cpid.get_proc_seq()) &&
-            cpidMlToIpid[toReplay.cpid.get_proc_seq()].count(toReplay.ml)));
+           (cpidMlToIpid.count(toReplay.cpid().get_proc_seq()) &&
+            cpidMlToIpid[toReplay.cpid().get_proc_seq()].count(toReplay.ml)));
     unsigned p = (isWriteM(toReplay))
-      ? cpidMlToIpid[toReplay.cpid.get_proc_seq()][toReplay.ml]
-      : cpidMainToIpid[toReplay.cpid.get_proc_seq()];
+      ? cpidMlToIpid[toReplay.cpid().get_proc_seq()][toReplay.ml]
+      : cpidMainToIpid[toReplay.cpid().get_proc_seq()];
     // Create the new event
-    assert(replay_trace[prefix_idx].instruction_order == (unsigned)
+    assert(replay_trace[prefix_idx].instruction_id == (unsigned)
            threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-    assert(replay_trace[prefix_idx].eventID() ==
+    assert(replay_trace[prefix_idx].event_id() ==
            threads[p].executed_events && "Inconsistent scheduling");
     // ++threads[p].executed_instructions; Do it later after this block
     prefix.emplace_back(IID<IPid>(IPid(p),prefix.size()),
@@ -149,7 +149,7 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
                         prefix.size());
     // Mark that thread executes a new event
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
@@ -161,13 +161,13 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
 
   assert((unsigned) prefix_idx < replay_trace.size());
   const ZEvent& toReplay = replay_trace[prefix_idx];
-  assert(cpidMainToIpid.count(toReplay.cpid.get_proc_seq()));
+  assert(cpidMainToIpid.count(toReplay.cpid().get_proc_seq()));
   assert(!isWriteM(toReplay) ||
-         (cpidMlToIpid.count(toReplay.cpid.get_proc_seq()) &&
-          cpidMlToIpid[toReplay.cpid.get_proc_seq()].count(toReplay.ml)));
+         (cpidMlToIpid.count(toReplay.cpid().get_proc_seq()) &&
+          cpidMlToIpid[toReplay.cpid().get_proc_seq()].count(toReplay.ml)));
   unsigned p = (isWriteM(toReplay))
-    ? cpidMlToIpid[toReplay.cpid.get_proc_seq()][toReplay.ml]
-    : cpidMainToIpid[toReplay.cpid.get_proc_seq()];
+    ? cpidMlToIpid[toReplay.cpid().get_proc_seq()][toReplay.ml]
+    : cpidMainToIpid[toReplay.cpid().get_proc_seq()];
   // Mark that thread p executes a new instruction
   ++threads[p].executed_instructions;
   assert(threads[p].available);
@@ -268,7 +268,7 @@ void ZBuilderPSO::update_prefix(unsigned p)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 }
@@ -403,7 +403,7 @@ void ZBuilderPSO::join(int tgt_proc)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -687,7 +687,7 @@ void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -761,7 +761,7 @@ void ZBuilderPSO::add_failed_lock_attempts() {
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
     assert(curnode().size == 1);
     assert(curnode().kind == ZEvent::Kind::DUMMY);

@@ -38,8 +38,8 @@ class ZObs {
   ZObs(unsigned thread_idx, unsigned event_idx)
     : thr(thread_idx), ev(event_idx) {}
   ZObs(const ZEvent *ev)
-    : thr(ev->threadID()), ev(ev->eventID())
-    { assert(ev->auxID() == -1); }
+    : thr(ev->thread_id()), ev(ev->event_id())
+    { assert(ev->aux_id() == -1); }
 
   ZObs(const ZObs& oth) = default;
   ZObs(ZObs&& oth) = default;

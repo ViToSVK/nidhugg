@@ -143,9 +143,9 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     // later in order to directly precede its memory-write counterpart
     unsigned p = replay_trace[replay_trace_idx].iid.get_pid();
     while (isWriteB(replay_trace[replay_trace_idx])) {
-      assert(replay_trace[replay_trace_idx].instruction_order ==
+      assert(replay_trace[replay_trace_idx].instruction_id ==
              threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-      assert(replay_trace[replay_trace_idx].eventID() ==
+      assert(replay_trace[replay_trace_idx].event_id() ==
              threads[p].executed_events && "Inconsistent scheduling");
       assert(!delayed_bwrite.count(p));
       delayed_bwrite.emplace(p);
@@ -155,7 +155,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     }
     // If below assertion fails, search for p' tied to r_t[p_i].cpid,
     // scan r_t down and swap p with p' in all found events
-    assert(replay_trace[replay_trace_idx].cpid ==
+    assert(replay_trace[replay_trace_idx].cpid() ==
            threads[p].cpid && "IPID<->CPID correspondence has changed");
     if (isWriteM(replay_trace[replay_trace_idx])) {
       // We reached a memory-write in replay_trace, so now we will
@@ -173,9 +173,9 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     } else {
       // Mark that thread p owns the new event
       threads[p].event_indices.push_back(prefix_idx);
-      assert(replay_trace[replay_trace_idx].instruction_order ==
+      assert(replay_trace[replay_trace_idx].instruction_id ==
              threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-      assert(replay_trace[replay_trace_idx].eventID() ==
+      assert(replay_trace[replay_trace_idx].event_id() ==
              threads[p].executed_events && "Inconsistent scheduling");
     }
     assert(!delayed_bwrite.count(p));
@@ -188,7 +188,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     fence(); // Each event in SC has fence
     // Mark that thread executes a new event
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[replay_trace_idx].size > prefix[prefix_idx].size);
@@ -336,7 +336,7 @@ void ZBuilderSC::update_prefix(unsigned p)
                         prefix.size());
     ++threads[p].executed_events;
     fence(); // Each event in SC has fence
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 }
@@ -479,7 +479,7 @@ void ZBuilderSC::join(int tgt_proc)
                         prefix.size());
     fence(); // Each event in SC has fence
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -557,7 +557,7 @@ void ZBuilderSC::atomic_store(const SymData &sd)
   // Auxiliary events do not have fence themselves -- fence();
   ++threads[auxp].executed_events;
   curnode().size = buffer_size; // We copy the size of buffer-write counterpart
-  assert(prefix.back().traceID() == (int) prefix.size() - 1);
+  assert(prefix.back().trace_id() == (int) prefix.size() - 1);
   assert((unsigned) prefix_idx == prefix.size() - 1);
 
   //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
@@ -726,7 +726,7 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
                         prefix.size());
     fence(); // Each event in SC has fence
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
 
@@ -806,7 +806,7 @@ void ZBuilderSC::add_failed_lock_attempts() {
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    assert(prefix.back().traceID() == (int) prefix.size() - 1);
+    assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
     assert(curnode().size == 1);
     assert(curnode().kind == ZEvent::Kind::DUMMY);

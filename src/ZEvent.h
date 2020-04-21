@@ -46,7 +46,7 @@ class ZEvent {
   ZEvent() = delete;
   // Default constructor
   ZEvent(const IID<int> &iid, const CPid& cpid,
-         unsigned instruction_order, unsigned event_order, unsigned trace_id);
+         int instruction_id, int event_id, int trace_id);
   // Constructor for initial event
   ZEvent(bool initial);
 
@@ -57,6 +57,10 @@ class ZEvent {
   ZEvent(const ZEvent& oth, int trace_id, bool blank);
 
  public:
+  ZEvent copy(int id, bool blank) const {
+    return ZEvent(*this, id, blank);
+  }
+
   enum class Kind {
     DUMMY, INITIAL,
     READ, WRITEB, WRITEM,
@@ -64,8 +68,31 @@ class ZEvent {
     M_INIT, M_LOCK, M_UNLOCK, M_DESTROY
   } kind;
 
-  /* A complex identifier of the thread that executed this event */
-  CPid cpid;
+  /* A complex identifier of the thread that executed this event
+   * + Sequential number (within the thread) of this event (starting with 0) */
+ private:
+  ZEventID _id;
+ public:
+  const ZEventID& id() const { return _id; }
+  const CPid& cpid() const { return _id.cpid(); }
+  int event_id() const { return _id.event_id(); }
+  /* Thread ID in our partial order */
+  mutable int _thread_id;
+  int thread_id() const { return _thread_id; }
+  /* Aux ID in our partial order */
+  mutable int _aux_id;
+  int aux_id() const { return _aux_id; }
+  /* Trace ID of the event (index into the trace this event is part of) */
+  int _trace_id;
+  int trace_id() const { return _trace_id; }
+  /* Trace ID of the observed event (lock observes unlock)
+   * -1 means the initial event was observed */
+  int observed_trace_id;
+  /* Trace ID of its memory-write if this is a buffer-write
+   * Trace ID of its buffer-write if this is a memory-write */
+  mutable int write_other_trace_id;
+  /* Point to this other event */
+  mutable const ZEvent * write_other_ptr;
   /* CPid of the process that either:
    * 1) this event spawned (then this event is pthread_create) or
    * 2) this event joined (then this event is pthread_join) */
@@ -77,32 +104,6 @@ class ZEvent {
   SymAddrSize ml;
   /* The value read/written by this event */
   int value;
-  /* Thread ID in our partial order */
-  mutable unsigned _thread_id;
-  unsigned threadID() const { return _thread_id; }
-  /* Aux ID in our partial order */
-  mutable int _aux_id;
-  int auxID() const { return _aux_id; }
-  /* Sequential number (within the thread) of this event,
-   * also Event ID in our partial order
-   * The first event of the thread is number 0 !!! */
-  unsigned _event_id;
-  unsigned eventID() const { return _event_id; }
-  /* ID of the event (index into the trace this event is part of) */
-  int _trace_id;
-  int traceID() const { return _trace_id; }
-  /* Trace ID of the observed event (lock observes unlock)
-   * -1 means the initial event was observed */
-  int observed_trace_id;
-  /* Trace ID of its memory-write if this is a buffer-write
-   * Trace ID of its buffer-write if this is a memory-write */
-  mutable int write_other_trace_id;
-  /* Point to this other event */
-  mutable const ZEvent * write_other_ptr;
-
-  ZEvent copy(int id, bool blank) const {
-    return ZEvent(*this, id, blank);
-  }
 
   /* Below for trace-builder */
 
@@ -117,19 +118,21 @@ class ZEvent {
   bool may_conflict;
   /* Sequential number (within the thread) of the LAST instruction in this event
    * The first instruction of the thread is number 1 !!! */
-  unsigned instruction_order;
+  int instruction_id;
 
   bool operator==(const ZEvent& oth) const {
-    return (threadID() == oth.threadID() &&
-            auxID() == oth.auxID() &&
-            eventID() == oth.eventID());
+    return (thread_id() == oth.thread_id() &&
+            aux_id() == oth.aux_id() &&
+            event_id() == oth.event_id());
   }
 
   bool operator<(const ZEvent& oth) const { // Aux first
-    int maux = - _aux_id;
-    int othMaux = - oth._aux_id;
-    return std::tie(_thread_id, maux, _event_id)
-      < std::tie(oth._thread_id, othMaux, oth._event_id);
+    int maux = - aux_id();
+    int oth_maux = - oth.aux_id();
+    int ev = event_id();
+    int oth_ev = oth.event_id();
+    return std::tie(_thread_id, maux, ev)
+      < std::tie(oth._thread_id, oth_maux, oth_ev);
   }
 
   std::string to_string(bool write_cpid = true) const;

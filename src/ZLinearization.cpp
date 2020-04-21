@@ -246,7 +246,7 @@ bool ZLinearization::State::canAdvanceAux(unsigned thr, int aux) const {
     return false;
   }
   if (isWriteM(ev)) {
-    if (ev->write_other_ptr->eventID() >= prefix.at(thr)) {
+    if (ev->write_other_ptr->event_id() >= prefix.at(thr)) {
       end_err("0b");
       return false;
     }
@@ -276,7 +276,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
   // Update tr_pos
   while (tr_pos < par.tr.size()) {
     const ZEvent& evRef = par.tr.at(tr_pos);
-    if (evRef.eventID() >= prefix.at(evRef.threadID(), evRef.auxID())) {
+    if (evRef.event_id() >= prefix.at(evRef.thread_id(), evRef.aux_id())) {
       break;
     }
     tr_pos++;
@@ -302,7 +302,7 @@ bool ZLinearization::State::isUseless(const ZEvent *ev) const {
     return true;
   }
   unsigned thr = wr_set.getOnlyThread();
-  if (ev->write_other_ptr->threadID() != thr) {
+  if (ev->write_other_ptr->thread_id() != thr) {
     end_err("0b");
     return false;
   }
@@ -430,7 +430,7 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
     end_err("0b");
     return 0;
   }
-  auto res = evRef.threadID();
+  auto res = evRef.thread_id();
   end_err("1");
   return res;
 }
@@ -713,7 +713,7 @@ void ZLinearization::calculateTrNextMain() {
   tr_next_main.clear();
   tr_next_main.resize(n+1, UINT_MAX);
   for (int i = n-1; i >= 0; i--) {
-    tr_next_main.at(i) = (tr.at(i).auxID() == -1 ? i : tr_next_main.at(i+1));
+    tr_next_main.at(i) = (tr.at(i).aux_id() == -1 ? i : tr_next_main.at(i+1));
   }
   end_err();
 }
@@ -727,7 +727,7 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
     return 0;
   }
   end_err("?");
-  return tr.at(pos).threadID();
+  return tr.at(pos).thread_id();
 }
 
 
