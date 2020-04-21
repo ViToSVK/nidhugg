@@ -49,9 +49,9 @@ class ZEventID {
   ZEventID& operator=(const ZEventID& oth) = delete;
   ZEventID& operator=(ZEventID&& oth) = delete;
 
-  const CPid& get_cpid() const { return _cpid; }
-  int get_event_id() const { return _event_id; }
-  std::size_t get_hash() const;
+  const CPid& cpid() const { return _cpid; }
+  int event_id() const { return _event_id; }
+  std::size_t hash() const;
 
   std::string to_string() const;
   void dump() const;
@@ -83,7 +83,7 @@ namespace std {
   template <>
   struct hash<ZEventID> {
     std::size_t operator()(const ZEventID& k) const {
-      return k.get_hash();
+      return k.hash();
     }
   };
 }

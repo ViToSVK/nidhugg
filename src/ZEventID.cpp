@@ -38,7 +38,7 @@ ZEventID::ZEventID(bool initial)
 }
 
 
-std::size_t ZEventID::get_hash() const
+std::size_t ZEventID::hash() const
 {
   assert(compute_hash() == _hash);
   return _hash;
@@ -47,13 +47,13 @@ std::size_t ZEventID::get_hash() const
 
 std::size_t ZEventID::compute_hash() const
 {
-  std::size_t res = get_cpid().get_hash();
+  std::size_t res = cpid().get_hash();
   assert(res >= 10000 && res < 100000);
   res *= 1000;
   std::size_t ev = 999;
-  assert(get_event_id() >= -1);
-  if (_event_id >= 0)
-    ev = (std::size_t) (_event_id % 1000);
+  assert(event_id() >= -1);
+  if (event_id() >= 0)
+    ev = (std::size_t) (event_id() % 1000);
   res += ev;
   assert(res >= 10000000 && res < 100000000);
   return res;
@@ -61,25 +61,25 @@ std::size_t ZEventID::compute_hash() const
 
 
 int ZEventID::compare(const ZEventID &c) const{
-  std::size_t h = get_hash();
-  std::size_t ch = c.get_hash();
+  std::size_t h = hash();
+  std::size_t ch = c.hash();
   if(h < ch) return -1;
   if(h > ch) return 1;
 
   auto bad_hash = [&]()
   {
     llvm::errs() << "EventID hash clash: ";
-    llvm::errs() << to_string() << " :: " << get_hash() << " --- ";
-    llvm::errs() << c.to_string() << " :: " << c.get_hash() << "\n";
+    llvm::errs() << to_string() << " :: " << hash() << " --- ";
+    llvm::errs() << c.to_string() << " :: " << c.hash() << "\n";
     assert(false && "EventID hash clash");
   };
 
-  int cp = get_cpid().compare(c.get_cpid());
+  int cp = cpid().compare(c.cpid());
   if (cp < 0) { bad_hash(); return -1; }
   if (cp > 0) { bad_hash(); return 1; }
 
-  if (get_event_id() < c.get_event_id()) { bad_hash(); return -1; }
-  if (get_event_id() > c.get_event_id()) { bad_hash(); return 1; }
+  if (event_id() < c.event_id()) { bad_hash(); return -1; }
+  if (event_id() > c.event_id()) { bad_hash(); return 1; }
 
   return 0;
 }
@@ -88,8 +88,8 @@ int ZEventID::compare(const ZEventID &c) const{
 std::string ZEventID::to_string() const
 {
   std::stringstream res;
-  res << get_cpid().to_string() << "_";
-  res << get_event_id();
+  res << cpid().to_string() << "_";
+  res << event_id();
   return res.str();
 }
 
