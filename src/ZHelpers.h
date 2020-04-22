@@ -18,91 +18,91 @@ inline bool same_ml(const ZEvent& ev1, const ZEvent& ev2) {
 
 //
 
-inline bool isInitial(const ZEvent *ev) {
+inline bool is_initial(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::INITIAL;
 }
-inline bool isInitial(const ZEvent& ev) {
+inline bool is_initial(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::INITIAL;
 }
 
 //
 
-inline bool isRead(const ZEvent *ev) {
+inline bool is_read(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::READ;
 }
-inline bool isRead(const ZEvent& ev) {
+inline bool is_read(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::READ;
 }
 
 //
 
-inline bool isWrite(const ZEvent *ev) {
+inline bool is_write(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::WRITE;
 }
-inline bool isWrite(const ZEvent& ev) {
+inline bool is_write(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::WRITE;
 }
 
 //
 
-inline bool isSpawn(const ZEvent *ev) {
+inline bool is_spawn(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::SPAWN;
 }
-inline bool isSpawn(const ZEvent& ev) {
+inline bool is_spawn(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::SPAWN;
 }
 
 //
 
-inline bool isJoin(const ZEvent *ev) {
+inline bool is_join(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::JOIN;
 }
-inline bool isJoin(const ZEvent& ev) {
+inline bool is_join(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::JOIN;
 }
 
 //
 
-inline bool isMutexInit(const ZEvent *ev) {
+inline bool is_mutex_init(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::M_INIT;
 }
-inline bool isMutexInit(const ZEvent& ev) {
+inline bool is_mutex_init(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_INIT;
 }
 
 //
 
-inline bool isMutexDestroy(const ZEvent *ev) {
+inline bool is_mutex_destroy(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::M_DESTROY;
 }
-inline bool isMutexDestroy(const ZEvent& ev) {
+inline bool is_mutex_destroy(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_DESTROY;
 }
 
 //
 
-inline bool isLock(const ZEvent *ev) {
+inline bool is_lock(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::M_LOCK;
 }
-inline bool isLock(const ZEvent& ev) {
+inline bool is_lock(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_LOCK;
 }
 
 //
 
-inline bool isUnlock(const ZEvent *ev) {
+inline bool is_unlock(const ZEvent *ev) {
   assert(ev);
   return ev->kind == ZEvent::Kind::M_UNLOCK;
 }
-inline bool isUnlock(const ZEvent& ev) {
+inline bool is_unlock(const ZEvent& ev) {
   return ev.kind == ZEvent::Kind::M_UNLOCK;
 }
 
@@ -124,20 +124,20 @@ inline bool is_function_call(const llvm::Instruction *I, const char *name) {
   return true;
 }
 
-inline bool isLock(const llvm::Instruction& I) {
+inline bool is_lock(const llvm::Instruction& I) {
   return is_function_call(&I, "pthread_mutex_lock");
 }
 
-inline bool isUnlock(const llvm::Instruction& I) {
+inline bool is_unlock(const llvm::Instruction& I) {
   return is_function_call(&I, "pthread_mutex_unlock");
 }
 
-inline bool isRead(const llvm::Instruction& I) {
-  return llvm::isa<llvm::LoadInst>(&I) || isUnlock(I);
+inline bool is_read(const llvm::Instruction& I) {
+  return llvm::isa<llvm::LoadInst>(&I) || is_unlock(I);
 }
 
-inline bool isWrite(const llvm::Instruction& I) {
-  return llvm::isa<llvm::StoreInst>(&I) || isLock(I);
+inline bool is_write(const llvm::Instruction& I) {
+  return llvm::isa<llvm::StoreInst>(&I) || is_lock(I);
 }
 
 inline bool isGlobalLoad(const llvm::Instruction *I) {
@@ -146,7 +146,7 @@ inline bool isGlobalLoad(const llvm::Instruction *I) {
           !llvm::isa<llvm::AllocaInst>(I->getOperand(0)->stripInBoundsOffsets());
 }
 
-inline bool isJoin(const llvm::Instruction *I) {
+inline bool is_join(const llvm::Instruction *I) {
   if (!I)
     return false;
   return is_function_call(I, "pthread_join");

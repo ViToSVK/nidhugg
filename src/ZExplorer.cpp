@@ -121,7 +121,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
     //llvm::errs() << "-------------------------\n\n";
   }
 
-  auto eventsToMutate = annTrace.getEventsToMutate();
+  auto eventsToMutate = annTrace.eventsToMutate();
   assert(!eventsToMutate.empty());
 
   // Unset this when any mutation succeeds
@@ -129,7 +129,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 
   // Mutate the events
   for (const auto& ev : eventsToMutate) {
-    if (isRead(ev)) {
+    if (is_read(ev)) {
       annTrace.deadlocked = false;
       bool error = mutateRead(annTrace, ev);
       if (error) {
@@ -139,7 +139,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
       }
     }
     else {
-      assert(isLock(ev));
+      assert(is_lock(ev));
       bool error = mutateLock(annTrace, ev);
       if (error) {
         assert(originalTB && originalTB->error_trace);
@@ -171,7 +171,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 {
   start_err("mutateRead...");
-  assert(isRead(read));
+  assert(is_read(read));
   if (info) {
       llvm::errs() << "Read to mutate:\n";
       read->dump();
@@ -194,7 +194,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     ZAnnotation mutatedAnnotation(annTrace.annotation);
     mutatedAnnotation.add(read, observation);
     assert(mutatedAnnotation.size() == annTrace.annotation.size() + 1);
-    auto mutatedPO = annTrace.graph.copyPO();
+    auto mutatedPO = annTrace.graph.copy_po();
 
     if (info) {
       llvm::errs() << "Observation:\n" << observation.to_string() << "\n";
@@ -210,8 +210,8 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
       mutationFollowsCurrentTrace = (read->value == 0);
       // DC (read->observed_trace_id == -1);
     } else {
-      const ZEvent *obsB = annTrace.getEvent(observation);
-      assert(isWriteB(obsB) && isWriteM(obsB->write_other_ptr) &&
+      const ZEvent *obsB = annTrace.event(observation);
+      assert(is_writeB(obsB) && is_writeM(obsB->write_other_ptr) &&
              same_ml(read, obsB) && same_ml(read, obsB->write_other_ptr));
       mutationFollowsCurrentTrace = (read->value == obsB->value);
       // DC (read->observed_trace_id == obsB->trace_id() ||
@@ -241,7 +241,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
 bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 {
   start_err("mutateLock...");
-  assert(isLock(lock));
+  assert(is_lock(lock));
 
   if (info) {
     llvm::errs() << "Lock to mutate:\n";
@@ -264,7 +264,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     ++mutations_considered;
     ZAnnotation mutatedAnnotation(annTrace.annotation);
     mutatedAnnotation.set_last_lock(lock);
-    auto mutatedPO = annTrace.graph.copyPO();
+    auto mutatedPO = annTrace.graph.copy_po();
 
     if (info) {
       llvm::errs() << "Not locked before\n";
@@ -282,7 +282,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
   // The lock has been touched before
   auto lastLockObs = annTrace.annotation.last_lock(lock);
-  auto lastUnlock = annTrace.graph.getUnlockOfThisLock(lastLockObs);
+  auto lastUnlock = annTrace.graph.last_unlock_of_mutex(lastLockObs);
 
   if (!lastUnlock) {
     // This lock is currently locked
@@ -295,7 +295,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   }
 
   // This lock is currently unlocked by lastUnlock
-  assert(lastUnlock && isUnlock(lastUnlock) &&
+  assert(lastUnlock && is_unlock(lastUnlock) &&
          same_ml(lock, lastUnlock));
   annTrace.deadlocked = false;
 
@@ -309,7 +309,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   ++mutations_considered;
   ZAnnotation mutatedAnnotation(annTrace.annotation);
   mutatedAnnotation.set_last_lock(lock);
-  auto mutatedPO = annTrace.graph.copyPO();
+  auto mutatedPO = annTrace.graph.copy_po();
 
   if (info) {
     llvm::errs() << "Currently unlocked by:\n";
@@ -344,7 +344,7 @@ bool ZExplorer::closePO
   auto init = std::clock();
   ZClosure closure(mutatedAnnotation, mutatedPO);
   bool closed = closure.close
-    (isLock(readLock) ? nullptr : readLock);
+    (is_lock(readLock) ? nullptr : readLock);
   double time = (double)(clock() - init)/CLOCKS_PER_SEC;
   time_closure += time;
 
@@ -461,10 +461,10 @@ ZExplorer::reuseTrace
 
   for (const ZEvent& ev : parentTrace.trace) {
     if (!somethingToAnnotate) {
-      if (isRead(ev) && (!mutatedAnnotation.defines(&ev)))
+      if (is_read(ev) && (!mutatedAnnotation.defines(&ev)))
         somethingToAnnotate = true;
-      else if (isLock(ev)) {
-        if (!parentTrace.graph.hasEvent(&ev))
+      else if (is_lock(ev)) {
+        if (!parentTrace.graph.has_event(&ev))
           somethingToAnnotate = true;
         else if (ev.event_id() == // last in its thraux
                  (parentTrace.graph)(ev.thread_id(), ev.aux_id()).size() - 1
@@ -530,12 +530,12 @@ bool ZExplorer::respectsAnnotation
     // ev->thread_id() not set, have to get it
     unsigned thrid = parentTrace.graph.getThreadIDnoAdd(ev);
     ev->_thread_id = thrid;
-    if (isWriteB(ev) && thrid != 1337)
+    if (is_writeB(ev) && thrid != 1337)
       bw_pos.emplace(ZObs(thrid, ev->event_id()), ev->trace_id());
   }
   for (const ZEvent& evref : trace) {
     const ZEvent *ev = &evref;
-    if (isRead(ev)) {
+    if (is_read(ev)) {
       if (annotation.defines(ev->thread_id(), ev->event_id())) {
         const ZObs& obs = annotation.getObs(ev->thread_id(), ev->event_id());
         const ZEvent *obsB = parentTrace.graph.initial();
@@ -543,10 +543,10 @@ bool ZExplorer::respectsAnnotation
           assert(bw_pos.count(obs));
           obsB = &(trace.at(bw_pos.at(obs)));
         }
-        const ZEvent *obsM = (isInitial(obsB))
+        const ZEvent *obsM = (is_initial(obsB))
           ? parentTrace.graph.initial() : &(trace.at(obsB->write_other_trace_id));
         assert(obsB->value == obsM->value);
-        assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+        assert(is_initial(obsB) || (is_writeB(obsB) && is_writeM(obsM) &&
                                    same_ml(obsB, obsM) && same_ml(ev, obsB)));
         const ZEvent *realObservation = (ev->observed_trace_id == -1)
           ? parentTrace.graph.initial() : &(trace.at(ev->observed_trace_id));
@@ -606,7 +606,7 @@ bool ZExplorer::linearizationRespectsAnn
     ev->_thread_id = parentTrace.graph.getThreadIDnoAdd(ev);
     assert(ev->thread_id() < 1337);
 
-    if (isWriteB(ev)) {
+    if (is_writeB(ev)) {
       bw_pos.emplace(ZObs(ev->thread_id(), ev->event_id()), i);
       if (!storeQueue.count(ev->thread_id()))
         storeQueue.emplace
@@ -617,7 +617,7 @@ bool ZExplorer::linearizationRespectsAnn
       storeQueue.at(ev->thread_id()).at(ev->ml).push_back(i);
     }
 
-    if (isWriteM(ev)) {
+    if (is_writeM(ev)) {
       lastWrite[ev->ml] = i;
       assert(storeQueue.count(ev->thread_id()) && "Maybe writeM before writeB?");
       assert(storeQueue.at(ev->thread_id()).count(ev->ml) && "Maybe writeM before writeB?");
@@ -626,7 +626,7 @@ bool ZExplorer::linearizationRespectsAnn
       storeQueue.at(ev->thread_id()).at(ev->ml).pop_front();
     }
 
-    if (isRead(ev)) {
+    if (is_read(ev)) {
       if (storeQueue.count(ev->thread_id()) &&
           storeQueue.at(ev->thread_id()).count(ev->ml) &&
           !storeQueue.at(ev->thread_id()).at(ev->ml).empty())
@@ -637,13 +637,13 @@ bool ZExplorer::linearizationRespectsAnn
         realObs.emplace(i, -1);
     }
 
-    if (isLock(ev)) {
+    if (is_lock(ev)) {
       assert(!locked.count(ev->ml));
       locked.insert(ev->ml);
       lastLock[ev->ml] = i;
     }
 
-    if (isUnlock(ev)) {
+    if (is_unlock(ev)) {
       assert(locked.count(ev->ml));
       locked.erase(ev->ml);
     }
@@ -657,19 +657,19 @@ bool ZExplorer::linearizationRespectsAnn
 
   for (unsigned i=0; i<trace.size(); ++i) {
     const ZEvent *ev = &(trace.at(i));
-    if (isRead(ev)) {
+    if (is_read(ev)) {
       assert(annotation.defines(ev->thread_id(), ev->event_id()));
       const ZObs& obs = annotation.getObs(ev->thread_id(), ev->event_id());
       const ZEvent *obsB = parentTrace.graph.initial();
       if (obs.thr != INT_MAX) {
         assert(bw_pos.count(obs));
         obsB = &(trace.at(bw_pos.at(obs)));
-        assert(isWriteB(obsB));
+        assert(is_writeB(obsB));
       }
-      const ZEvent *obsM = (isInitial(obsB))
+      const ZEvent *obsM = (is_initial(obsB))
         ? parentTrace.graph.initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
       assert(obsB->value == obsM->value);
-      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+      assert(is_initial(obsB) || (is_writeB(obsB) && is_writeM(obsM) &&
                                  same_ml(obsB, obsM) && same_ml(ev, obsB)));
       const ZEvent *realObservation = (realObs.at(i) == -1)
         ? parentTrace.graph.initial() : &(trace.at(realObs.at(i)));

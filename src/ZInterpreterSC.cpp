@@ -1,6 +1,6 @@
 /* Copyright (C) 2014-2016 Carl Leonardsson
  * Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -127,7 +127,7 @@ bool ZInterpreterSC::checkRefuse(llvm::Instruction &I) {
   llvm::GenericValue *ptr;
   if(isPthreadMutexLock(I,&ptr)){
     if(PthreadMutexes.count(ptr) &&
-       PthreadMutexes[ptr].isLocked()){
+       PthreadMutexes[ptr].is_locked()){
       // Trying to access a locked mutex.
       TB.mutex_lock_fail({GetSymAddr(ptr),1});
       TB.refuse_schedule();

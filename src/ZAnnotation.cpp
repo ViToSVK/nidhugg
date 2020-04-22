@@ -32,7 +32,7 @@ void ZAnnotation::add(const ZEventID& ev_id, const ZEventID& obs_id)
 
 void ZAnnotation::add(const ZEvent *ev, const ZEvent *obs)
 {
-  assert(isRead(ev) && isWrite(obs));
+  assert(is_read(ev) && is_write(obs));
   add(ev->id(), obs->id());
 }
 
@@ -46,7 +46,7 @@ bool ZAnnotation::defines(const ZEventID& ev_id) const
 
 bool ZAnnotation::defines(const ZEvent *ev) const
 {
-  assert(isRead(ev));
+  assert(is_read(ev));
   return defines(ev->id());
 }
 
@@ -62,14 +62,14 @@ const ZEventID& ZAnnotation::obs(const ZEventID& ev_id) const
 
 const ZEventID& ZAnnotation::obs(const ZEvent *ev) const
 {
-  assert(isRead(ev));
+  assert(is_read(ev));
   return obs(ev->id());
 }
 
 
 void ZAnnotation::set_last_lock(const ZEvent *ev)
 {
-  assert(isLock(ev));
+  assert(is_lock(ev));
   auto it = lastlock.find(ev->ml());
   if (it != lastlock.end())
     it = lastlock.erase(it);
@@ -79,7 +79,7 @@ void ZAnnotation::set_last_lock(const ZEvent *ev)
 
 const ZEventID& ZAnnotation::last_lock(const ZEvent *ev) const
 {
-  assert(isLock(ev));
+  assert(is_lock(ev));
   auto it = lastlock.find(ev->ml());
   assert(it != lastlock.end());
   return it->second;
@@ -88,7 +88,7 @@ const ZEventID& ZAnnotation::last_lock(const ZEvent *ev) const
 
 bool ZAnnotation::is_last_lock(const ZEvent *ev) const
 {
-  assert(isLock(ev));
+  assert(is_lock(ev));
   auto it = lastlock.find(ev->ml());
   if (it == lastlock.end())
     return false;
@@ -99,7 +99,7 @@ bool ZAnnotation::is_last_lock(const ZEvent *ev) const
 
 bool ZAnnotation::location_has_some_lock(const ZEvent *ev) const
 {
-  assert(isLock(ev));
+  assert(is_lock(ev));
   return (lastlock.count(ev->ml()));
 }
 

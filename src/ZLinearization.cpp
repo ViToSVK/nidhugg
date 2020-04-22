@@ -145,11 +145,11 @@ void ZLinearization::calculateWrMapping() {
   for (auto it = an.begin(); it != an.end(); it++) {
     const ZObs& obsR = it->first;
     const ZObs& obsW = it->second;
-    if (!obsW.isInitial()) {
+    if (!obsW.is_initial()) {
       wr_mapping[obsW].insert(obsR);
     }
     else {
-      const ZEvent *evR = gr.getEvent(obsR);
+      const ZEvent *evR = gr.event(obsR);
       wr_initial[evR->ml].insert(obsR);
     }
   }
@@ -194,8 +194,8 @@ unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
   assert(gr.auxes(thr).count(aux) && "Non-existent aux for given thread");
   LineT line = gr(thr, aux);
   const ZEvent *lastEv = line.back();
-  bool ahead = (isRead(lastEv) && !an.defines(lastEv)) ||
-               (isLock(lastEv) && !an.is_last_lock(lastEv));
+  bool ahead = (is_read(lastEv) && !an.defines(lastEv)) ||
+               (is_lock(lastEv) && !an.is_last_lock(lastEv));
   unsigned res = line.size() - ahead;
   end_err("1");
   return res;
@@ -215,7 +215,7 @@ const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
     end_err("0");
     return nullptr;
   }
-  auto res = par.gr.getEvent(thr, aux, pos);
+  auto res = par.gr.event(thr, aux, pos);
   end_err("1");
   return res;
 }
@@ -245,7 +245,7 @@ bool ZLinearization::State::canAdvanceAux(unsigned thr, int aux) const {
     end_err("0a");
     return false;
   }
-  if (isWriteM(ev)) {
+  if (is_writeM(ev)) {
     if (ev->write_other_ptr->event_id() >= prefix.at(thr)) {
       end_err("0b");
       return false;
@@ -263,7 +263,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
   start_err("advanceAux...");
   assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
   const ZEvent *ev = currEvent(thr, aux);
-  if (isWriteM(ev)) {
+  if (is_writeM(ev)) {
     // Update memory
     auto it = curr_vals.find(ev->ml);
     if (it != curr_vals.end()) {
@@ -287,7 +287,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
 
 bool ZLinearization::State::isUseless(const ZEvent *ev) const {
   start_err("isUseless...");
-  if (!isWriteM(ev)) {
+  if (!is_writeM(ev)) {
     end_err("1a");
     return true;
   }
@@ -426,7 +426,7 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
     return 0;
   }
   const ZEvent& evRef = tr.at(state.tr_pos);
-  if (!isWriteM(&evRef)) {
+  if (!is_writeM(&evRef)) {
     end_err("0b");
     return 0;
   }
@@ -542,12 +542,12 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
     const ZEvent* next_fence = nullptr;
     bool has_bwrite = false;
     for (unsigned pos = main_prefix.at(thr); pos < state.par.numEventsInThread(thr); pos++) {
-      const ZEvent* ev = state.par.gr.getEvent(thr, -1, pos);
+      const ZEvent* ev = state.par.gr.event(thr, -1, pos);
       if (ev->fence) {
         next_fence = ev;
         break;
       }
-      if (isWriteB(ev)) {
+      if (is_writeB(ev)) {
         has_bwrite = true;
       }
     }
@@ -586,8 +586,8 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
         }
         { // the future mwrite ancestors of Wm
           for (int pos = last_pred - 1; pos >= curr_pos; pos--) {
-            const ZEvent *ev = state.par.gr.getEvent(thr, aux, pos);
-            if (!isWriteM(ev)) {
+            const ZEvent *ev = state.par.gr.event(thr, aux, pos);
+            if (!is_writeM(ev)) {
               continue;
             }
             const WrSet& wr_set = state.par.getObservers(ev);
@@ -604,8 +604,8 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
             int last_pred2 = state.par.po.pred(wm, thr2, aux2).second;
             int curr_pos2 = state.prefix.at(thr2, aux2);
             for (int pos2 = last_pred2; pos2 >= curr_pos2; pos2--) {
-              const ZEvent *ev = state.par.gr.getEvent(thr2, aux2, pos2);
-              if (!isWriteM(ev)) {
+              const ZEvent *ev = state.par.gr.event(thr2, aux2, pos2);
+              if (!is_writeM(ev)) {
                 continue;
               }
               const WrSet& wr_set = state.par.getObservers(ev);
@@ -673,7 +673,7 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
         return false;
       }
       for (int i = pos; i <= req; i++) {
-        const ZEvent *evAux = gr.getEvent(thr2, aux2, i);
+        const ZEvent *evAux = gr.event(thr2, aux2, i);
         if (occupied.count(evAux->ml)) {
           end_err("0: other (too many advances)");
           return false;

@@ -23,17 +23,17 @@
 
 bool ZAnnotationNeg::forbids_initial(const ZEvent *ev) const
 {
-  assert(isRead(ev) || isLock(ev));
+  assert(is_read(ev) || is_lock(ev));
   return mapping.count(ev->id());
 }
 
 
 bool ZAnnotationNeg::forbids(const ZEvent *ev, const ZEvent *obs) const
 {
-  assert(obs && !isInitial(obs) &&
+  assert(obs && !is_initial(obs) &&
          "Call the special function for init event");
-  assert((isRead(ev) && isWrite(obs)) ||
-         (isLock(ev) && isUnlock(obs)));
+  assert((is_read(ev) && is_write(obs)) ||
+         (is_lock(ev) && is_unlock(obs)));
   auto it = mapping.find(ev->id());
   if (it == mapping.end())
     return false;
@@ -46,7 +46,7 @@ bool ZAnnotationNeg::forbids(const ZEvent *ev, const ZEvent *obs) const
 
 void ZAnnotationNeg::update(const ZEvent *ev, NegativeT&& upd)
 {
-  assert(isRead(ev) || isLock(ev));
+  assert(is_read(ev) || is_lock(ev));
   auto it = mapping.find(ev->id());
   if (it == mapping.end()) {
     mapping.emplace_hint(it, ev->id(), upd);

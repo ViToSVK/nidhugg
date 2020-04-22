@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -142,7 +142,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     // Skip buffer-write events of replay_trace; each will be replayed
     // later in order to directly precede its memory-write counterpart
     unsigned p = replay_trace[replay_trace_idx].iid.get_pid();
-    while (isWriteB(replay_trace[replay_trace_idx])) {
+    while (is_writeB(replay_trace[replay_trace_idx])) {
       assert(replay_trace[replay_trace_idx].instruction_id ==
              threads[p].executed_instructions + 1 && "Inconsistent scheduling");
       assert(replay_trace[replay_trace_idx].event_id() ==
@@ -157,7 +157,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
     // scan r_t down and swap p with p' in all found events
     assert(replay_trace[replay_trace_idx].cpid() ==
            threads[p].cpid && "IPID<->CPID correspondence has changed");
-    if (isWriteM(replay_trace[replay_trace_idx])) {
+    if (is_writeM(replay_trace[replay_trace_idx])) {
       // We reached a memory-write in replay_trace, so now we will
       // replay the main thread to perform the buffer-write part
       // (delayed until now). Set ipid to the main-tread one; the size
@@ -200,7 +200,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
 
   assert((unsigned) prefix_idx < replay_trace.size());
   unsigned p = replay_trace[replay_trace_idx].iid.get_pid();
-  if (isWriteM(replay_trace[replay_trace_idx])) {
+  if (is_writeM(replay_trace[replay_trace_idx])) {
     // Set ipid to the main-tread one
     assert(p % 2 == 1);
     --p;
@@ -397,8 +397,8 @@ void ZBuilderSC::mayConflict(const SymAddrSize *ml)
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
                      replay_trace[replay_trace_idx].kind == prefix[prefix_idx].kind ||
-                     (isWriteM(replay_trace[replay_trace_idx]) &&
-                      isWriteB(prefix[prefix_idx])));
+                     (is_writeM(replay_trace[replay_trace_idx]) &&
+                      is_writeB(prefix[prefix_idx])));
   if (!consistent) {
     llvm::errs() << "TRACE_TO_REPLAY\n";
     dumpTrace(replay_trace);
@@ -529,7 +529,7 @@ void ZBuilderSC::atomic_store(const SymData &sd)
   start_err("store...");
   assert(!dryrun);
 
-  assert(isWriteB(curnode()));
+  assert(is_writeB(curnode()));
   unsigned realp = curnode().iid.get_pid();
   assert(realp % 2 == 0 && "This function got called from buffer-write counterpart");
   unsigned auxp = realp + 1;

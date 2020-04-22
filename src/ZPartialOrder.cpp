@@ -25,20 +25,26 @@
 ZGraph ZPartialOrder::graphDummy = ZGraph();
 
 
-// Initial
-ZPartialOrder::ZPartialOrder(const ZGraph& graph)
-  : graph(graph),
+// Empty
+ZPartialOrder::ZPartialOrder()
+  : graph(ZPartialOrder::graphDummy),
     _succ(),
     _pred(),
-    closureSafeUntil()
+    _closure_safe_until()
 {
   assert(empty());
 }
 
 
-// Empty
-ZPartialOrder::ZPartialOrder()
-  : ZPartialOrder(ZPartialOrder::graphDummy) {}
+// Initial
+ZPartialOrder::ZPartialOrder(const ZGraph& graph)
+  : graph(graph),
+    _succ(),
+    _pred(),
+    _closure_safe_until()
+{
+  assert(empty());
+}
 
 
 // When extending
@@ -46,125 +52,99 @@ ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
   : graph(graph),
     _succ(std::move(oth._succ)),
     _pred(std::move(oth._pred)),
-    closureSafeUntil(std::move(oth.closureSafeUntil))
+    _closure_safe_until(std::move(oth._closure_safe_until))
 {
   // We extend from a closed partial order, hence everything is safe
-  for (unsigned i=0; i<closureSafeUntil.size(); ++i) {
-    assert(graph.hasThreadAux(i, -1));
-    closureSafeUntil[i] = graph(i, -1).size();
+  assert(graph.size() == graph._cpid_to_line.size());
+  assert(graph.size() == graph._line_to_cpid.size());
+  assert(graph.size() == _closure_safe_until.size());
+  for (unsigned i = 0; i < graph.size(); ++i) {
+    _closure_safe_until[i] = graph._lines[i].size();
   }
 }
 
 
-// Chrono orderings
-ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth)
-  : graph(oth.graph),
-    _succ(oth._succ),
-    _pred(oth._pred),
-    closureSafeUntil(oth.closureSafeUntil)
-{}
-
-
-bool ZPartialOrder::isClosureSafe(const ZEvent *read) const
+bool ZPartialOrder::is_closure_safe(const ZEvent *read) const
 {
-  assert(isRead(read) && read->aux_id() == -1);
-  assert(graph.hasEvent(read));
-  assert(closureSafeUntil.size() >= read->thread_id());
-  return (read->event_id() < closureSafeUntil[read->thread_id()]);
+  assert(is_read(read));
+  assert(graph.has_event(read));
+  assert(_closure_safe_until.size() > graph.line_id(read->cpid()));
+  return (read->event_id() < _closure_safe_until[graph.line_id(read->cpid())]);
 }
 
 
-std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const
+std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, const CPid& to_cpid) const
 {
   assert(from && "Null pointer event");
-  assert(graph.hasEvent(from));
+  assert(graph.has_event(from));
   assert(from != graph.initial() && "Asking succ for the initial node");
+  assert(graph.has_thread(to_cpid) && "Such thread does not exist");
+  assert(from->cpid() != to_cpid && "Same thread");
 
-  unsigned from_line = graph.lineID(from);
+  unsigned from_line = graph.line_id(from);
+  unsigned to_line = graph.line_id(to_cpid);
   assert(from_line != to_line);
   assert(from->event_id() < _succ.at(from_line).at(to_line).size());
   int succ_evid = _succ[from_line][to_line][from->event_id()];
   assert(succ_evid >= 0);
 
-  assert(to_line < graph.lines.size());
-  if ((unsigned) succ_evid >= graph.lines[to_line].size()) {
+  assert(from_line < graph._lines.size() && to_line < graph._lines.size());
+  if (succ_evid >= (int) graph._lines[to_line].size()) {
     assert(succ_evid == INT_MAX);
     return {nullptr, succ_evid};
   }
-  return {graph.lines[to_line][succ_evid], succ_evid};
+  assert(succ_evid < (int) graph._lines[to_line].size());
+  return {graph._lines[to_line][succ_evid], succ_evid};
 }
 
 
-std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_thread, int to_aux) const
-{
-  assert(from && "Null pointer event");
-  assert(graph.hasEvent(from));
-  assert(from != graph.initial() && "Asking succ for the initial node");
-  assert(graph.hasThreadAux(to_thread, to_aux) && "Such thread/aux does not exist");
-  assert((from->thread_id() != to_thread || from->aux_id() != to_aux) && "Same thread/aux");
-
-  unsigned toLine = graph.lineID(to_thread, to_aux);
-  return succ(from, toLine);
-}
-
-
-std::pair<const ZEvent *, int> ZPartialOrder::pred(const ZEvent *to, unsigned from_line) const
+std::pair<const ZEvent *, int> ZPartialOrder::pred(const ZEvent *to, const CPid& from_cpid) const
 {
   assert(to && "Null pointer event");
-  assert(graph.hasEvent(to));
+  assert(graph.has_event(to));
   assert(to != graph.initial() && "Asking pred for the initial node");
+  assert(graph.has_thread(from_cpid) && "Such thread does not exist");
+  assert(to->cpid() != from_cpid && "Same thread");
 
-  unsigned to_line = graph.lineID(to);
+  unsigned from_line = graph.line_id(from_cpid);
+  unsigned to_line = graph.line_id(to);
   assert(from_line != to_line);
   assert(to->event_id() < _pred.at(to_line).at(from_line).size());
   int pred_evid = _pred[to_line][from_line][to->event_id()];
-  assert(from_line < graph.lines.size());
-  assert(pred_evid < (int) graph.lines[from_line].size());
+  assert(pred_evid >= -1);
 
+  assert(from_line < graph._lines.size() && to_line < graph._lines.size());
   if (pred_evid < 0) {
     assert(pred_evid == -1);
     return {nullptr, pred_evid};
   }
-  return {graph.lines[from_line][pred_evid], pred_evid};
+  assert(pred_evid < (int) graph._lines[from_line].size());
+  return {graph._lines[from_line][pred_evid], pred_evid};
 }
 
 
-std::pair<const ZEvent *, int> ZPartialOrder::pred(const ZEvent *to, unsigned from_thread, int from_aux) const
-{
-  assert(to && "Null pointer event");
-  assert(graph.hasEvent(to));
-  assert(to != graph.initial() && "Asking pred for the initial node");
-  assert(graph.hasThreadAux(from_thread, from_aux) && "Such thread/aux does not exist");
-  assert((to->thread_id() != from_thread || to->aux_id() != from_aux) && "Same thread/aux");
-
-  unsigned fromLine = graph.lineID(from_thread, from_aux);
-  return pred(to, fromLine);
-}
-
-
-bool ZPartialOrder::hasEdge(const ZEvent *from, const ZEvent *to) const
+bool ZPartialOrder::has_edge(const ZEvent *from, const ZEvent *to) const
 {
   assert(from && to && "Null pointer event");
-  assert(from != to);
-  assert(graph.hasEvent(from) && graph.hasEvent(to));
+  assert(from != to && *from != *to);
+  assert(graph.has_event(from) && graph.has_event(to));
   if (from == graph.initial())
     return true; // init HB everything
   if (to == graph.initial())
     return false; // nothing HB init
-  if (from->thread_id() == to->thread_id() &&
-      from->aux_id() == to->aux_id())
+  if (from->cpid() == to->cpid())
     return from->event_id() < to->event_id();
 
-  unsigned fromLine = graph.lineID(from);
-  unsigned toLine = graph.lineID(to);
-  return _succ[fromLine][toLine]
-              [from->event_id()] <= (int) to->event_id();
+  unsigned from_line = graph.line_id(from);
+  unsigned to_line = graph.line_id(to);
+  return _succ[from_line][to_line]
+              [from->event_id()] <= to->event_id();
 }
 
 
-bool ZPartialOrder::areOrdered(const ZEvent *ev1, const ZEvent *ev2) const
+bool ZPartialOrder::are_ordered(const ZEvent *ev1, const ZEvent *ev2) const
 {
-  return hasEdge(ev1, ev2) || hasEdge(ev2, ev1);
+  return has_edge(ev1, ev2) || has_edge(ev2, ev1);
 }
 
 
@@ -172,10 +152,10 @@ bool ZPartialOrder::areOrdered(const ZEvent *ev1, const ZEvent *ev2) const
 // This method maintains:
 // 1) line-pair-wise transitivity
 // 2) complete transitivity
-void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
+void ZPartialOrder::add_edge(const ZEvent *from, const ZEvent *to)
 {
   assert(from && to && "Null pointer event");
-  assert(!areOrdered(from, to));
+  assert(!are_ordered(from, to));
 
   // Maintenance of the complete transitivity
   // Collect nodes from different lines with edges:
@@ -183,63 +163,63 @@ void ZPartialOrder::addEdge(const ZEvent *from, const ZEvent *to)
   // 2) from lj[lj_evx]
 
   assert(graph.size() == _succ.size() && graph.size() == _pred.size());
-  unsigned li = graph.lineID(from);
-  unsigned lj = graph.lineID(to);
+  unsigned li = graph.line_id(from);
+  unsigned lj = graph.line_id(to);
   assert(li != lj);
 
   std::set<const ZEvent *> before_from, after_to;
   for (unsigned lk = 0; lk<graph.size(); ++lk) {
     if (lk != li && lk != lj) {
-      auto maxbefore = pred(from, lk);
-      assert(maxbefore.second < (int) graph.lines[lk].size());
+      auto maxbefore = pred(from, graph.line_id_to_cpid(lk));
+      assert(maxbefore.second < (int) graph._lines[lk].size());
       if (maxbefore.first)
         before_from.emplace(maxbefore.first);
       else assert(maxbefore.second == -1);
 
-      auto minafter = succ(to, lk);
+      auto minafter = succ(to, graph.line_id_to_cpid(lk));
       assert(minafter.second >= 0);
       if (minafter.first)
         after_to.emplace(minafter.first);
       else
-        assert(minafter.second >= (int) graph.lines[lk].size());
+        assert(minafter.second >= (int) graph._lines[lk].size());
     }
   }
 
-  addEdgeHelp(from, to);
+  add_edge_help(from, to);
 
   // TryAdd edges between each of *before_from* and *to*
   for (const auto& bef : before_from) {
-    assert(!hasEdge(to, bef) && "Cycle");
-    if (!hasEdge(bef, to))
-      addEdgeHelp(bef, to);
+    assert(!has_edge(to, bef) && "Cycle");
+    if (!has_edge(bef, to))
+      add_edge_help(bef, to);
   }
 
   // TryAdd edges between *from* and each of *after_to*
   for (const auto& aft : after_to) {
-    assert(!hasEdge(aft, from) && "Cycle");
-    if (!hasEdge(from, aft))
-      addEdgeHelp(from, aft);
+    assert(!has_edge(aft, from) && "Cycle");
+    if (!has_edge(from, aft))
+      add_edge_help(from, aft);
   }
 
   // TryAdd edges between each of *before_from* and each of *after_to*
   // (if they belong to different threads)
   for (auto& bef : before_from)
     for (auto& aft : after_to)
-      if (graph.lineID(bef) != graph.lineID(aft)) {
-        assert(!hasEdge(aft, bef) && "Cycle");
-        if (!hasEdge(bef, aft))
-          addEdgeHelp(bef, aft);
+      if (graph.line_id(bef) != graph.line_id(aft)) {
+        assert(!has_edge(aft, bef) && "Cycle");
+        if (!has_edge(bef, aft))
+          add_edge_help(bef, aft);
       }
 }
 
 
-// Helper method for addEdge,
+// Helper method for add_edge,
 // maintains line-pair-wise transitivity
-void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
+void ZPartialOrder::add_edge_help(const ZEvent *from, const ZEvent *to)
 {
   assert(from && to && "Null pointer event");
-  unsigned li = graph.lineID(from);
-  unsigned lj = graph.lineID(to);
+  unsigned li = graph.line_id(from);
+  unsigned lj = graph.line_id(to);
   assert(li != lj);
   unsigned li_evx = from->event_id();
   unsigned lj_evx = to->event_id();
@@ -250,24 +230,24 @@ void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
           _pred[li][lj][li_evx] < (int) lj_evx && // ! lj[lj_evx] HB li[li_evx]
           "Inconsistent succ/pred vector clocks");
 
-
-  // Maintenance of closureSafeUntil
-  for (unsigned k=0; k<closureSafeUntil.size(); ++k) {
-    unsigned lk = graph.lineID(k, -1);
+  // Maintenance of closure_safe_until
+  assert(graph.size() == graph._cpid_to_line.size());
+  assert(graph.size() == graph._line_to_cpid.size());
+  assert(graph.size() == _closure_safe_until.size());
+  for (unsigned lk=0; lk<_closure_safe_until.size(); ++lk) {
     if (lk == lj) {
-      // This main thread is where the new edge leads to
-      // Everything up until 'to' remains safe
-      assert(to->thread_id() == k && to->aux_id() == -1);
-      if (closureSafeUntil[k] > to->event_id())
-        closureSafeUntil[k] = to->event_id();
+      // The new edge leads to this thread
+      // Everything up until (not including) 'to' remains safe
+      if (_closure_safe_until[lk] > to->event_id())
+        _closure_safe_until[lk] = to->event_id();
     } else {
-      // The new edge does not lead to this main thread
-      // Everything which was already happening before
+      // The new edge does not lead to this thread
+      // Everything that was already happening before
       // 'to' remains safe
       int already = _pred[lj][lk][lj_evx] + 1;
       assert(already >= 0);
-      if (closureSafeUntil[k] > (unsigned) already)
-        closureSafeUntil[k] = (unsigned) already;
+      if (_closure_safe_until[lk] > already)
+        _closure_safe_until[lk] = already;
     }
   }
 
@@ -289,7 +269,7 @@ void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
   // Everything in lj after lj_evx also happens-after li[li_evx]
 
   for (unsigned lj_after_evx = lj_evx + 1;
-       lj_after_evx < graph.lines[lj].size();
+       lj_after_evx < graph._lines[lj].size();
        ++lj_after_evx) {
     if (_pred[lj][li][lj_after_evx] >= (int) li_evx)
       break; // since for bigger indices also >= li_evx
@@ -298,22 +278,21 @@ void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
 }
 
 
-void ZPartialOrder::addLine(const ZEvent * ev)
+void ZPartialOrder::add_line(const ZEvent * ev)
 {
   // This should be called right after line is added to graph
   assert(ev && "Null pointer event");
   assert(ev->event_id() == 0);
-  assert(ev->thread_id() < 100);
   assert(graph.size() == _succ.size() + 1 &&
          graph.size() == _pred.size() + 1);
-  assert(graph.lineID(ev) == _succ.size());
+  assert(graph.line_id(ev) == _succ.size());
 
   // Clocks from original lines to new one
   for (unsigned li=0; li<_succ.size(); li++) {
     assert(_succ.size() == _succ[li].size());
     assert(_pred.size() == _pred[li].size());
-    _succ[li].push_back(std::vector<int>(graph.lines[li].size(), INT_MAX));
-    _pred[li].push_back(std::vector<int>(graph.lines[li].size(), -1));
+    _succ[li].push_back(std::vector<int>(graph._lines[li].size(), INT_MAX));
+    _pred[li].push_back(std::vector<int>(graph._lines[li].size(), -1));
     assert(graph.size() == _succ[li].size());
     assert(graph.size() == _pred[li].size());
   }
@@ -325,33 +304,32 @@ void ZPartialOrder::addLine(const ZEvent * ev)
   _pred.push_back(std::vector<std::vector<int>>());
   _pred[lnew].reserve(graph.size());
   assert(graph.size() == _succ.size() && graph.size() == _pred.size());
-  assert(graph.lines.at(lnew).size() == 0);
+  assert(graph._lines.at(lnew).size() == 0);
   for (unsigned lold=0; lold<graph.size(); lold++) {
     _succ[lnew].push_back(std::vector<int>());
     _pred[lnew].push_back(std::vector<int>());
   }
 
-  // New thread?
-  if (ev->aux_id() == -1) {
-    assert(closureSafeUntil.size() == ev->thread_id());
-    closureSafeUntil.push_back(0);
-  }
   // Nothing is closure-safe
-  for (unsigned i=0; i<closureSafeUntil.size(); ++i)
-    closureSafeUntil[i] = 0;
+  for (unsigned i=0; i<_closure_safe_until.size(); ++i)
+    _closure_safe_until[i] = 0;
+  // Closure-safe into for the new thread
+  assert(graph.size() == _closure_safe_until.size() + 1);
+  _closure_safe_until.push_back(0);
+  assert(graph.size() == _closure_safe_until.size());
 }
 
 
-void ZPartialOrder::addEvent(const ZEvent * ev)
+void ZPartialOrder::add_event(const ZEvent * ev)
 {
   assert(ev && "Null pointer event");
-  assert(graph.hasEvent(ev));
-  unsigned lID = graph.lineID(ev);
+  assert(graph.has_event(ev));
+  unsigned lID = graph.line_id(ev);
   unsigned evID = ev->event_id();
 
   // This should be called right after ev is added to graph
   assert(graph.size() == _succ.size() && graph.size() == _pred.size());
-  assert(evID == graph.lines[lID].size() - 1);
+  assert(evID == graph._lines[lID].size() - 1);
   for (unsigned li=0; li<graph.size(); li++) {
     assert(evID == _succ[lID][li].size());
     assert(evID == _pred[lID][li].size());
@@ -360,23 +338,26 @@ void ZPartialOrder::addEvent(const ZEvent * ev)
     // New _pred slot should have what the last slot says (if there is any; else -1)
     int newpred = (evID > 0) ? _pred[lID][li][evID-1] : -1;
     _pred[lID][li].push_back(newpred);
-    assert(graph.lines[lID].size() == _succ[lID][li].size());
-    assert(graph.lines[lID].size() == _pred[lID][li].size());
+    assert(graph._lines[lID].size() == _succ[lID][li].size());
+    assert(graph._lines[lID].size() == _pred[lID][li].size());
   }
 
-  // Maintenance of closureSafeUntil
-  for (unsigned k=0; k<closureSafeUntil.size(); ++k) {
-    unsigned lk = graph.lineID(k, -1);
+  // Maintenance of closure_safe_until
+  assert(graph.size() == graph._cpid_to_line.size());
+  assert(graph.size() == graph._line_to_cpid.size());
+  assert(graph.size() == _closure_safe_until.size());
+  for (unsigned lk=0; lk<_closure_safe_until.size(); ++lk) {
+    // Closure-safety doesn't change in the thread of the new event
     if (lk != lID) {
-      // The new event is not in this main thread
-      // Everything which was already happening before
-      // 'ev' remains safe
+      // The new event is not in this thread
+      // Everything in this thread which was already
+      // happening before the new event 'ev' remains safe
       assert(_pred[lID][lk].size() - 1 == evID);
       assert(evID == 0 || _pred[lID][lk][evID] == _pred[lID][lk][evID - 1]);
       int already = _pred[lID][lk][evID] + 1;
       assert(already >= 0);
-      if (closureSafeUntil[k] > (unsigned) already)
-        closureSafeUntil[k] = (unsigned) already;
+      if (_closure_safe_until[lk] > already)
+        _closure_safe_until[lk] = already;
     }
   }
 }
@@ -397,6 +378,8 @@ void ZPartialOrder::shrink()
       _pred[i][j].shrink_to_fit();
     }
   }
+  assert(_closure_safe_until.size() == _succ.size());
+  _closure_safe_until.shrink_to_fit();
 }
 
 
@@ -406,89 +389,47 @@ std::string ZPartialOrder::to_string() const
 
   res << "\ndigraph {\n";
 
-  const auto& th_aux = graph.threads_auxes;
-
   // NODES
-  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
+  for (unsigned tid = 0; tid < graph.size(); ++tid) {
     res << "subgraph cluster_" << tid << "{\n";
     res << "style=\"bold,rounded\" label = \"Th" << tid
-        << " " << graph(tid, -1)[0]->cpid() << "\"\n";
-    for (const auto& aux : th_aux[tid]) {
-      unsigned line =  graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
-      res << "subgraph cluster_" << 1001+tid*100+aux << "{\n";
-      res << "style=\"invis\" label = \"" << ((aux==-1)?"real":"aux") << "\"\n";
-      for (unsigned evid = 0; evid < graph(tid, aux).size(); ++evid) {
-        const ZEvent *ev = graph(tid, aux)[evid];
-        res << "NODE" << line * 100000 + evid
-            << " [shape=\"rectangle\", label=\"" << ev->to_string(false) << "\"]\n";
-      }
-
-      res << "}\n";
+        << " " << graph.line_id_to_cpid(tid) << "\"\n";
+    for (unsigned evid = 0; evid < graph._lines[tid].size(); ++evid) {
+      const ZEvent *ev = graph._lines[tid][evid];
+      res << "NODE" << tid * 100000 + evid
+          << " [shape=\"rectangle\", label=\"" << ev->to_string(false) << "\"]\n";
     }
-
     res << "}\n";
   }
   res << "\n";
 
   // THREAD ORDER
-  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
-    for (const auto& aux : th_aux[tid]) {
-      unsigned line =  graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
-      for (int evid = 0; evid < (int) graph(tid, aux).size() - 1; ++evid) {
-        res << "NODE" << line * 100000 + evid
-            << " -> NODE" << line * 100000 + evid + 1 << "[style=bold]\n";
-      }
+  for (unsigned tid = 0; tid < graph.size(); ++tid) {
+    // evid is int to prevent unsigned underflow of the for-upper-bound
+    for (int evid = 0; evid < (int) graph._lines[tid].size() - 1; ++evid) {
+      res << "NODE" << tid * 100000 + evid
+          << " -> NODE" << tid * 100000 + evid + 1 << "[style=bold]\n";
     }
   }
 
   // REST ORDER
-  for (unsigned tidI = 0; tidI < th_aux.size(); ++tidI) {
-  for (const auto& auxI : th_aux.at(tidI)) {
-    unsigned lI = graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, auxI));
-    unsigned realI = (auxI == -1) ? lI
-    : graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, -1));
-
-    for (unsigned tidJ = 0; tidJ < th_aux.size(); ++tidJ) {
-    for (const auto& auxJ : th_aux.at(tidJ)) {
-      unsigned lJ = graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, auxJ));
-      unsigned realJ = (auxJ == -1) ? lJ
-      : graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, -1));
-
-      if (lI != lJ) {
+  for (unsigned ti = 0; ti < graph.size(); ++ti) {
+    for (unsigned tj = 0; tj < graph.size(); ++tj) {
+      if (ti != tj) {
         int curval = INT_MAX;
-        for (int liev = _succ.at(lI).at(lJ).size() - 1; liev >= 0; --liev) {
-          if (auxI != -1 && realI != lJ) {
-            // Do not add edges that transitively follow from
-            // lI(aux) -> realI -> lJ
-            auto fromev = graph.getEvent(tidI, auxI, liev);
-            auto succ_idx = succ(fromev, tidI, -1);
-            if (succ_idx.second < (int) _succ.at(realI).at(lJ).size() &&
-                _succ.at(realI).at(lJ).at(succ_idx.second) < curval)
-              curval = _succ.at(realI).at(lJ).at(succ_idx.second);
-          }
-          if (auxJ != -1 && lI != realJ) {
-            // Do not add edges that transitively follow from
-            // lI -> realJ -> lJ(aux)
-            auto fromev = graph.getEvent(tidI, auxI, liev);
-            auto succ_idx = succ(fromev, tidJ, -1);
-            if (succ_idx.second < (int) _succ.at(realJ).at(lJ).size() &&
-                _succ.at(realJ).at(lJ).at(succ_idx.second) < curval)
-              curval = _succ.at(realJ).at(lJ).at(succ_idx.second);
-          }
-          if (_succ.at(lI).at(lJ).at(liev) < curval) {
-            curval = _succ.at(lI).at(lJ).at(liev);
-              res << "NODE" << lI * 100000 + liev
-                  << " -> NODE" << lJ * 100000 + curval << "\n";
+        for (int evi = _succ.at(ti).at(tj).size() - 1; evi >= 0; --evi) {
+          if (_succ.at(ti).at(tj).at(evi) < curval) {
+            curval = _succ.at(ti).at(tj).at(evi);
+            assert(curval < graph._lines[tj].size());
+              res << "NODE" << ti * 100000 + evi
+                  << " -> NODE" << tj * 100000 + curval << "\n";
           }
         }
       }
     }
-    }
-  }
   }
 
   res << "}\n\n";
-
   return res.str();
 }
 

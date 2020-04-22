@@ -59,16 +59,16 @@ class ZTrace {
   /* HELPERS                     */
   /* *************************** */
 
-  std::list<const ZEvent *> getEventsToMutate() const {
-    return graph.getEventsToMutate(annotation);
+  std::list<const ZEvent *> eventsToMutate() const {
+    return graph.eventsToMutate(annotation);
   }
 
   std::list<ZObs> getObsCandidates(const ZEvent *read) const {
     return graph.getObsCandidates(read, negative);
   }
 
-  const ZEvent *getEvent(const ZObs& obs) const {
-    return graph.getEvent(obs);
+  const ZEvent *event(const ZObs& obs) const {
+    return graph.event(obs);
   }
 
 

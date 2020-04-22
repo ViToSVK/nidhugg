@@ -33,7 +33,6 @@ class ZPartialOrder {
   const ZGraph& graph;  ////
   static ZGraph graphDummy;
 
-
   // SUCCESSOR PREDECESSOR
   // succ[i][j][a] = b means:
   // t_i[<=a] *HB* t_j[b<=]
@@ -48,57 +47,54 @@ class ZPartialOrder {
   // t_i[a] *HB* t_j[b]
   // bigger a => 'stronger' edge
   // smaller b => 'stronger' edge
-  typedef std::vector<std::vector<std::vector<int>>> ClockT;
+  using ClockT = std::vector<std::vector<std::vector<int>>>;
  private:
   ClockT _succ;
   ClockT _pred;
-  std::vector<unsigned> closureSafeUntil;
-  std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_line) const;
-  std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_line) const;
+  // For each thread, up until what index (not including that index)
+  // the events of the corresponding thread are closure-safe
+  std::vector<int> _closure_safe_until;
  public:
   // Is this annotated read provably closure-safe?
-  bool isClosureSafe(const ZEvent *read) const;
+  bool is_closure_safe(const ZEvent *read) const;
   // Smallest (i.e. earliest) successor. Returns:
   // Event pointer (nullptr if no successor)
   // Event id (INT_MAX if no successor)
-  std::pair<const ZEvent *, int> succ(const ZEvent *from, unsigned to_thread, int to_aux) const;
+  std::pair<const ZEvent *, int> succ(const ZEvent *from, const CPid& to_cpid) const;
   // Biggest (i.e. latest) predecessor. Returns:
   // Event pointer (nullptr if no predecessor)
   // Event id (-1 if no predecessor)
-  std::pair<const ZEvent *, int> pred(const ZEvent *to, unsigned to_thread, int to_aux) const;
+  std::pair<const ZEvent *, int> pred(const ZEvent *to, const CPid& from_cpid) const;
   // Is there an edge from -> to ?
-  bool hasEdge(const ZEvent *from, const ZEvent *to) const;
+  bool has_edge(const ZEvent *from, const ZEvent *to) const;
   // Are ev1 and ev2 ordered ?
-  bool areOrdered(const ZEvent *ev1, const ZEvent *ev2) const;
+  bool are_ordered(const ZEvent *ev1, const ZEvent *ev2) const;
   // Add a new edge from -> to (and all edges transitively following)
-  void addEdge(const ZEvent *from, const ZEvent *to);
+  void add_edge(const ZEvent *from, const ZEvent *to);
  private:
   // Helper function to maintain transitivity in the partial order
-  void addEdgeHelp(const ZEvent *from, const ZEvent *to);
+  void add_edge_help(const ZEvent *from, const ZEvent *to);
  public:
   // When creating PO from trace
-  void addLine(const ZEvent * ev);
-  void addEvent(const ZEvent * ev);
+  void add_line(const ZEvent * ev);
+  void add_event(const ZEvent * ev);
   void shrink();
 
-
- public:
-  // Initial
-  ZPartialOrder(const ZGraph& graph);
   // Empty
   ZPartialOrder();
+  // Initial
+  ZPartialOrder(const ZGraph& graph);
   // When extending
   ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph);
-  // Chrono orderings
-  ZPartialOrder(const ZPartialOrder& oth);
 
   ZPartialOrder(ZPartialOrder&& oth) = default;
+  ZPartialOrder(const ZPartialOrder& oth) = default;
   ZPartialOrder& operator=(ZPartialOrder&& oth) = delete;
   ZPartialOrder& operator=(const ZPartialOrder& oth) = delete;
 
   bool empty() const {
     assert(_succ.size() == _pred.size());
-    return _succ.empty() && closureSafeUntil.empty();
+    return _succ.empty() && _closure_safe_until.empty();
   }
   size_t size() const {
     assert(_succ.size() == _pred.size());
@@ -115,7 +111,7 @@ class POcomp {
  public:
   POcomp(const ZPartialOrder& po) : po(po) {}
   bool operator() (const ZEvent *from, const ZEvent *to) const {
-    return (po.hasEdge(from, to));
+    return (po.has_edge(from, to));
   }
 };
 

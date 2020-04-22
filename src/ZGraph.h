@@ -26,108 +26,70 @@
 #include "ZPartialOrder.h"
 
 
-typedef std::vector<const ZEvent *> LineT;
-typedef std::vector<LineT> LinesT;
+using LineT = std::vector<const ZEvent *>;
+using LinesT = std::vector<LineT>;
 
 
 class ZGraph {
   friend class ZPartialOrder;
-  // TSO/PSO
- public:
-  const bool tso;
-
-
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:
-  const ZEvent init; ////
-  LinesT lines; ////
+  const ZEvent _init; ////
+  LinesT _lines; ////
  public:
-  const ZEvent *initial() const { return &init; }
-  const LineT& operator()(std::pair<unsigned, int> ids) const;
-  const LineT& operator()(unsigned thread_id, int aux_id) const;
+  const ZEvent *initial() const { return &_init; }
+  const LineT& operator()(const CPid& cpid) const;
   //
-  const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
-  const ZEvent *getEvent(const ZObs& obs) const;
-  const ZEvent *getUnlockOfThisLock(const ZObs& obs) const;
-  void addLine(const ZEvent *ev);
-  void addEvent(const ZEvent *ev);
-  void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);
+  const ZEvent *event(const ZEventID& id) const;
+  const ZEvent *event(const CPid& cpid, int event_id) const;
+  const ZEvent *last_unlock_of_mutex(const ZEventID& id) const;
+  void add_line(const ZEvent *ev);
+  void add_event(const ZEvent *ev);
+  void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
+  bool has_event(const ZEvent *ev) const;
+  std::vector<unsigned> line_sizes_minus_one() const;
   void shrink();
 
-
-  // THREAD_AUX->LINE_ID (retained accross recursion children)
+  // CPID->LINE_ID (retained accross recursion children)
  private:
-  std::unordered_map<std::pair<unsigned, int>, unsigned> thread_aux_to_line_id; ////
-  std::vector<std::set<int>> threads_auxes; ////
-  std::unordered_map<unsigned, std::vector<SymAddrSize>> pso_thr_mlauxes; ////
-  unsigned lineID(unsigned thread_id, int aux_id) const;
-  unsigned lineID(const ZEvent *ev) const;
+  std::unordered_map<CPid, unsigned> _cpid_to_line; ////
+  std::vector<CPid> _line_to_cpid; ////
+  unsigned line_id(const CPid& cpid) const;
+  unsigned line_id(const ZEvent *ev) const;
  public:
-  bool hasThreadAux(std::pair<unsigned, int> ids) const;
-  bool hasThreadAux(unsigned thread_id, int aux_id) const;
-  std::vector<unsigned> real_sizes_minus_one() const;
-  unsigned number_of_threads() const;
-  // All auxiliary indices for thread_id
-  const std::set<int>& auxes(unsigned thread_id) const;
-  // Auxiliary index for the ml in thread thr
-  // Returns -1 if thr has no writes
-  // Otherwise, the answer is always 0 in TSO
-  int auxForMl(const SymAddrSize& ml, unsigned thr) const;
-  int psoGetAux(const ZEvent* writeM);
-
-  // PROCSEQ->THREAD_ID (retained accross recursion children)
- private:
-  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
- public:
-  // <threadID, added_with_this_call?>
-  std::pair<unsigned, bool> getThreadID(const std::vector<int>& proc_seq);
-  std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
-  unsigned getThreadIDnoAdd(const std::vector<int>& proc_seq) const;
-  unsigned getThreadIDnoAdd(const ZEvent * ev) const;
-
-
-  // EVENT->POSITION (changed at recursion child with new ZEvent pointers from new trace)
- private:
-  std::unordered_map<const ZEvent *, std::pair<unsigned, unsigned>> event_to_position; ////
- public:
-  bool hasEvent(const ZEvent *ev) const;
-
+  const CPid& line_id_to_cpid(unsigned line_id) const;
+  bool has_thread(const CPid& cpid) const;
 
   // PO
  private:
-  ZPartialOrder po;
+  ZPartialOrder _po; ////
  public:
-  const ZPartialOrder& getPo() const { return po; }
-  ZPartialOrder copyPO() const { return ZPartialOrder(po); }
-
+  ZPartialOrder copy_po() const { return ZPartialOrder(_po); }
 
   // CACHE
   class Cache {
    public:
-    // ML -> thr -> thread-ordered memory-writes
+    // ML -> CPid -> thread-ordered writes
     std::unordered_map
       <SymAddrSize, std::unordered_map
-      <unsigned, std::vector<const ZEvent *>>> wm;
-
+      <CPid, std::vector<const ZEvent *>>> writes;
     // Read -> its local buffer-write
     std::unordered_map
-      <const ZEvent *, const ZEvent *> readWB;
-
+      <const ZEvent *, const ZEvent *> local_write;
     bool empty() const {
-      return (wm.empty() && readWB.empty());
+      return (writes.empty() && local_write.empty());
     }
   };
  private:
-  Cache cache;
+  Cache _cache; ////
  public:
-  const Cache& getCache() const { return cache; }
+  const Cache& cache() const { return _cache; }
 
-
-  bool empty() const { return (lines.empty() && po.empty() && cache.empty()); }
-  size_t size() const { return lines.size(); }
+  bool empty() const { return (_lines.empty() && _po.empty() && _cache.empty()); }
+  size_t size() const { return _lines.size(); }
   size_t events_size() const {
     size_t res = 0;
-    for (auto& ln : lines)
+    for (auto& ln : _lines)
       res += ln.size();
     return res;
   }
@@ -140,20 +102,20 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::vector<ZEvent>& trace, bool tso);
+  ZGraph(const std::vector<ZEvent>& trace);
   // Moving
   ZGraph(ZGraph&& oth);
 
   // Extending
-  // Partial order that will be moved as original
+  // Partial order that will be moved
   // Trace and annotation that will extend this copy of the graph
   ZGraph(const ZGraph& oth,
          ZPartialOrder&& po,
          const std::vector<ZEvent>& trace,
          const ZAnnotation& annotation);
 
-  ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph(const ZGraph& oth) = delete;
+  ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph& operator=(const ZGraph& oth) = delete;
 
   /* *************************** */
@@ -173,7 +135,7 @@ class ZGraph {
   // 3) partial order is extended to accomodate new
   //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
+  void trace_to_po(const std::vector<ZEvent>& trace, const ZAnnotation *annotation_ptr);
 
 
   /* *************************** */
@@ -182,31 +144,31 @@ class ZGraph {
 
  public:
 
-  // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
-  // return first memory-write to ml (resp. return its index in cache.wm)
-  int getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const;
-  const ZEvent *getTailW(const SymAddrSize& ml, unsigned thr, int ev) const;
+  // In thread cpid, starting from ev and going back (ev,ev-1,...,1,0),
+  // return first write to ml (resp. return its index in cache.wm)
+  int get_tailw_index(const SymAddrSize& ml, const CPid& cpid, int ev) const;
+  const ZEvent *get_tailw(const SymAddrSize& ml, const CPid& cpid, int ev) const;
 
-  // In thread thr (and specific aux), from all memory-writes
-  // conflicting with read that do not happen after the read in partial,
+  // In thread cpid, from all writes conflicting with read
+  // that do not happen after the read in po,
   // return the latest one (resp. return its index in cache.wm)
-  int getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const;
-  const ZEvent *getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const;
+  int get_latest_not_after_index(const ZEvent *read, const CPid& cpid) const;
+  const ZEvent *get_latest_not_after(const ZEvent *read, const CPid& cpid) const;
 
-  // Get the local buffer-write of the read
-  // Returns nullptr if there is no local buffer-write before read
-  const ZEvent *getLocalBufferW(const ZEvent *read) const;
+  // Get the local write of the read
+  // Returns nullptr if there is no local write before read
+  const ZEvent *get_local_write(const ZEvent *read) const;
 
   // Returns events-to-mutate in a specified order
-  std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
+  std::list<const ZEvent *> events_to_mutate(const ZAnnotation& annotation) const;
 
   // Returns observation candidates for a read node
-  std::list<ZObs> getObsCandidates(const ZEvent *read,
-                                   const ZAnnotationNeg& negative) const;
+  std::list<ZEventID> obs_candidates(const ZEvent *read,
+                                     const ZAnnotationNeg& negative) const;
 
 
-  std::string to_string() const { return po.to_string(); }
-  void dump() const { po.dump(); }
+  std::string to_string() const { return _po.to_string(); }
+  void dump() const { _po.dump(); }
 
 };
 

@@ -69,7 +69,7 @@ std::string ZTrace::to_string(unsigned depth = 2) const
     res << parent->to_string(depth-1);
   }
 
-  res << graph.getPo().to_string();
+  res << graph.to_string();
   res << annotation.to_string();
   res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n\n";
 
