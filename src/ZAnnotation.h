@@ -88,7 +88,7 @@ class ZAnnotation {
   /* MAPPING                     */
   /* *************************** */
 
-  void add(const ZEventID& ev_id, ZAnn&& ann);
+  void add(const ZEventID& ev_id, const ZAnn& ann);
 
   bool defines(const ZEventID& ev_id) const;
   bool defines(const ZEvent *ev) const;

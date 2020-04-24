@@ -40,14 +40,14 @@ class ZGraph {
   const ZEvent *initial() const { return &_init; }
   const LineT& operator()(const CPid& cpid) const;
   //
-  const ZEvent *event(const ZEventID& id) const;
   const ZEvent *event(const CPid& cpid, int event_id) const;
-  const ZEvent *last_unlock_of_mutex(const ZEventID& id) const;
+  const ZEvent *event(const ZEventID& id) const;
+  const ZEvent *unlock_of_this_lock(const ZEventID& id) const;
   void add_line(const ZEvent *ev);
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const ZEvent *ev) const;
-  std::vector<unsigned> line_sizes_minus_one() const;
+  std::vector<int> line_sizes_minus_one() const;
   void shrink();
 
   // CPID->LINE_ID (retained accross recursion children)
@@ -58,6 +58,7 @@ class ZGraph {
   unsigned line_id(const ZEvent *ev) const;
  public:
   const CPid& line_id_to_cpid(unsigned line_id) const;
+  std::set<CPid> threads() const;
   bool has_thread(const CPid& cpid) const;
 
   // PO
@@ -85,7 +86,10 @@ class ZGraph {
  public:
   const Cache& cache() const { return _cache; }
 
-  bool empty() const { return (_lines.empty() && _po.empty() && _cache.empty()); }
+  bool empty() const {
+    return (_lines.empty() && _cpid_to_line.empty() && _line_to_cpid.empty() &&
+            _po.empty() && _cache.empty());
+  }
   size_t size() const { return _lines.size(); }
   size_t events_size() const {
     size_t res = 0;
@@ -104,7 +108,7 @@ class ZGraph {
   // Initial
   ZGraph(const std::vector<ZEvent>& trace);
   // Moving
-  ZGraph(ZGraph&& oth);
+  ZGraph(ZGraph&& oth) = default;
 
   // Extending
   // Partial order that will be moved
@@ -144,10 +148,10 @@ class ZGraph {
 
  public:
 
-  // In thread cpid, starting from ev and going back (ev,ev-1,...,1,0),
+  // In thread cpid, starting from evX and going back (evX,evX-1,...,1,0),
   // return first write to ml (resp. return its index in cache.wm)
-  int get_tailw_index(const SymAddrSize& ml, const CPid& cpid, int ev) const;
-  const ZEvent *get_tailw(const SymAddrSize& ml, const CPid& cpid, int ev) const;
+  int get_tailw_index(const SymAddrSize& ml, const CPid& cpid, int evX) const;
+  const ZEvent *get_tailw(const SymAddrSize& ml, const CPid& cpid, int evX) const;
 
   // In thread cpid, from all writes conflicting with read
   // that do not happen after the read in po,
@@ -162,14 +166,12 @@ class ZGraph {
   // Returns events-to-mutate in a specified order
   std::list<const ZEvent *> events_to_mutate(const ZAnnotation& annotation) const;
 
-  // Returns observation candidates for a read node
-  std::list<ZEventID> obs_candidates(const ZEvent *read,
-                                     const ZAnnotationNeg& negative) const;
-
+  // Returns mutation candidates for a read node
+  std::set<ZAnn> mutation_candidates
+  (const ZEvent *read, const ZAnnotationNeg& negative) const;
 
   std::string to_string() const { return _po.to_string(); }
   void dump() const { _po.dump(); }
-
 };
 
 #endif // __Z_GRAPH_H__

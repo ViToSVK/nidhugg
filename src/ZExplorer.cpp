@@ -282,7 +282,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
   // The lock has been touched before
   auto lastLockObs = annTrace.annotation.last_lock(lock);
-  auto lastUnlock = annTrace.graph.last_unlock_of_mutex(lastLockObs);
+  auto lastUnlock = annTrace.graph.unlock_of_this_lock(lastLockObs);
 
   if (!lastUnlock) {
     // This lock is currently locked

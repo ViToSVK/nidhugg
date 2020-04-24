@@ -27,7 +27,6 @@ int ZAnn::compare(const ZAnn& c) const
     return -1;
   else if (value > c.value)
     return 1;
-
   assert(false && "Comparing ZAnns with same values should not happen");
   return 0;
 }
@@ -36,12 +35,10 @@ int ZAnn::compare(const ZAnn& c) const
 std::string ZAnn::to_string() const
 {
   std::stringstream res;
-
   res << value;
   assert(!events.empty());
   for (const ZEventID& i : events)
     res << ":" << i.to_string();
-
   return res.str();
 }
 
@@ -53,12 +50,12 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnn& ann)
 }
 
 
-void ZAnnotation::add(const ZEventID& ev_id, ZAnn&& ann)
+void ZAnnotation::add(const ZEventID& ev_id, const ZAnn& ann)
 {
   assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
   auto it = mapping.find(ev_id);
   assert(it == mapping.end());
-  mapping.emplace_hint(it, ev_id, std::move(ann));
+  mapping.emplace_hint(it, ev_id, ann);
 }
 
 
@@ -132,7 +129,6 @@ bool ZAnnotation::location_has_some_lock(const ZEvent *ev) const
 std::string ZAnnotation::to_string() const
 {
   std::stringstream res;
-
   res << "Annotation: {\n";
   for (auto& an : *this) {
     res << an.first.to_string() << " ::obs:: ";
