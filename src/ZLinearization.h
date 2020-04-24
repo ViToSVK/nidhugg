@@ -34,6 +34,8 @@ class ZLinearization {
   const ZPartialOrder& po;
   const std::vector<ZEvent>& tr;  // reference-trace for heuristics
 
+/*
+
   unsigned numEventsInThread(unsigned thr, int aux = -1) const;
 
   class WrEntry {
@@ -90,8 +92,11 @@ class ZLinearization {
 
   void calculateWrMapping();
 
-  /* Returns the observers of (the initial event for variable ml |
-   * the event given by (obs | ev)). */
+
+
+  // Returns the observers of (the initial event for variable ml |
+  // the event given by (obs | ev)).
+
   const WrSet& initialGetObservers(SymAddrSize ml) const;
   const WrSet& getObservers(const ZObs& obs) const;
   const WrSet& getObservers(const ZEvent *ev) const;
@@ -153,14 +158,14 @@ class ZLinearization {
     bool canAdvanceAux(unsigned thr, int aux = 0) const;
     void advance(unsigned thr, int aux, std::vector<ZEvent>& res);
 
-    /* What can we play "for free"? */
+    // What can we play "for free"?
     bool isUseless(const ZEvent *ev) const;
     bool canPushUp(unsigned thr, int aux) const;
     bool allPushedUp() const;
     void pushUp(std::vector<ZEvent>& res);
 
-    /* When all main events are already done, what remains is to play
-     * the auxiliary events, in (almost) arbitrary order. */
+    // When all main events are already done, what remains is to play
+    // the auxiliary events, in (almost) arbitrary order.
     bool finished() const;
     void finishOff(std::vector<ZEvent>& res) const;
   };
@@ -174,9 +179,9 @@ class ZLinearization {
     }
   };
 
-  /* ************* */
-  /* TSO only      */
-  /* ************* */
+  // ************* //
+  // TSO only      //
+  // ************* //
 
   class KeyTSO {
    private:
@@ -211,9 +216,9 @@ class ZLinearization {
   template<class T>
   bool linearizeTSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const;
 
-  /* ************* */
-  /* PSO only      */
-  /* ************* */
+  // ************* //
+  // PSO only      //
+  // ************* //
 
   class RdyAuxesKeyPSO {
    private:
@@ -275,6 +280,8 @@ class ZLinearization {
   template<class T>
   bool linearizePSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const;
 
+*/
+
   /* ********** */
   /* MAIN STUFF */
   /* ********** */
@@ -286,15 +293,15 @@ class ZLinearization {
   : an(annotation), gr(partialOrder.graph),
     po(partialOrder), tr(trace)
   {
-    calculateWrMapping();
-    calculateTrNextMain();
+    //calculateWrMapping();
+    //calculateTrNextMain();
   }
 
   ZLinearization(const ZLinearization& oth) = delete;
   ZLinearization& operator=(ZLinearization& oth) = delete;
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
-
+/*
   template<class T>
   std::vector<ZEvent> linearizeTSO() const;
   std::vector<ZEvent> linearizeTSO() const;
@@ -302,7 +309,7 @@ class ZLinearization {
   template<class T>
   std::vector<ZEvent> linearizePSO() const;
   std::vector<ZEvent> linearizePSO() const;
-
+*/
   // stats
   mutable unsigned num_parents = 0;
   mutable unsigned num_children = 0;

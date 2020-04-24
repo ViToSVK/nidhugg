@@ -8,22 +8,29 @@
 
 
 /* helper functions */
-inline bool same_ml(const ZEvent *ev1, const ZEvent *ev2) {
-  assert(ev1 && ev2);
-  return ev1->ml() == ev2->ml();
+
+inline bool is_initial(const ZEvent *ev) {
+  assert(ev);
+  assert((ev->kind != ZEvent::Kind::INITIAL && ev->event_id() >= 0) ||
+         (ev->value() == 0 && ev->event_id() == -1));
+  return ev->kind == ZEvent::Kind::INITIAL;
 }
-inline bool same_ml(const ZEvent& ev1, const ZEvent& ev2) {
-  return ev1.ml() == ev2.ml();
+inline bool is_initial(const ZEvent& ev) {
+  assert((ev.kind != ZEvent::Kind::INITIAL && ev.event_id() >= 0) ||
+         (ev.value() == 0 && ev.event_id() == -1));
+  return ev.kind == ZEvent::Kind::INITIAL;
 }
 
 //
 
-inline bool is_initial(const ZEvent *ev) {
-  assert(ev);
-  return ev->kind == ZEvent::Kind::INITIAL;
+inline bool same_ml(const ZEvent *ev1, const ZEvent *ev2) {
+  assert(ev1 && ev2);
+  assert(!is_initial(ev1) && !is_initial(ev2));
+  return ev1->ml() == ev2->ml();
 }
-inline bool is_initial(const ZEvent& ev) {
-  return ev.kind == ZEvent::Kind::INITIAL;
+inline bool same_ml(const ZEvent& ev1, const ZEvent& ev2) {
+  assert(!is_initial(ev1) && !is_initial(ev2));
+  return ev1.ml() == ev2.ml();
 }
 
 //

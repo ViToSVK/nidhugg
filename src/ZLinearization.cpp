@@ -23,6 +23,8 @@
 
 #include "ZLinearization.h"
 
+/*
+
 static const bool DEBUG = false;
 #include "ZDebug.h"
 
@@ -39,9 +41,9 @@ static const bool DEBUG = false;
 #endif
 
 
-/* *************************** */
-/* COMMON COMPARISON OPERATORS */
-/* *************************** */
+// *************************** //
+// COMMON COMPARISON OPERATORS //
+// *************************** //
 
 
 template<class T>
@@ -135,9 +137,9 @@ bool operator== (const std::map<K, V>& left, const std::map<K, V>& right) {
 }
 
 
-/* *************************** */
-/* GENERAL (both TSO and PSO)  */
-/* *************************** */
+// *************************** //
+// GENERAL (both TSO and PSO)  //
+// *************************** //
 
 
 void ZLinearization::calculateWrMapping() {
@@ -202,9 +204,9 @@ unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
 }
 
 
-/* *************************** */
-/* ZSTATE                      */
-/* *************************** */
+// *************************** //
+// ZSTATE                      //
+// *************************** //
 
 
 const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
@@ -408,9 +410,9 @@ void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
 }
 
 
-/* *************************** */
-/* LINEARIZE TSO               */
-/* *************************** */
+// *************************** //
+// LINEARIZE TSO               //
+// *************************** //
 
 
 bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
@@ -502,9 +504,9 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const {
 }
 
 
-/* *************************** */
-/* LINEARIZE PSO               */
-/* *************************** */
+// *************************** //
+// LINEARIZE PSO               //
+// *************************** //
 
 
 ZLinearization::RdyAuxesKeyPSO::RdyAuxesKeyPSO(const State& state)
@@ -551,10 +553,10 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
         has_bwrite = true;
       }
     }
-    /* If no next fence, leave empty. If has_bwrite, put \bot. Otherwise
+    // If no next fence, leave empty. If has_bwrite, put \bot. Otherwise
      * go through all future mwrite Wm's ancestors of the fence, get their
      * observers, and observers of whatever write is sitting on Wm's variable.
-     * Merge. */
+     * Merge. //
     if (!next_fence) {
       continue;
     }
@@ -795,3 +797,6 @@ std::vector<ZEvent> ZLinearization::linearizePSO() const
 std::vector<ZEvent> ZLinearization::linearizePSO() const {
   return linearizePSO<KEY_PSO>();
 }
+
+
+*/
