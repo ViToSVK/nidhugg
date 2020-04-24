@@ -21,9 +21,6 @@
 #ifndef __Z_TRACE_H__
 #define __Z_TRACE_H__
 
-#include <vector>
-
-#include "ZAnnotationNeg.h"
 #include "ZGraph.h"
 
 
@@ -32,12 +29,9 @@ class ZTrace {
   const ZTrace *parent;
 
  public:
-
   const std::vector<ZEvent> trace;
-
   const ZAnnotation annotation;
   ZAnnotationNeg negative;
-
   ZGraph graph;
 
   // Whether trace has an assume-blocked thread
@@ -54,32 +48,26 @@ class ZTrace {
   std::string to_string(unsigned depth) const;
   void dump() const;
 
-
   /* *************************** */
   /* HELPERS                     */
   /* *************************** */
 
-  std::list<const ZEvent *> eventsToMutate() const {
-    return graph.eventsToMutate(annotation);
+  std::list<const ZEvent *> events_to_mutate() const {
+    return graph.events_to_mutate(annotation);
   }
 
-  std::list<ZObs> getObsCandidates(const ZEvent *read) const {
-    return graph.getObsCandidates(read, negative);
+  std::set<ZAnn> mutation_candidates(const ZEvent *read) const {
+    return graph.mutation_candidates(read, negative);
   }
-
-  const ZEvent *event(const ZObs& obs) const {
-    return graph.event(obs);
-  }
-
 
   /* *************************** */
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ZTrace();
+  ZTrace() = delete;
 
   ZTrace(std::vector<ZEvent>&& initial_trace,
-         bool assumeblocked, bool tso);
+         bool assumeblocked);
 
   ZTrace(const ZTrace& parentTrace,
          std::vector<ZEvent>&& new_trace,
@@ -88,9 +76,9 @@ class ZTrace {
          bool assumeblocked);
 
   ZTrace(ZTrace&& tr) = default;
+  ZTrace(const ZTrace& tr) = delete;
   ZTrace& operator=(ZTrace&& tr) = delete;
-  ZTrace(const ZTrace&) = delete;
-  ZTrace& operator=(const ZTrace&) = delete;
+  ZTrace& operator=(const ZTrace& tr) = delete;
 
 };
 

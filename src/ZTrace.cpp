@@ -21,20 +21,14 @@
 #include "ZTrace.h"
 
 
-ZTrace::ZTrace()
-  : parent(nullptr), trace(), annotation(), negative(),
-    graph(), assumeblocked(false), deadlocked(false)
-{ assert(empty()); }
-
-
 ZTrace::ZTrace
 (std::vector<ZEvent>&& initial_trace,
- bool assumeblocked, bool tso)
+ bool assumeblocked)
   : parent(nullptr),
     trace(std::move(initial_trace)),
     annotation(),
     negative(),
-    graph(this->trace, tso),
+    graph(this->trace),
     assumeblocked(assumeblocked),
     deadlocked(false)
 {}

@@ -36,8 +36,8 @@ std::string ZAnn::to_string() const
 {
   std::stringstream res;
   res << value;
-  assert(!events.empty());
-  for (const ZEventID& i : events)
+  assert(!goodwrites.empty());
+  for (const ZEventID& i : goodwrites)
     res << ":" << i.to_string();
   return res.str();
 }

@@ -83,7 +83,10 @@ const LineT& ZGraph::operator()(const CPid& cpid) const
 const ZEvent * ZGraph::event(const CPid& cpid, int event_id) const
 {
   assert(has_thread(cpid));
-  assert(event_id >= 0 && "Called for initial event");
+  if (event_id < 0) {
+    assert(event_id == -1);
+    return initial();
+  }
   const LineT& line = this->operator()(cpid);
   assert(event_id < line.size());
   return line[event_id];
@@ -790,8 +793,10 @@ std::set<ZAnn> ZGraph::mutation_candidates
     // No local write for read
     if (mayBeCovered.empty()) {
       // Consider initial event if not forbidden
-      if (!negative.forbids_initial(read))
+      if (!negative.forbids_initial(read)) {
+        assert(initial()->value() == 0);
         obs_events.emplace_back(initial());
+      }
     }
   }
 
@@ -816,6 +821,7 @@ std::set<ZAnn> ZGraph::mutation_candidates
     }
   }
 
+  // Group by value
   std::map<int, std::set<ZEventID>> anns;
   for (const ZEvent * ev : obs_events) {
     if (!anns.count(ev->value()))

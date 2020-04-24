@@ -49,7 +49,7 @@ ZEvent::ZEvent(bool initial)
     _observed_trace_id(-1),
     _childs_cpid(),
     _ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    _value(-1),
+    _value(0),
     //
     iid(),
     size(-1),

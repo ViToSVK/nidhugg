@@ -31,8 +31,8 @@
 
 class ZAnn {
  public:
-  ZAnn(int value, const std::set<ZEventID>& events)
-  : value(value), events(events) { assert(!events.empty()); }
+  ZAnn(int value, const std::set<ZEventID>& goodwrites)
+  : value(value), goodwrites(goodwrites) { assert(!goodwrites.empty()); }
 
   ZAnn() = delete;
   ZAnn(const ZAnn& a) = default;
@@ -41,7 +41,7 @@ class ZAnn {
   ZAnn& operator=(ZAnn&& a) = delete;
 
   int value;
-  std::set<ZEventID> events;
+  std::set<ZEventID> goodwrites;
 
   std::string to_string() const;
 

@@ -26,43 +26,36 @@
 
 class ZClosure {
  public:
-
- ZClosure(const ZAnnotation& annotation,
-          ZPartialOrder& partialOrder)
-  : an(annotation), gr(partialOrder.graph),
-    po(partialOrder) {}
+  ZClosure(const ZAnnotation& annotation,
+           ZPartialOrder& partial_order)
+  : an(annotation), gr(partial_order.graph), po(partial_order) {}
 
   ZClosure(const ZClosure& oth) = delete;
-  ZClosure& operator=(ZClosure& oth) = delete;
   ZClosure(ZClosure&& oth) = delete;
+  ZClosure& operator=(ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure&& oth) = delete;
 
  private:
 
-  std::pair<const ZEvent *, const ZEvent *>
-    getObs(const ZObs& obs);
+  std::pair<bool, bool> rule_two
+    (const ZEvent *read, const ZEvent *write);
 
-  std::pair<bool, bool> ruleOne
-    (const ZEvent *read, const ZObs& obs);
-
-  std::pair<bool, bool> ruleTwo
-    (const ZEvent *read, const ZObs& obs);
-
-  std::pair<bool, bool> ruleThree
-    (const ZEvent *read, const ZObs& obs);
+  std::pair<bool, bool> rule_three
+    (const ZEvent *read, const ZEvent *write);
 
   std::pair<bool, bool> rules
-    (const ZEvent *read, const ZObs& obs);
+    (const ZEvent *read, const ZAnn& ann);
 
  public:
 
   bool close
     (const ZEvent *newread);
 
-  void preClose
-    (const ZEvent *ev, const ZEvent *obsEv);
-  void preClose
-    (const ZEvent *ev, const ZObs& obs);
+  void rule_one
+    (const ZEvent *ev, const ZAnn& ann);
+
+  void rule_one_lock
+    (const ZEvent *lock, const ZEvent *unlock);
 
   const ZAnnotation& an;
   const ZGraph& gr;
