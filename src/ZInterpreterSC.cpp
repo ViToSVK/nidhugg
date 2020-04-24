@@ -127,7 +127,7 @@ bool ZInterpreterSC::checkRefuse(llvm::Instruction &I) {
   llvm::GenericValue *ptr;
   if(isPthreadMutexLock(I,&ptr)){
     if(PthreadMutexes.count(ptr) &&
-       PthreadMutexes[ptr].is_locked()){
+       PthreadMutexes[ptr].isLocked()){
       // Trying to access a locked mutex.
       TB.mutex_lock_fail({GetSymAddr(ptr),1});
       TB.refuse_schedule();

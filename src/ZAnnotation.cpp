@@ -21,19 +21,44 @@
 #include "ZAnnotation.h"
 
 
-void ZAnnotation::add(const ZEventID& ev_id, const ZEventID& obs_id)
+int ZAnn::compare(const ZAnn& c) const
+{
+  if (value < c.value)
+    return -1;
+  else if (value > c.value)
+    return 1;
+
+  assert(false && "Comparing ZAnns with same values should not happen");
+  return 0;
+}
+
+
+std::string ZAnn::to_string() const
+{
+  std::stringstream res;
+
+  res << value;
+  assert(!events.empty());
+  for (const ZEventID& i : events)
+    res << ":" << i.to_string();
+
+  return res.str();
+}
+
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnn& ann)
+{
+  out << ann.to_string();
+  return out;
+}
+
+
+void ZAnnotation::add(const ZEventID& ev_id, ZAnn&& ann)
 {
   assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
   auto it = mapping.find(ev_id);
   assert(it == mapping.end());
-  mapping.emplace_hint(it, ev_id, obs_id);
-}
-
-
-void ZAnnotation::add(const ZEvent *ev, const ZEvent *obs)
-{
-  assert(is_read(ev) && is_write(obs));
-  add(ev->id(), obs->id());
+  mapping.emplace_hint(it, ev_id, std::move(ann));
 }
 
 
@@ -51,7 +76,7 @@ bool ZAnnotation::defines(const ZEvent *ev) const
 }
 
 
-const ZEventID& ZAnnotation::obs(const ZEventID& ev_id) const
+const ZAnn& ZAnnotation::ann(const ZEventID& ev_id) const
 {
   assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
   auto it = mapping.find(ev_id);
@@ -60,10 +85,10 @@ const ZEventID& ZAnnotation::obs(const ZEventID& ev_id) const
 }
 
 
-const ZEventID& ZAnnotation::obs(const ZEvent *ev) const
+const ZAnn& ZAnnotation::ann(const ZEvent *ev) const
 {
   assert(is_read(ev));
-  return obs(ev->id());
+  return ann(ev->id());
 }
 
 
@@ -110,15 +135,14 @@ std::string ZAnnotation::to_string() const
 
   res << "Annotation: {\n";
   for (auto& an : *this) {
-    res << an.first.to_string() << "  observes::  ";
-    res << an.second.to_string();
-    res << "\n";
+    res << an.first.to_string() << " ::obs:: ";
+    res << an.second.to_string() << "\n";
   }
   res << "}\n";
   if (!lastlock.empty()) {
     res << "LastLock: {\n";
     for (const auto& last : lastlock) {
-      res << last.first.to_string() << "  is locked by::  ";
+      res << last.first.to_string() << " ::lockedby:: ";
       res << last.second.to_string();
       res << "\n";
     }

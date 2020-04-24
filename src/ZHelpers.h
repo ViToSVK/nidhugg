@@ -140,7 +140,7 @@ inline bool is_write(const llvm::Instruction& I) {
   return llvm::isa<llvm::StoreInst>(&I) || is_lock(I);
 }
 
-inline bool isGlobalLoad(const llvm::Instruction *I) {
+inline bool is_global_load(const llvm::Instruction *I) {
   // XXX: what about pointers!
   return llvm::isa<llvm::LoadInst>(I) &&
           !llvm::isa<llvm::AllocaInst>(I->getOperand(0)->stripInBoundsOffsets());
@@ -152,7 +152,7 @@ inline bool is_join(const llvm::Instruction *I) {
   return is_function_call(I, "pthread_join");
 }
 
-inline bool isPthreadCreate(const llvm::Instruction *I) {
+inline bool is_pthread_create(const llvm::Instruction *I) {
   if (!I)
     return false;
   return is_function_call(I, "pthread_create");

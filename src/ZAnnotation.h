@@ -29,9 +29,35 @@
 #include "ZHelpers.h"
 
 
+class ZAnn {
+ public:
+  ZAnn(int value, const std::set<ZEventID>& events)
+  : value(value), events(events) { assert(!events.empty()); }
+
+  ZAnn() = delete;
+  ZAnn(const ZAnn& a) = default;
+  ZAnn(ZAnn&& a) = default;
+  ZAnn& operator=(const ZAnn& a) = delete;
+  ZAnn& operator=(ZAnn&& a) = delete;
+
+  int value;
+  std::set<ZEventID> events;
+
+  std::string to_string() const;
+
+  bool operator==(const ZAnn& c) const { return (compare(c) == 0); }
+  bool operator!=(const ZAnn& c) const { return (compare(c) != 0); }
+  bool operator<(const ZAnn& c) const { return (compare(c) < 0); }
+  bool operator<=(const ZAnn& c) const { return (compare(c) <= 0); }
+  bool operator>(const ZAnn& c) const { return (compare(c) > 0); }
+  bool operator>=(const ZAnn& c) const { return (compare(c) >= 0); }
+  int compare(const ZAnn& c) const;
+};
+
+
 class ZAnnotation {
  public:
-  using MappingT = std::map<ZEventID, ZEventID>;
+  using MappingT = std::map<ZEventID, ZAnn>;
   using LastLockT = std::unordered_map<SymAddrSize, ZEventID>;
 
  private:
@@ -40,9 +66,9 @@ class ZAnnotation {
 
  public:
   ZAnnotation() = default;
-  ZAnnotation(const ZAnnotation&) = default;
+  ZAnnotation(const ZAnnotation& a) = default;
   ZAnnotation(ZAnnotation&& a) = default;
-  ZAnnotation& operator=(const ZAnnotation&) = delete;
+  ZAnnotation& operator=(const ZAnnotation& a) = delete;
   ZAnnotation& operator=(ZAnnotation&& a) = delete;
 
   bool empty() const { return mapping.empty() && lastlock.empty(); }
@@ -62,14 +88,13 @@ class ZAnnotation {
   /* MAPPING                     */
   /* *************************** */
 
-  void add(const ZEventID& ev_id, const ZEventID& obs_id);
-  void add(const ZEvent *ev, const ZEvent *obs);
+  void add(const ZEventID& ev_id, ZAnn&& ann);
 
   bool defines(const ZEventID& ev_id) const;
   bool defines(const ZEvent *ev) const;
 
-  const ZEventID& obs(const ZEventID& ev_id) const;
-  const ZEventID& obs(const ZEvent *ev) const;
+  const ZAnn& ann(const ZEventID& ev_id) const;
+  const ZAnn& ann(const ZEvent *ev) const;
 
   /* *************************** */
   /* LAST LOCK                   */
