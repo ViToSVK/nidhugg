@@ -89,18 +89,12 @@ llvm::ExecutionEngine *ZInterpreterSC::create(llvm::Module *M, ZBuilderSC &TB,
 }
 
 
-void ZInterpreterSC::runAux(int proc, int aux) {
-  /* Perform an update from store buffer to memory. */
-  assert(false && "Auxiliary threads should not exist (and be called) in SC");
-}
-
-
 bool ZInterpreterSC::checkRefuse(llvm::Instruction &I) {
   int tid;
   if(isPthreadJoin(I,&tid)){
     if(0 <= tid && tid < int(Threads.size()) && tid != CurrentThread){
+      assert(tso_threads[tid].store_buffer.empty());
       if(Threads[tid].ECStack.size() ||
-         tso_threads[tid].store_buffer.size() ||
          Threads[tid].AssumeBlocked){
         /* The awaited thread is still executing or assume-blocked. */
         TB.refuse_schedule();
@@ -149,20 +143,19 @@ void ZInterpreterSC::visitLoadInst(llvm::LoadInst &I){
   llvm::GenericValue *Ptr = (llvm::GenericValue*)GVTOP(SRC);
   llvm::GenericValue Result;
 
+  assert(!DryRun);
+  assert(tso_threads[CurrentThread].store_buffer.empty());
   SymAddrSize Ptr_sas = GetSymAddrSize(Ptr,I.getType());
-
-  assert(!DryRun); /**/
-  assert(tso_threads[CurrentThread].store_buffer.empty() && "Empty buffer in SC");
 
   /* Load from memory */
   bool res = CheckedLoadValueFromMemory(Result, Ptr, I.getType());
   if (!res) {
     llvm::errs() << "Interpreter: CheckedLoadValueFromMemory failed during load from memory\n";
-    abort(); /**/
+    abort();
   }
   SetValue(&I, Result, SF);
   // Loading value Result.IntVal.getSExtValue()
-  TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue()); /**/
+  TB.load(Ptr_sas, (int) Result.IntVal.getSExtValue());
 }
 
 
@@ -179,30 +172,16 @@ void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
     return;
   }
 
-  assert(tso_threads[CurrentThread].store_buffer.empty() && "Empty buffer in SC");
+  // Storing value Val.IntVal.getSExtValue()
+  assert(!DryRun);
+  assert(tso_threads[CurrentThread].store_buffer.empty());
   SymData sd = GetSymData(Ptr, I.getOperand(0)->getType(), Val);
-
   const SymAddrSize& ml = sd.get_ref();
-  // Stores to local memory on stack may not conflict
-  if(//I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent ||
-     0 <= AtomicFunctionCall ||
-     (!ml.addr.block.is_global() && !ml.addr.block.is_heap())) {
-    /* Stack write */
-    if (ml.addr.block.is_global() || ml.addr.block.is_heap()) {
-      llvm::errs() << "Interpreter: No support for visible Atomic store\n";
-      abort(); /**/
-    }
-    assert(!DryRun); /**/
-    CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
-  } else {
-    /* Heap or Global write */
-    // Storing value Val.IntVal.getSExtValue()
-    assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
-    TB.store(sd, (int) Val.IntVal.getSExtValue()); // Calls TB.atomic_store
 
-    assert(!DryRun); /**/
-    CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
-  }
+  if (ml.addr.block.is_global() || ml.addr.block.is_heap())
+    TB.atomic_store(sd, (int) Val.IntVal.getSExtValue());
+
+  CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
 }
 
 

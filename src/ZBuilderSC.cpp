@@ -89,39 +89,37 @@ bool ZBuilderSC::schedule(int *proc, int *aux, int *alt, bool *dryrun)
   // Not using these arguments
   *dryrun = false;
   *alt = 0;
+  *aux = -1;
   this->dryrun = false;
 
   if(sch_replay) {
     assert(!sch_extend);
-    auto res = schedule_replay_trace(proc, aux);
+    auto res = schedule_replay_trace(proc);
     end_err("?a");
     return res;
   }
 
   assert(!sch_replay && sch_extend);
-  auto res = schedule_arbitrarily(proc, aux);
+  auto res = schedule_arbitrarily(proc);
   end_err("?b");
   return res;
 }
 
 
-bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
+bool ZBuilderSC::schedule_replay_trace(int *proc)
 {
   start_err("schedule_replay_trace...");
   assert(!replay_trace.empty());
   assert(prefix_idx < (int) replay_trace.size());
 
-  // prefix_idx is the index into prefix.
-  // replay_trace_idx is the index into replay_trace
-  // pointing to the event we are currently replaying.
-  // They may not be equal (replay_trace_idx might be higher)
-  // since buffer-writes in replay_trace are skipped and
-  // replayed later in order to directly precede memory-writes
+  // prefix_idx is the index into prefix. Since we are up until
+  // now only replaying the event sequence of replay_trace,
+  // prefix_idx is also the index into replay_trace pointing
+  // to the event we are currently replaying
 
   err_msg("prefix = " + std::to_string(prefix_idx) + " vs. replay_trace_size = " + std::to_string(replay_trace.size()));
-  if (prefix_idx == -1 || replay_trace[replay_trace_idx].size == prefix[prefix_idx].size) {
+  if (prefix_idx == -1 || replay_trace[prefix_idx].size == prefix[prefix_idx].size) {
     ++prefix_idx;
-    ++replay_trace_idx;
     if (prefix_idx == (int) replay_trace.size()) {
       // We are done replaying replay_trace,
       // so now we want to get an extension
@@ -132,92 +130,50 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
       // event in prefix - it will increase the prefix
       // again if needed
       --prefix_idx;
-      auto res = schedule_arbitrarily(proc, aux);
+      auto res = schedule_arbitrarily(proc);
       end_err("?a");
       return res;
     }
     // Next instruction is the beginning of a new event
     assert(replay_trace.size() > prefix.size());
     assert(prefix_idx == (int) prefix.size());
-    // Skip buffer-write events of replay_trace; each will be replayed
-    // later in order to directly precede its memory-write counterpart
-    unsigned p = replay_trace[replay_trace_idx].iid.get_pid();
-    while (is_writeB(replay_trace[replay_trace_idx])) {
-      assert(replay_trace[replay_trace_idx].instruction_id ==
-             threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-      assert(replay_trace[replay_trace_idx].event_id() ==
-             threads[p].executed_events && "Inconsistent scheduling");
-      assert(!delayed_bwrite.count(p));
-      delayed_bwrite.emplace(p);
-      ++replay_trace_idx;
-      assert(replay_trace_idx < replay_trace.size());
-      p = replay_trace[replay_trace_idx].iid.get_pid();
-    }
+    unsigned p = replay_trace[prefix_idx].iid.get_pid();
     // If below assertion fails, search for p' tied to r_t[p_i].cpid,
     // scan r_t down and swap p with p' in all found events
-    assert(replay_trace[replay_trace_idx].cpid() ==
+    assert(replay_trace[prefix_idx].cpid() ==
            threads[p].cpid && "IPID<->CPID correspondence has changed");
-    if (is_writeM(replay_trace[replay_trace_idx])) {
-      // We reached a memory-write in replay_trace, so now we will
-      // replay the main thread to perform the buffer-write part
-      // (delayed until now). Set ipid to the main-tread one; the size
-      // in the memory-write event matches the desired size of buffer-write,
-      // so replay that many steps; in the last replay step of buffer-write,
-      // right after it the memory-write event gets created too.
-      assert(p % 2 == 1);
-      --p;
-      assert(delayed_bwrite.count(p));
-      delayed_bwrite.erase(p);
-      // Mark that thread p owns the new event
-      threads[p].event_indices.push_back(prefix_idx);
-    } else {
-      // Mark that thread p owns the new event
-      threads[p].event_indices.push_back(prefix_idx);
-      assert(replay_trace[replay_trace_idx].instruction_id ==
-             threads[p].executed_instructions + 1 && "Inconsistent scheduling");
-      assert(replay_trace[replay_trace_idx].event_id() ==
-             threads[p].executed_events && "Inconsistent scheduling");
-    }
-    assert(!delayed_bwrite.count(p));
+    // Mark that thread p owns the new event
+    threads[p].event_indices.push_back(prefix_idx);
+    assert(replay_trace[prefix_idx].instruction_id ==
+           threads[p].executed_instructions + 1 && "Inconsistent scheduling");
+    assert(replay_trace[prefix_idx].event_id() ==
+           threads[p].executed_events && "Inconsistent scheduling");
     // Create the new event
     prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
                         threads[p].cpid,
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
-    fence(); // Each event in SC has fence
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
   } else {
     // Next instruction is a continuation of the current event
-    assert(replay_trace[replay_trace_idx].size > prefix[prefix_idx].size);
+    assert(replay_trace[prefix_idx].size > prefix[prefix_idx].size);
     // Increase the size of the current event, it will be scheduled
     ++prefix[prefix_idx].size;
-    assert(replay_trace[replay_trace_idx].size >=
+    assert(replay_trace[prefix_idx].size >=
            prefix[prefix_idx].size && "Inconsistent scheduling");
   }
 
   assert((unsigned) prefix_idx < replay_trace.size());
-  unsigned p = replay_trace[replay_trace_idx].iid.get_pid();
-  if (is_writeM(replay_trace[replay_trace_idx])) {
-    // Set ipid to the main-tread one
-    assert(p % 2 == 1);
-    --p;
-  }
+  unsigned p = replay_trace[prefix_idx].iid.get_pid();
   err_msg("Thread " + std::to_string(p) + ", instruction " + std::to_string(threads[p].executed_instructions));
   // Mark that thread p executes a new instruction
   ++threads[p].executed_instructions;
   assert(threads[p].available);
 
-  // Here used to be:
-  // ++threads[p].clock[p];
-  // After refactoring, it should be:
-  // threads[p].event_indices.push_back(prefix_idx);
-  // But I don't know why here, I would suspect to
-  // run this only when we have a new event
-
-  bool ret = schedule_thread(proc, aux, p);
+  bool ret = schedule_thread(proc, p);
   assert(ret && "Bug in scheduling: could not reproduce a given replay trace");
 
   end_err("?b");
@@ -225,7 +181,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
 }
 
 
-bool ZBuilderSC::schedule_arbitrarily(int *proc, int *aux)
+bool ZBuilderSC::schedule_arbitrarily(int *proc)
 {
   start_err("schedule_arbitrarily...");
   assert(!sch_replay && sch_extend);
@@ -248,7 +204,7 @@ bool ZBuilderSC::schedule_arbitrarily(int *proc, int *aux)
     #endif
     for (p = 0; p < sz; p += 2) { // Loop through real threads
       if (!somethingToAnnotate.count(p))
-        if (schedule_thread(proc, aux, p)) {
+        if (schedule_thread(proc, p)) {
           end_err("1b");
           return true;
         }
@@ -262,7 +218,7 @@ bool ZBuilderSC::schedule_arbitrarily(int *proc, int *aux)
   #endif
 
   for (p = 0; p < sz; p += 2) { // Loop through real threads
-    if (schedule_thread(proc, aux, p)) {
+    if (schedule_thread(proc, p)) {
       end_err("1d");
       return true;
     }
@@ -276,7 +232,7 @@ bool ZBuilderSC::schedule_arbitrarily(int *proc, int *aux)
 
 
 // Schedule the next instruction to be the next instruction from thread p
-bool ZBuilderSC::schedule_thread(int *proc, int *aux, unsigned p)
+bool ZBuilderSC::schedule_thread(int *proc, unsigned p)
 {
   start_err("schedule_thread...");
   if (threads[p].available && !threads[p].sleeping &&
@@ -288,10 +244,8 @@ bool ZBuilderSC::schedule_thread(int *proc, int *aux, unsigned p)
       assert(sch_replay);
     }
 
-    // set the scheduled thread and aux
+    // set the scheduled thread
     *proc = p/2;
-    *aux = (p % 2) - 1; // -1 for real, 0 for auxiliary
-    assert(*aux == -1 && "Only main threads are played in SC");
 
     end_err("1");
     return true;
@@ -305,12 +259,6 @@ bool ZBuilderSC::schedule_thread(int *proc, int *aux, unsigned p)
 // Used only when we are not replaying replay_trace
 void ZBuilderSC::update_prefix(unsigned p)
 {
-  // Here used to be:
-  // ++threads[p].clock[p];
-  // After refactoring, it should be:
-  // threads[p].event_indices.push_back(prefix_idx);
-  // But I don't know why here, I would suspect to
-  // run this only when we have a new event
   assert(sch_extend && !sch_replay);
   assert(p % 2 == 0);
   ++threads[p].executed_instructions;
@@ -335,7 +283,6 @@ void ZBuilderSC::update_prefix(unsigned p)
                         threads[p].executed_events, // first will be 0
                         prefix.size());
     ++threads[p].executed_events;
-    fence(); // Each event in SC has fence
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
@@ -350,7 +297,6 @@ void ZBuilderSC::update_prefix(unsigned p)
 void ZBuilderSC::refuse_schedule()
 {
   start_err("refuse_schedule...");
-  //llvm::errs() << " REFUSESCH";
   assert(prefix_idx == int(prefix.size())-1);
   assert(!prefix.back().may_conflict);
   assert(sch_extend && !sch_replay &&
@@ -358,9 +304,6 @@ void ZBuilderSC::refuse_schedule()
 
   unsigned p = curnode().iid.get_pid();
   assert(p % 2 == 0 && "Only real threads can be refused");
-
-  // Here used to be:
-  // --threads[p].event_indices[p];
 
   --threads[p].executed_instructions; //
 
@@ -392,13 +335,12 @@ void ZBuilderSC::mayConflict(const SymAddrSize *ml)
 {
   auto& curn = curnode();
   curn.may_conflict = true;
-  if (ml) curn.ml = *ml;
+  if (ml) curn._ml = *ml;
 
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
-                     replay_trace[replay_trace_idx].kind == prefix[prefix_idx].kind ||
-                     (is_writeM(replay_trace[replay_trace_idx]) &&
-                      is_writeB(prefix[prefix_idx])));
+                     replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
+  /*
   if (!consistent) {
     llvm::errs() << "TRACE_TO_REPLAY\n";
     dumpTrace(replay_trace);
@@ -409,7 +351,7 @@ void ZBuilderSC::mayConflict(const SymAddrSize *ml)
     replay_trace[replay_trace_idx].dump();
     llvm::errs() << "ACTUALLY_REPLAYED[" << prefix_idx << "] ::: ";
     prefix[prefix_idx].dump();
-  }
+  }*/
   assert(consistent);
   #endif
 }
@@ -432,7 +374,6 @@ IID<CPid> ZBuilderSC::get_iid() const
 void ZBuilderSC::spawn()
 {
   start_err("spawn");
-  //llvm::errs() << " SPAWN";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -440,7 +381,7 @@ void ZBuilderSC::spawn()
   // store the CPid of the new thread
   IPid parent_ipid = curnode().iid.get_pid();
   CPid child_cpid = CPS.spawn(threads[parent_ipid].cpid);
-  curnode().childs_cpid = child_cpid;
+  curnode()._childs_cpid = child_cpid;
   mayConflict();
 
   threads.emplace_back(child_cpid, prefix_idx); // second arg was threads[parent_ipid].event_indices
@@ -453,7 +394,6 @@ void ZBuilderSC::spawn()
 void ZBuilderSC::join(int tgt_proc)
 {
   start_err("join...");
-  //llvm::errs() << " JOIN";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -477,7 +417,6 @@ void ZBuilderSC::join(int tgt_proc)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
-    fence(); // Each event in SC has fence
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
@@ -485,99 +424,33 @@ void ZBuilderSC::join(int tgt_proc)
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::JOIN;
-  curnode().childs_cpid = threads[2*tgt_proc].cpid;
+  curnode()._childs_cpid = threads[2*tgt_proc].cpid;
   mayConflict();
   end_err();
 }
 
 
-void ZBuilderSC::store(const SymData &sd, int val)
-{
-  start_err("store...");
-  assert(!dryrun);
-  assert(curnode().iid.get_pid() % 2 == 0);
-
-  unsigned p = curnode().iid.get_pid();
-  assert(p % 2 == 0);
-
-  // Do not put store to buffer in SC
-  //threads[p].store_buffer.push_back(PendingStore(sd.get_ref(),prefix_idx,last_md));
-  //threads[p+1].available = true;
-
-  const SymAddrSize& ml = sd.get_ref();
-  // Stores to local memory on stack may not conflict
-  assert(ml.addr.block.is_global() || ml.addr.block.is_heap());
-
-  // Global stores happening with just one thread existing may not conflict
-  // but we have to record them as such anyway to keep track of them
-
-  //llvm::errs() << " BUFFERWRITE_" << ml.to_string() << " ";
-  assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::WRITEB;
-  curnode().value = val;
-  mayConflict(&ml);
-
-  // Do not put store to visible store queue in SC
-  // Create memory-write counterpart
-  atomic_store(sd);
-  end_err();
-}
-
-
-void ZBuilderSC::atomic_store(const SymData &sd)
+void ZBuilderSC::atomic_store(const SymData &sd, int val)
 {
   start_err("store...");
   assert(!dryrun);
 
-  assert(is_writeB(curnode()));
   unsigned realp = curnode().iid.get_pid();
-  assert(realp % 2 == 0 && "This function got called from buffer-write counterpart");
-  unsigned auxp = realp + 1;
-  int buffer_size = curnode().size; // We copy the size of buffer-write counterpart
+  assert(realp % 2 == 0);
+  assert(threads[realp].store_buffer.empty() && !threads[realp + 1].available);
 
   const SymAddrSize& ml = sd.get_ref();
-  // We consider all Stack writes as invisible and atomic,
-  // hence we do not put them into the store buffer
+  // We consider all Stack writes as invisible
   assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
-         "No Stack writes are allowed in the store buffer");
+         "Stack writes are treated as invisible");
 
-  // Store buffer is always empty in SC
-  assert(threads[realp].store_buffer.empty() && !threads[auxp].available);
-
-  // Create a new event for the memory-write counterpart
-  ++prefix_idx;
-  // Mark that auxiliary thread auxp owns the new event
-  threads[auxp].event_indices.push_back(prefix_idx);
-  // Create the new event
-  prefix.emplace_back(IID<IPid>(IPid(auxp),threads[auxp].last_event_index()),
-                      threads[auxp].cpid,
-                      threads[auxp].executed_instructions, // first will be 1
-                      threads[auxp].executed_events, // first will be 0
-                      prefix.size());
-  // Auxiliary events do not have fence themselves -- fence();
-  ++threads[auxp].executed_events;
-  curnode().size = buffer_size; // We copy the size of buffer-write counterpart
-  assert(prefix.back().trace_id() == (int) prefix.size() - 1);
-  assert((unsigned) prefix_idx == prefix.size() - 1);
-
-  //llvm::errs() << " MEMORYWRITE_" << ml.to_string() << " ";
   assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::WRITEM;
+  curnode().kind = ZEvent::Kind::WRITE;
+  curnode()._value = val;
   mayConflict(&ml);
 
-  // Corresponding buffer-write is the preceding event in SC
-  curnode().write_other_trace_id = prefix_idx - 1;
-  assert(curnode().write_other_trace_id >= 0 &&
-         curnode().write_other_trace_id == (int) prefix.size() - 2);
-  assert(prefix[curnode().write_other_trace_id].kind == ZEvent::Kind::WRITEB);
-  assert(prefix[curnode().write_other_trace_id].ml == ml &&
-         "Inconsistent memory locations");
-  curnode().value = prefix[curnode().write_other_trace_id].value;
-  assert(prefix[curnode().write_other_trace_id].write_other_trace_id == -1);
-  prefix[curnode().write_other_trace_id].write_other_trace_id = prefix_idx;
-
-  // Visible store queue is always empty in SC
-  assert(visibleStoreQueue.empty());
+  assert(prefix.back().trace_id() == (int) prefix.size() - 1);
+  assert(prefix_idx == (int) prefix.size() - 1);
 
   lastWrite[ml] = prefix_idx;
   end_err();
@@ -593,18 +466,14 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
   assert(curnode().iid.get_pid() % 2 == 0);
   if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
       threads.size() > 2) { // 2 because two entries for each thread
-    //llvm::errs() << " READ_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::READ;
+    curnode()._value = val;
     mayConflict(&ml);
-    curnode().value = val;
 
     // Set ID of observed event
-    // last memory-write
     int obs_idx = (lastWrite.count(ml)) ? lastWrite[ml] : -1;
-    // no buffer-write queue in SC
-    assert(visibleStoreQueue.empty());
-    curnode().observed_trace_id = obs_idx;
+    curnode()._observed_trace_id = obs_idx;
 
     if (!sch_replay)
       somethingToAnnotate.insert(curnode().iid.get_pid());
@@ -615,21 +484,17 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
 
 void ZBuilderSC::fence()
 {
-  start_err("fence");
+  //start_err("fence");
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
-  assert(!visibleStoreQueue.count(curnode().iid.get_pid()) ||
-         visibleStoreQueue[curnode().iid.get_pid()].empty());
   assert(threads[curnode().iid.get_pid()].store_buffer.empty());
-  curnode().fence = true;
-  end_err();
+  //end_err();
 }
 
 
 void ZBuilderSC::mutex_init(const SymAddrSize &ml)
 {
   start_err("mutex_init");
-  //llvm::errs() << " M_INIT_" << ml.to_string() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   fence();
@@ -645,7 +510,6 @@ void ZBuilderSC::mutex_init(const SymAddrSize &ml)
 void ZBuilderSC::mutex_destroy(const SymAddrSize &ml)
 {
   start_err("mutex_destroy");
-  //llvm::errs() << " M_DESTROY_" << ml.to_string() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   fence();
@@ -665,7 +529,6 @@ void ZBuilderSC::mutex_destroy(const SymAddrSize &ml)
 void ZBuilderSC::mutex_unlock(const SymAddrSize &ml)
 {
   start_err("mutex_unlock");
-  //llvm::errs() << " M_UNLOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << " ";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   fence();
@@ -692,7 +555,6 @@ void ZBuilderSC::mutex_unlock(const SymAddrSize &ml)
 void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
 {
   start_err("mutex_lock");
-  //llvm::errs() << " M_LOCK_" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   fence();
@@ -733,7 +595,7 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
   assert(curnode().size == 1);
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   curnode().kind = ZEvent::Kind::M_LOCK;
-  curnode().observed_trace_id = mutex.last_access; // initialized with -1
+  curnode()._observed_trace_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
   if (!sch_replay)
@@ -749,7 +611,6 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
 
 void ZBuilderSC::mutex_lock_fail(const SymAddrSize &ml) {
   start_err("mutex_lock_fail");
-  //llvm::errs() << " M_LOCKFAIL" << ml.to_string() << "_ipid:" << curnode().iid.get_pid() << "_";
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   if(!conf.mutex_require_init && !mutexes.count(ml.addr)){
@@ -812,7 +673,6 @@ void ZBuilderSC::add_failed_lock_attempts() {
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::M_LOCK;
 
-    fence(); // Each event in SC has fence
     mayConflict(&(p_ml.second));
   }
 }

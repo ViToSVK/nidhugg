@@ -58,7 +58,10 @@ class ZInterpreterSC : public TSOInterpreter {
   }
   virtual void visitInlineAsm(llvm::CallSite &CS, const std::string &asmstr);
  protected:
-  virtual void runAux(int proc, int aux);
+  virtual void runAux(int proc, int aux) {
+    llvm::errs() << "Interpreter: No auxiliary threads in SC\n";
+    abort();
+  }
   virtual bool checkRefuse(llvm::Instruction &I);
   /*
   virtual int newThread(const CPid &cpid);

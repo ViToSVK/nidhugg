@@ -49,9 +49,9 @@ class ZBuilderSC : public TSOTraceBuilder {
   // We want to get an extension of our trace
   bool sch_extend;
 
-  bool schedule_thread(int *proc, int *aux, unsigned p);
-  bool schedule_arbitrarily(int *proc, int *aux);
-  bool schedule_replay_trace(int *proc, int *aux);
+  bool schedule_thread(int *proc, unsigned p);
+  bool schedule_arbitrarily(int *proc);
+  bool schedule_replay_trace(int *proc);
   void update_prefix(unsigned p);
 
   void mayConflict(const SymAddrSize *ml = nullptr);
@@ -74,11 +74,6 @@ class ZBuilderSC : public TSOTraceBuilder {
   // This is defined in TSOPSOTraceBuilder.h where we inherit from
   // I'm commenting it here so I'm aware of it
   // int prefix_idx = -1;
-  // We might be receiving replay traces where a memory-write doesn't exactly
-  // follow a buffer-write (eg b-write-ev7, other-thread-ev8, m-write-ev9)
-  // We want to delay the buffer-write and play it right before the memory-write
-  // (other-thread-ev7, b-write-ev8, m-write-ev9)
-  int replay_trace_idx = -1;
 
   // Is there something in the extension to annotate?
   std::unordered_set<unsigned> somethingToAnnotate;
@@ -89,10 +84,6 @@ class ZBuilderSC : public TSOTraceBuilder {
   void add_failed_lock_attempts();
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
-  // Ipid -> Trace indices of writes in store queue of thread Ipid
-  std::unordered_map<int, std::vector<int>> visibleStoreQueue;
-  // During replay: in which ipids we are, for now, delaying a buffer-write
-  std::unordered_set<unsigned> delayed_bwrite;
 
   ZEvent& curnode() {
     assert(0 <= prefix_idx);
@@ -147,13 +138,20 @@ class ZBuilderSC : public TSOTraceBuilder {
   //
   virtual void spawn();
   virtual void join(int tgt_proc);
-  virtual void store(const SymData &sd, int val); // val
+  virtual void store(const SymData &sd, int val) {
+    llvm::errs() << "Builder: Store should be atomic\n";
+    abort();
+  }
   virtual void store(const SymData &sd) {
+    llvm::errs() << "Builder: Store should be atomic\n";
+    abort();
+  }
+  virtual void atomic_store(const SymData &sd) {
     llvm::errs() << "Builder: Store should be reported along with the captured value\n";
     abort();
   }
-  virtual void atomic_store(const SymData &sd);
-  virtual void load(const SymAddrSize &ml, int val); // val
+  virtual void atomic_store(const SymData &sd, int val); // WRITE (val)
+  virtual void load(const SymAddrSize &ml, int val); // READ (val)
   virtual void load(const SymAddrSize &ml) {
     llvm::errs() << "Builder: Load should be reported along with the captured value\n";
     abort();
