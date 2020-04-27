@@ -47,7 +47,7 @@ class ZGraph {
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const ZEvent *ev) const;
-  std::vector<int> line_sizes_minus_one() const;
+  std::map<CPid, int> thread_sizes_minus_one() const;
   void shrink();
 
   // CPID->LINE_ID (retained accross recursion children)

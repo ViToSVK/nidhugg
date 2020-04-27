@@ -143,7 +143,7 @@ void ZEvent::dump() const
 }
 
 
-void dumpTrace(const std::vector<ZEvent>& trace)
+void dump_trace(const std::vector<ZEvent>& trace)
 {
   llvm::errs() << "TRACE::: " << trace.size() << " EVENTS\n";
   for (const auto& ev : trace)

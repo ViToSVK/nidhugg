@@ -177,12 +177,14 @@ bool ZGraph::has_event(const ZEvent *ev) const
 }
 
 
-std::vector<int> ZGraph::line_sizes_minus_one() const
+std::map<CPid, int> ZGraph::thread_sizes_minus_one() const
 {
-  std::vector<int> res;
+  std::map<CPid, int> res;
   for (unsigned thr = 0; thr < _lines.size(); ++thr) {
     assert(!_lines[thr].empty());
-    res.push_back(_lines[thr].size() - 1);
+    CPid cpid = line_id_to_cpid(thr);
+    assert(!res.count(cpid));
+    res.emplace(cpid, _lines[thr].size() - 1);
   }
   return res;
 }

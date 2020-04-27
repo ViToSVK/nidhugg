@@ -126,6 +126,6 @@ class ZEventPtrComp {
 };
 
 
-void dumpTrace(const std::vector<ZEvent>& trace);
+void dump_trace(const std::vector<ZEvent>& trace);
 
 #endif // _Z_EVENT_H_

@@ -33,30 +33,26 @@
 
 class ZExplorer {
 
-  TSOPSOTraceBuilder * originalTB = nullptr;
+  TSOPSOTraceBuilder * original_TB = nullptr;
 
   ZTrace * initial;
 
   bool info = false;
-  const bool tso;
-  // SC flag is passed only to explorer, so it knows which builder to invoke
-  // during extensions; ZGraph is not passed this flag, it handles SC as TSO
-  const bool sc_flag;
 
   class TraceExtension {
    public:
     TraceExtension() = default;
     TraceExtension(std::vector<ZEvent>&& extension,
-                 bool someToAnn, bool assumeBlocked);
+                   bool some_to_ann, bool assume_blocked);
 
-    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn);
+    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& ext_sometoann);
 
     bool empty() const { return (trace.empty()); }
 
     std::vector<ZEvent> trace;
-    bool somethingToAnnotate;
-    bool hasAssumeBlockedThread;
-    bool hasError;
+    bool something_to_annotate;
+    bool has_assume_blocked_thread;
+    bool has_error;
   };
 
 
@@ -72,35 +68,33 @@ class ZExplorer {
 
  private:
 
-  bool exploreRec(ZTrace& annTrace);
+  bool explore_rec(ZTrace& ann_trace);
 
-  bool mutateRead(const ZTrace& annTrace, const ZEvent *read);
+  bool mutate_read(const ZTrace& ann_trace, const ZEvent *read);
 
-  bool mutateLock(const ZTrace& annTrace, const ZEvent *lock);
+  bool mutate_lock(const ZTrace& ann_trace, const ZEvent *lock);
 
-  bool closePO
-    (const ZTrace& annTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace);
+  bool close_po
+  (const ZTrace& ann_trace, const ZEvent *read_lock,
+   ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
+   bool mutation_follows_current_trace);
 
-  bool extendAndRecur
-    (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
-     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace);
+  bool extend_and_recur
+  (const ZTrace& parent_trace, ZAnnotation&& mutated_annotation,
+   ZPartialOrder&& mutated_po, bool mutation_follows_current_trace);
 
-  TraceExtension reuseTrace(const ZTrace& parentTrace,
-                            const ZAnnotation& mutatedAnnotation);
+  TraceExtension reuse_trace
+  (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation);
 
-  TraceExtension extendTrace(std::vector<ZEvent>&& tr);
+  TraceExtension extend_trace(std::vector<ZEvent>&& tr);
 
-  bool respectsAnnotation(const std::vector<ZEvent>& trace,
-                          const ZAnnotation& annotation,
-                          const ZPartialOrder& mutatedPO,
-                          const ZTrace& parentTrace) const;
+  bool extension_respects_annotation
+  (const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
+   const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
 
-  bool linearizationRespectsAnn(const std::vector<ZEvent>& trace,
-                                const ZAnnotation& annotation,
-                                const ZPartialOrder& mutatedPO,
-                                const ZTrace& parentTrace) const;
+  bool linearization_respects_annotation
+  (const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
+   const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
 
 
   /* *************************** */
@@ -154,6 +148,10 @@ class ZExplorer {
   double time_closure = 0;
   // Total time spent on closure succ no edge
   double time_closure_no_edge = 0;
+  // Linearization failed
+  unsigned linearization_failed = 0;
+  // Linearization succeeded
+  unsigned linearization_succeeded = 0;
   // Linearization: num of parents and children, to estimate branching factor
   unsigned total_parents = 0;
   unsigned total_children = 0;
