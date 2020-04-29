@@ -104,6 +104,7 @@ class ZPartialOrder {
   std::string to_string() const;
   void dump() const;
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZPartialOrder& po);
 
 
 class POcomp {

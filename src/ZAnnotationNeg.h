@@ -61,5 +61,6 @@ class ZAnnotationNeg {
 
   void update(const ZEvent *ev, NegativeT&& upd);
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotationNeg& an);
 
 #endif // _Z_ANNOTATIONNEG_H_

@@ -170,6 +170,8 @@ bool ZGraph::has_event(const ZEvent *ev) const
   assert(ev);
   if (ev == initial())
     return true;
+  if (!has_thread(ev->cpid()))
+    return false;
   assert(has_thread(ev->cpid()));
   const LineT& line = this->operator()(ev->cpid());
   assert(ev->event_id() >= 0);
@@ -258,6 +260,8 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
 
   std::unordered_map<CPid, unsigned> cur_evidx;
   cur_evidx.reserve(8);
+  for (const CPid& cpid : threads())
+    cur_evidx.emplace(cpid, 0);
 
   std::unordered_set<CPid> has_unannotated_read_or_lock;
   has_unannotated_read_or_lock.reserve(8);
@@ -301,7 +305,7 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
     const ZEvent *ev = &(*traceit);
-    assert(ev->cpid().get_aux_index() == -1 && "Only real threads");
+    assert(!(ev->cpid().is_auxiliary()) && "Only real threads");
 
     if (forbidden_threads.count(ev->cpid())) {
       // This is a forbidden thread because it
@@ -523,14 +527,15 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
     const SymAddrSize& loc_init = in.first;
     const ZEvent *ev_init = in.second;
 
-    assert(mutex_first.count(loc_init));
-    for (auto& cpid_ev_first : mutex_first[loc_init]) {
-      const ZEvent *ev_first = cpid_ev_first.second;
+    if (mutex_first.count(loc_init)) {
+      for (auto& cpid_ev_first : mutex_first[loc_init]) {
+        const ZEvent *ev_first = cpid_ev_first.second;
 
-      assert(!_po.has_edge(ev_first, ev_init));
-      if (!_po.has_edge(ev_init, ev_first))
-        _po.add_edge(ev_init, ev_first);
-    }
+        assert(!_po.has_edge(ev_first, ev_init));
+        if (!_po.has_edge(ev_init, ev_first))
+          _po.add_edge(ev_init, ev_first);
+      }
+    } else assert(!mutex_last.count(loc_init));
   }
 
   // EDGES - mutex destroys
@@ -538,14 +543,15 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
     const SymAddrSize& loc_destroy = de.first;
     const ZEvent *ev_destroy = de.second;
 
-    assert(mutex_last.count(loc_destroy));
-    for (auto& cpid_ev_last : mutex_last[loc_destroy]) {
-      const ZEvent *ev_last = cpid_ev_last.second;
+    if (mutex_last.count(loc_destroy)) {
+      for (auto& cpid_ev_last : mutex_last[loc_destroy]) {
+        const ZEvent *ev_last = cpid_ev_last.second;
 
-      assert(!_po.has_edge(ev_destroy, ev_last));
-      if (!_po.has_edge(ev_last, ev_destroy))
-        _po.add_edge(ev_last, ev_destroy);
-    }
+        assert(!_po.has_edge(ev_destroy, ev_last));
+        if (!_po.has_edge(ev_last, ev_destroy))
+          _po.add_edge(ev_last, ev_destroy);
+      }
+    } else assert(!mutex_first.count(loc_destroy));
   }
 }
 
@@ -867,3 +873,10 @@ std::set<ZAnn> ZGraph::mutation_candidates
         }
       }
       */
+
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr)
+{
+  out << gr.to_string();
+  return out;
+}

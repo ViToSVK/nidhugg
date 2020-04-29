@@ -80,7 +80,13 @@ std::string ZAnnotationNeg::to_string() const
 }
 
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotationNeg& an)
+{
+  out << an.to_string();
+  return out;
+}
+
 
 void ZAnnotationNeg::dump() const {
-  llvm::errs() << to_string();
+  llvm::errs() << *this << "\n";
 }

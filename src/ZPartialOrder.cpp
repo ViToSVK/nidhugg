@@ -434,7 +434,14 @@ std::string ZPartialOrder::to_string() const
 }
 
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZPartialOrder& po)
+{
+  out << po.to_string();
+  return out;
+}
+
+
 void ZPartialOrder::dump() const
 {
-  llvm::errs() << to_string();
+  llvm::errs() << to_string() << "\n";
 }

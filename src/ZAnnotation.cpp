@@ -50,9 +50,14 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnn& ann)
 }
 
 
+void ZAnn::dump() const {
+  llvm::errs() << *this << "\n";
+}
+
+
 void ZAnnotation::add(const ZEventID& ev_id, const ZAnn& ann)
 {
-  assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
   auto it = mapping.find(ev_id);
   assert(it == mapping.end());
   mapping.emplace_hint(it, ev_id, ann);
@@ -61,7 +66,7 @@ void ZAnnotation::add(const ZEventID& ev_id, const ZAnn& ann)
 
 bool ZAnnotation::defines(const ZEventID& ev_id) const
 {
-  assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
   return (mapping.find(ev_id) != mapping.end());
 }
 
@@ -75,7 +80,7 @@ bool ZAnnotation::defines(const ZEvent *ev) const
 
 const ZAnn& ZAnnotation::ann(const ZEventID& ev_id) const
 {
-  assert(ev_id.event_id() >= 0 && ev_id.cpid().get_aux_index() == -1);
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
   auto it = mapping.find(ev_id);
   assert(it != mapping.end());
   return it->second;
@@ -156,5 +161,5 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot)
 
 
 void ZAnnotation::dump() const {
-  llvm::errs() << *this;
+  llvm::errs() << *this << "\n";
 }

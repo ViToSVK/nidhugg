@@ -44,6 +44,7 @@ class ZAnn {
   std::set<ZEventID> goodwrites;
 
   std::string to_string() const;
+  void dump() const;
 
   bool operator==(const ZAnn& c) const { return (compare(c) == 0); }
   bool operator!=(const ZAnn& c) const { return (compare(c) != 0); }
@@ -53,7 +54,7 @@ class ZAnn {
   bool operator>=(const ZAnn& c) const { return (compare(c) >= 0); }
   int compare(const ZAnn& c) const;
 };
-
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnn& ann);
 
 class ZAnnotation {
  public:
@@ -108,5 +109,6 @@ class ZAnnotation {
 
   bool location_has_some_lock(const ZEvent *ev) const;
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot);
 
 #endif // _Z_ANNOTATION_H_

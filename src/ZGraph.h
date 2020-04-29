@@ -173,5 +173,6 @@ class ZGraph {
   std::string to_string() const { return _po.to_string(); }
   void dump() const { _po.dump(); }
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr);
 
 #endif // __Z_GRAPH_H__

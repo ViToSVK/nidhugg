@@ -124,6 +124,7 @@ class ZEventPtrComp {
     return (e1->operator<(*e2));
   }
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev);
 
 
 void dump_trace(const std::vector<ZEvent>& trace);

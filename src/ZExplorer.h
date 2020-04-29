@@ -96,6 +96,9 @@ class ZExplorer {
   (const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
    const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
 
+  bool global_variables_initialized_with_value_zero
+  (const std::vector<ZEvent>& trace) const;
+
 
   /* *************************** */
   /* CONSTRUCTOR                 */

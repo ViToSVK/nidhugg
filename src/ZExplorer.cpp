@@ -78,13 +78,15 @@ void ZExplorer::print_stats() const
   std::cout << "Closure succ -- no added edge:     " << closure_no_edge << "\n";
   std::cout << "Closure succ -- total added edges: " << closure_edges << "\n";
   std::cout << "Closure succ -- total iterations:  " << closure_iter << "\n";
+  std::cout << "Linearization failed:              " << linearization_failed << "\n";
+  std::cout << "Linearization succeeded:           " << linearization_succeeded << "\n";
   std::cout << std::setprecision(2) << std::fixed;
+  std::cout << "Linearization branching factor:    " << (double)total_children/total_parents << "\n";
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
-  std::cout << "Linearization branching factor:    " << (double)total_children/total_parents << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
@@ -120,6 +122,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     ann_trace.negative.dump();
     //llvm::errs() << "-------------------------\n\n";
   }
+  assert(global_variables_initialized_with_value_zero(ann_trace.trace));
 
   auto events_to_mutate = ann_trace.events_to_mutate();
   assert(!events_to_mutate.empty());
@@ -192,7 +195,7 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     ++mutations_considered;
 
     ZAnnotation mutated_annotation(ann_trace.annotation);
-    mutated_annotation.add(read, mutation);
+    mutated_annotation.add(read->id(), mutation);
     assert(mutated_annotation.size() == ann_trace.annotation.size() + 1);
     auto mutated_po = ann_trace.graph.copy_po();
 
@@ -206,19 +209,11 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool mutation_follows_current_trace = (read->value() == mutation.value);
-    #ifndef NDEBUG
-    bool observes_good_write = false;
-    ZEventID observed_id = (read->observed_trace_id() < 0
-      ? ann_trace.graph.initial()->id()
-      : ann_trace.trace.at(read->observed_trace_id()).id());
-    for (const ZEventID& good : mutation.goodwrites)
-      if (observed_id == good) {
-        assert(!observes_good_write);
-        observes_good_write = true;
-      }
-    assert((!mutation_follows_current_trace && !observes_good_write) ||
-           (mutation_follows_current_trace && observes_good_write));
-    #endif
+    // It is not true that 'follows' iff 'read observes a good write'
+    // 1) Read could observe a bad write with same value forbidden by negative
+    // 2) If 1) happens a lot of times, and despite this we carry forward the
+    //    trace all the time, eventually a read could observe a write that is
+    //    not even visible for the read in our partial order anymore
 
     bool error = close_po
       (ann_trace, read, std::move(mutated_annotation),
@@ -639,6 +634,28 @@ bool ZExplorer::linearization_respects_annotation
         llvm::errs() << "This read         :::  " << ev->to_string(true) << "\n";
         llvm::errs() << "Has annotation    :::  " << ann.to_string() << "\n";
         llvm::errs() << "Actually observed :::  " << observed_id.to_string() << "\n";
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+
+bool ZExplorer::global_variables_initialized_with_value_zero
+(const std::vector<ZEvent>& trace) const
+{
+  for (unsigned i=0; i<trace.size(); ++i) {
+    const ZEvent *ev = &(trace.at(i));
+    if (is_read(ev)) {
+      // If read observes initial, make sure it observes value 0
+      if (ev->observed_trace_id() < 0 && ev->value() != 0) {
+        dump_trace(trace);
+        llvm::errs() << "This read:  " << ev->to_string(true) << "\n";
+        llvm::errs() << "Observes the initial event, but not value 0 "
+                     << "(it observes value " << ev->value() << ")\n";
+        llvm::errs() << "Please check the benchmark, make sure all global "
+                     << "variables are initialized with value 0\n";
         return false;
       }
     }
