@@ -89,8 +89,12 @@ bool DeclareAssumePass::runOnModule(llvm::Module &M){
     AttributeList assumeAttrs =
       AttributeList::get(M.getContext(),AttributeList::FunctionIndex,
                               std::vector<llvm::Attribute::AttrKind>({llvm::Attribute::NoUnwind}));
+#if LLVM_VERSION_MAJOR * 10 + LLVM_VERSION_MINOR >= 90
+    auto function_callee = M.getOrInsertFunction("__VERIFIER_assume",assumeTy,assumeAttrs);
+#else
     F_assume = llvm::dyn_cast<llvm::Function>(M.getOrInsertFunction("__VERIFIER_assume",assumeTy,assumeAttrs));
     assert(F_assume);
+#endif
     modified_M = true;
   }
   return modified_M;
