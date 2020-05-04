@@ -162,6 +162,10 @@ class VCExplorer {
                                                                 star_root_index)));
       if (tb.someThreadAssumeBlocked)
         interpreter_assume_blocked_thread = 1;
+
+      #ifndef NDEBUG
+        std::cout << "RUNNING DEBUG VERSION\n";
+      #endif
     }
 
 };
