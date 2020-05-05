@@ -208,12 +208,23 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     pre_closure.rule_one(read, mutation);
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-    bool mutation_follows_current_trace = (read->value() == mutation.value);
-    // It is not true that 'follows' iff 'read observes a good write'
+    bool mutation_follows_current_trace = false;
+    ZEventID observed_id = (read->observed_trace_id() < 0
+      ? ann_trace.graph.initial()->id()
+      : ann_trace.trace.at(read->observed_trace_id()).id());
+    for (const ZEventID& good : mutation.goodwrites) {
+      if (observed_id == good) {
+        mutation_follows_current_trace = true;
+        break;
+      }
+    }
+    // It is not true that 'read observes value' iff 'read observes a good write'
     // 1) Read could observe a bad write with same value forbidden by negative
     // 2) If 1) happens a lot of times, and despite this we carry forward the
     //    trace all the time, eventually a read could observe a write that is
     //    not even visible for the read in our partial order anymore
+    // We should not proceed with this trace in case when only 'read observes value'
+    // because we might end up with a full trace and infeasible annotation
 
     bool error = close_po
       (ann_trace, read, std::move(mutated_annotation),
