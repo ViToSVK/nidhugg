@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,40 +21,37 @@
 #include "ZAnnotationNeg.h"
 
 
-bool ZAnnotationNeg::forbidsInitialEvent(const ZEvent *readev) const
+bool ZAnnotationNeg::forbidsInitialEvent(const ZEvent *ev) const
 {
-  assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  return mapping.count(key);
+  assert(isRead(ev) || isLock(ev));
+  return mapping.count(ev->id());
 }
 
 
-bool ZAnnotationNeg::forbids(const ZEvent *readev, const ZEvent *writeev) const
+bool ZAnnotationNeg::forbids(const ZEvent *ev, const ZEvent *obs) const
 {
-  assert(writeev && !isInitial(writeev) &&
+  assert(obs && !isInitial(obs) &&
          "Call the special function for init event");
-  assert((isRead(readev) && isWriteB(writeev)) ||
-         (isLock(readev) && isUnlock(writeev)));
-  assert(readev->aux_id() == -1 && writeev->aux_id() == -1);
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  auto it = mapping.find(key);
+  assert((isRead(ev) && isWriteB(obs)) ||
+         (isLock(ev) && isUnlock(obs)));
+  assert(ev->aux_id() == -1 && obs->aux_id() == -1);
+  auto it = mapping.find(ev->id());
   if (it == mapping.end())
     return false;
-  if (writeev->thread_id() >= it->second.size())
+  if (obs->thread_id() >= it->second.size())
     return false;
 
-  return (it->second[writeev->thread_id()]
-          >= writeev->event_id());
+  return (it->second[obs->thread_id()]
+          >= obs->event_id());
 }
 
 
-void ZAnnotationNeg::update(const ZEvent *readev, std::vector<unsigned>&& newneg)
+void ZAnnotationNeg::update(const ZEvent *ev, std::vector<unsigned>&& newneg)
 {
-  assert(isRead(readev) || isLock(readev));
-  auto key = ZObs(readev->thread_id(), readev->event_id());
-  auto it = mapping.find(key);
+  assert(isRead(ev) || isLock(ev));
+  auto it = mapping.find(ev->id());
   if (it == mapping.end())
-    mapping.emplace_hint(it, key, newneg);
+    mapping.emplace_hint(it, ev->id(), newneg);
   else {
     assert(it->second.size() <= newneg.size());
     it->second.reserve(newneg.size());
@@ -86,5 +83,5 @@ std::string ZAnnotationNeg::to_string() const
 
 
 void ZAnnotationNeg::dump() const {
-  llvm::errs() << to_string();
+  llvm::errs() << to_string() << "\n";
 }

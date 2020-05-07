@@ -40,19 +40,16 @@ class ZClosure {
  private:
 
   std::pair<const ZEvent *, const ZEvent *>
-    getObs(const ZObs& obs);
-
-  std::pair<bool, bool> ruleOne
-    (const ZEvent *read, const ZObs& obs);
+    getObs(const ZEventID& id);
 
   std::pair<bool, bool> ruleTwo
-    (const ZEvent *read, const ZObs& obs);
+    (const ZEvent *read, const ZEventID& obs);
 
   std::pair<bool, bool> ruleThree
-    (const ZEvent *read, const ZObs& obs);
+    (const ZEvent *read, const ZEventID& obs);
 
   std::pair<bool, bool> rules
-    (const ZEvent *read, const ZObs& obs);
+    (const ZEvent *read, const ZEventID& obs);
 
  public:
 
@@ -62,7 +59,7 @@ class ZClosure {
   void preClose
     (const ZEvent *ev, const ZEvent *obsEv);
   void preClose
-    (const ZEvent *ev, const ZObs& obs);
+    (const ZEvent *ev, const ZEventID& obs);
 
   const ZAnnotation& an;
   const ZGraph& gr;

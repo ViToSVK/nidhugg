@@ -23,27 +23,14 @@
 // Got ZHelper due to header -> Graph -> AnnotationNeg -> Annotation -> Helper
 
 // return writeBuffer, writeMemory for obs
-std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZObs& obs) {
-  if(obs.thr == INT_MAX)
+std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZEventID& id) {
+  if(id.event_id() == -1)
     return {nullptr,nullptr};
-  auto buffer_part = gr.getEvent(obs.thr, -1, obs.ev);
+  auto buffer_part = gr.getEvent(id);
   assert(isWriteB(buffer_part));
   auto write_part = buffer_part->write_other_ptr;
   assert(isWriteM(write_part));
   return {buffer_part,write_part};
-}
-
-
-/* *************************** */
-/* RULE 1                      */
-/* *************************** */
-
-// first) true iff impossible
-// second) true iff something changed
-std::pair<bool, bool> ZClosure::ruleOne(const ZEvent *read, const ZObs& obs) {
-  // Seems like done in preclose
-  // Recheck of impossible or change
-  return {false, false}; // done, no change
 }
 
 
@@ -53,7 +40,7 @@ std::pair<bool, bool> ZClosure::ruleOne(const ZEvent *read, const ZObs& obs) {
 
 // first) true iff impossible
 // second) true iff something changed
-std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
+std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZEventID& obs) {
   // Optimization idea: if obs different thread then only once this function could be called
   // as no memory write will be added in between other rules
   // To do so we can call it preclose and then in rules don't call again
@@ -121,7 +108,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZObs& obs) {
 
 // first) true iff impossible
 // second) true iff something changed
-std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
+std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZEventID& obs) {
   // Without optimization
   auto write = getObs(obs);
   auto write_memory = write.second;
@@ -215,7 +202,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZObs& obs) {
 /* RULES                       */
 /* *************************** */
 
-std::pair<bool, bool> ZClosure::rules(const ZEvent *read, const ZObs& obs){
+std::pair<bool, bool> ZClosure::rules(const ZEvent *read, const ZEventID& obs){
   assert(read && isRead(read));
   bool change = false;
   // Rule1 is done only the first time
@@ -237,7 +224,7 @@ std::pair<bool, bool> ZClosure::rules(const ZEvent *read, const ZObs& obs){
 bool ZClosure::close(const ZEvent *newread) {
   // Rules for new read
   if (newread) {
-    auto res = rules(newread, an.getObs(newread));
+    auto res = rules(newread, an.obs(newread));
     if (res.first) { return false; }
   }
 
@@ -254,7 +241,7 @@ bool ZClosure::close(const ZEvent *newread) {
         // hence the partial order is closed
         return true;
       }
-      auto read = gr.getEvent(read_obs.first.thr, -1, read_obs.first.ev);
+      auto read = gr.getEvent(read_obs.first);
       if ((!newread || newread != read) && !po.isClosureSafe(read)) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }
@@ -272,7 +259,7 @@ bool ZClosure::close(const ZEvent *newread) {
       return true;
     }
     if (newread) {
-      auto res = rules(newread, an.getObs(newread));
+      auto res = rules(newread, an.obs(newread));
       if (res.first) { return false; }
       if (res.second) {
         change = true;
@@ -325,8 +312,8 @@ void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv) {
   // po.dump();
 }
 
-void ZClosure::preClose(const ZEvent *ev, const ZObs& obs) {
-  if (obs.thr == INT_MAX) {
+void ZClosure::preClose(const ZEvent *ev, const ZEventID& obs) {
+  if (obs.event_id() == -1) {
     // Handle initial-event observation separately
     // Nothing to do in preClosure (rule1)
   } else {

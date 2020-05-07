@@ -143,13 +143,27 @@ bool operator== (const std::map<K, V>& left, const std::map<K, V>& right) {
 void ZLinearization::calculateWrMapping() {
   start_err("Calculating wr_mapping...");
   for (auto it = an.begin(); it != an.end(); it++) {
-    const ZObs& obsR = it->first;
-    const ZObs& obsW = it->second;
+    assert(it->first.event_id() >= 0); // read cannot be initial event
+    unsigned thr = gr.getThreadIDnoAdd(it->first.cpid().get_proc_seq());
+    assert(thr < gr.number_of_threads());
+    unsigned ev = (unsigned) it->first.event_id();
+    ZObs obsR(thr, ev);
+    //const ZObs& obsR = it->first;
+    thr = INT_MAX;
+    ev = INT_MAX;
+    if (it->second.event_id() >= 0) {
+      // not initial
+      thr = gr.getThreadIDnoAdd(it->second.cpid().get_proc_seq());
+      assert(thr < gr.number_of_threads());
+      ev = (unsigned) it->second.event_id();
+    }
+    ZObs obsW(thr, ev);
+    //const ZObs& obsW = it->second;
     if (!obsW.isInitial()) {
       wr_mapping[obsW].insert(obsR);
     }
     else {
-      const ZEvent *evR = gr.getEvent(obsR);
+      const ZEvent *evR = gr.getEvent(it->first); // getEvent(obsR)
       wr_initial[evR->ml].insert(obsR);
     }
   }

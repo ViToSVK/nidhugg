@@ -218,7 +218,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     ++mutations_considered;
 
     ZAnnotation mutatedAnnotation(annTrace.annotation);
-    mutatedAnnotation.add(read, observation);
+    mutatedAnnotation.add(read->id(), observation);
     assert(mutatedAnnotation.size() == annTrace.annotation.size() + 1);
     auto mutatedPO = annTrace.graph.copyPO();
 
@@ -232,7 +232,7 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool mutationFollowsCurrentTrace = false;
-    if (observation.thr == INT_MAX) {
+    if (observation.event_id() < 0) {
       mutationFollowsCurrentTrace = (read->value == 0);
       // DC (read->observed_trace_id == -1);
     } else {
@@ -589,22 +589,22 @@ bool ZExplorer::respectsAnnotation
  const ZTrace& parentTrace) const
 {
   assert(!trace.empty());
-  std::unordered_map<ZObs, unsigned> bw_pos;
+  std::unordered_map<ZEventID, unsigned> bw_pos;
   for (const ZEvent& evref: trace) {
     const ZEvent *ev = &evref;
     // ev->thread_id() not set, have to get it
     unsigned thrid = parentTrace.graph.getThreadIDnoAdd(ev);
     ev->_thread_id = thrid;
     if (isWriteB(ev) && thrid != 1337)
-      bw_pos.emplace(ZObs(thrid, ev->event_id()), ev->trace_id());
+      bw_pos.emplace(ev->id(), ev->trace_id());
   }
   for (const ZEvent& evref : trace) {
     const ZEvent *ev = &evref;
     if (isRead(ev)) {
-      if (annotation.defines(ev->thread_id(), ev->event_id())) {
-        const ZObs& obs = annotation.getObs(ev->thread_id(), ev->event_id());
+      if (annotation.defines(ev->id())) {
+        const ZEventID& obs = annotation.obs(ev->id());
         const ZEvent *obsB = parentTrace.graph.initial();
-        if (obs.thr != INT_MAX) {
+        if (obs.event_id() >= 0) {
           assert(bw_pos.count(obs));
           obsB = &(trace.at(bw_pos.at(obs)));
         }
@@ -662,7 +662,7 @@ bool ZExplorer::linearizationRespectsAnn
   // Real observation in trace
   std::unordered_map<int, int> realObs;
   // BufferWrite -> pos
-  std::unordered_map<ZObs, unsigned> bw_pos;
+  std::unordered_map<ZEventID, unsigned> bw_pos;
   // BufferWrite -> MemoryWrite
   std::unordered_map<int, int> buf_mem;
 
@@ -672,7 +672,7 @@ bool ZExplorer::linearizationRespectsAnn
     assert(ev->thread_id() < 1337);
 
     if (isWriteB(ev)) {
-      bw_pos.emplace(ZObs(ev->thread_id(), ev->event_id()), i);
+      bw_pos.emplace(ev->id(), i);
       if (!storeQueue.count(ev->thread_id()))
         storeQueue.emplace
           (ev->thread_id(), std::unordered_map<SymAddrSize, std::list<int>>());
@@ -723,10 +723,10 @@ bool ZExplorer::linearizationRespectsAnn
   for (unsigned i=0; i<trace.size(); ++i) {
     const ZEvent *ev = &(trace.at(i));
     if (isRead(ev)) {
-      assert(annotation.defines(ev->thread_id(), ev->event_id()));
-      const ZObs& obs = annotation.getObs(ev->thread_id(), ev->event_id());
+      assert(annotation.defines(ev->id()));
+      const ZEventID& obs = annotation.obs(ev->id());
       const ZEvent *obsB = parentTrace.graph.initial();
-      if (obs.thr != INT_MAX) {
+      if (obs.event_id() >= 0) {
         assert(bw_pos.count(obs));
         obsB = &(trace.at(bw_pos.at(obs)));
         assert(isWriteB(obsB));

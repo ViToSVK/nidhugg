@@ -27,6 +27,58 @@
 #include "ZGraph.h"
 
 
+class ZObs {
+ public:
+  ZObs() = delete;
+  ZObs(unsigned thread_idx, unsigned event_idx)
+    : thr(thread_idx), ev(event_idx) {}
+  ZObs(const ZEvent *ev)
+    : thr(ev->thread_id()), ev(ev->event_id())
+    { assert(ev->aux_id() == -1); }
+
+  ZObs(const ZObs& oth) = default;
+  ZObs(ZObs&& oth) = default;
+  ZObs& operator=(const ZObs& oth) = delete;
+  ZObs& operator=(ZObs&& oth) = delete;
+
+  const unsigned thr;
+  const unsigned ev;
+
+  std::string to_string() const {
+    std::stringstream res;
+    res << "[" << thr << ",-1," << ev << "]";
+    return res.str();
+  }
+
+  bool isInitial() const {
+    return thr == INT_MAX && ev == INT_MAX;
+  }
+
+  bool operator==(const ZObs& oth) const {
+    return (thr == oth.thr && ev == oth.ev);
+  }
+  bool operator!=(const ZObs& oth) const {
+    return !(*this == oth);
+  }
+
+  bool operator<(const ZObs& oth) const {
+    return std::tie(thr, ev)
+      < std::tie(oth.thr, oth.ev);
+  }
+};
+
+
+namespace std {
+  template <>
+  struct hash<ZObs> {
+    std::size_t operator()(const ZObs& obs) const {
+      return (hash<unsigned>()(obs.thr) << 12) +
+             hash<unsigned>()(obs.ev);
+    }
+  };
+}
+
+
 class ZLinearization {
  private:
   const ZAnnotation& an;

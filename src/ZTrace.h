@@ -63,12 +63,12 @@ class ZTrace {
     return graph.getEventsToMutate(annotation);
   }
 
-  std::list<ZObs> getObsCandidates(const ZEvent *read) const {
+  std::set<ZEventID> getObsCandidates(const ZEvent *read) const {
     return graph.getObsCandidates(read, negative);
   }
 
-  const ZEvent *getEvent(const ZObs& obs) const {
-    return graph.getEvent(obs);
+  const ZEvent *getEvent(const ZEventID& id) const {
+    return graph.getEvent(id);
   }
 
 

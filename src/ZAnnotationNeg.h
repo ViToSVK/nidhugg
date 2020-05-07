@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -34,18 +34,18 @@ class ZAnnotationNeg {
   ZAnnotationNeg& operator=(const ZAnnotationNeg&) = delete;
   ZAnnotationNeg& operator=(ZAnnotationNeg&& a) = delete;
 
-  bool forbidsInitialEvent(const ZEvent *readev) const;
+  bool forbidsInitialEvent(const ZEvent *ev) const;
 
-  bool forbids(const ZEvent *readev, const ZEvent *writeev) const;
+  bool forbids(const ZEvent *ev, const ZEvent *obs) const;
 
-  void update(const ZEvent *readev, std::vector<unsigned>&& newneg);
+  void update(const ZEvent *ev, std::vector<unsigned>&& newneg);
 
   bool empty() const { return mapping.empty(); }
 
   std::string to_string() const;
   void dump() const;
 
-  using MappingT = std::map<ZObs, std::vector<unsigned>>;
+  using MappingT = std::map<ZEventID, std::vector<unsigned>>;
   typedef MappingT::iterator iterator;
   typedef MappingT::const_iterator const_iterator;
 

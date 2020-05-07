@@ -131,21 +131,25 @@ const ZEvent * ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_i
 }
 
 
-const ZEvent * ZGraph::getEvent(const ZObs& obs) const
+const ZEvent * ZGraph::getEvent(const ZEventID& id) const
 {
-  return getEvent(obs.thr, -1, obs.ev);
+  unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
+  int aux = id.cpid().is_auxiliary() ? id.cpid().get_aux_index() : -1;
+  unsigned ev = id.event_id();
+  return getEvent(thr, aux, ev);
 }
 
 
-const ZEvent * ZGraph::getUnlockOfThisLock(const ZObs& obs) const
+const ZEvent * ZGraph::getUnlockOfThisLock(const ZEventID& id) const
 {
-  unsigned curEv = obs.ev;
-  auto lock = getEvent(obs.thr, -1, curEv);
+  unsigned curEv = id.event_id();
+  auto lock = getEvent(id);
   assert(isLock(lock));
+  unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
 
-  while (curEv + 1 < (*this)(obs.thr, -1).size()) {
+  while (curEv + 1 < (*this)(thr, -1).size()) {
     curEv++;
-    auto res = getEvent(obs.thr, -1, curEv);
+    auto res = getEvent(thr, -1, curEv);
     if (isUnlock(res) && sameMl(lock, res))
       return res;
   }
@@ -981,13 +985,13 @@ std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotatio
 }
 
 
-std::list<ZObs> ZGraph::getObsCandidates
+std::set<ZEventID> ZGraph::getObsCandidates
 (const ZEvent *read, const ZAnnotationNeg& negative) const
 {
   assert(isRead(read));
   assert(hasEvent(read));
 
-  std::list<ZObs> res;
+  std::set<ZEventID> res;
 
   std::unordered_set<const ZEvent *> notCovered;
   std::unordered_set<const ZEvent *> mayBeCovered;
@@ -1123,14 +1127,18 @@ std::list<ZObs> ZGraph::getObsCandidates
       }
     }
     // Add obs if not covered and not forbidden
-    if (!localCovered && !negative.forbids(read, localB))
-      res.emplace_back(localB);
+    if (!localCovered && !negative.forbids(read, localB)) {
+      assert(!res.count(localB->id()));
+      res.emplace(localB->id());
+    }
   } else {
     // No local write for read
     if (mayBeCovered.empty()) {
       // Consider initial event if not forbidden
-      if (!negative.forbidsInitialEvent(read))
-        res.emplace_back(INT_MAX, INT_MAX);
+      if (!negative.forbidsInitialEvent(read)) {
+        assert(!res.count(ZEventID(true)));
+        res.emplace(ZEventID(true)); // initial
+      }
     }
   }
 
@@ -1141,8 +1149,10 @@ std::list<ZObs> ZGraph::getObsCandidates
     assert(isWriteB(remB) && sameMl(remB, remM) &&
            po.hasEdge(remB, remM));
     // Add if not forbidden
-    if (!negative.forbids(read, remB))
-      res.emplace_back(remB);
+    if (!negative.forbids(read, remB)) {
+      assert(!res.count(remB->id()));
+      res.emplace(remB->id());
+    }
   }
 
   // Take candidates that happen before read
@@ -1157,11 +1167,12 @@ std::list<ZObs> ZGraph::getObsCandidates
       assert(isWriteB(remB) && sameMl(remB, remM) &&
              po.hasEdge(remB, remM));
       // Add if not forbidden
-      if (!negative.forbids(read, remB))
-        res.emplace_back(remB);
+      if (!negative.forbids(read, remB)) {
+        assert(!res.count(remB->id()));
+        res.emplace(remB->id());
+      }
     }
   }
 
-  res.sort();
   return res;
 }

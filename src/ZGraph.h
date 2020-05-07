@@ -47,8 +47,8 @@ class ZGraph {
   const LineT& operator()(unsigned thread_id, int aux_id) const;
   //
   const ZEvent *getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
-  const ZEvent *getEvent(const ZObs& obs) const;
-  const ZEvent *getUnlockOfThisLock(const ZObs& obs) const;
+  const ZEvent *getEvent(const ZEventID& id) const;
+  const ZEvent *getUnlockOfThisLock(const ZEventID& obs) const;
   void addLine(const ZEvent *ev);
   void addEvent(const ZEvent *ev);
   void replaceEvent(const ZEvent *oldEv, const ZEvent *newEv);
@@ -201,8 +201,8 @@ class ZGraph {
   std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
 
   // Returns observation candidates for a read node
-  std::list<ZObs> getObsCandidates(const ZEvent *read,
-                                   const ZAnnotationNeg& negative) const;
+  std::set<ZEventID> getObsCandidates(const ZEvent *read,
+                                      const ZAnnotationNeg& negative) const;
 
 
   std::string to_string() const { return po.to_string(); }

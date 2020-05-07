@@ -1,5 +1,5 @@
 /* Copyright (C) 2016-2017 Marek Chalupa
- * Copyright (C) 2017-2019 Viktor Toman
+ * Copyright (C) 2017-2020 Viktor Toman
  *
  * This file is part of Nidhugg.
  *
@@ -21,50 +21,49 @@
 #include "ZAnnotation.h"
 
 
-void ZAnnotation::add(const ZEvent *ev, const ZObs& obs)
+void ZAnnotation::add(const ZEventID& ev_id, const ZEventID& obs_id)
 {
-  assert(isRead(ev));
-  auto key = ZObs(ev->thread_id(), ev->event_id());
-  auto it = mapping.find(key);
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  auto it = mapping.find(ev_id);
   assert(it == mapping.end());
-  mapping.emplace_hint(it, key, obs);
+  mapping.emplace_hint(it, ev_id, obs_id);
 }
 
 
-void ZAnnotation::add(const ZEvent *ev, const ZEvent *obsEv)
+void ZAnnotation::add(const ZEvent *ev, const ZEvent *obs)
 {
-  assert(isRead(ev) && isWriteB(obsEv));
-  add(ev, ZObs(obsEv->thread_id(), obsEv->event_id()));
+  assert(isRead(ev) && isWriteB(obs));
+  add(ev->id(), obs->id());
 }
 
 
-bool ZAnnotation::defines(unsigned thrid, unsigned evid) const
+bool ZAnnotation::defines(const ZEventID& ev_id) const
 {
-  auto key = ZObs(thrid, evid);
-  return (mapping.find(key) != mapping.end());
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  return (mapping.find(ev_id) != mapping.end());
 }
 
 
 bool ZAnnotation::defines(const ZEvent *ev) const
 {
   assert(isRead(ev));
-  return defines(ev->thread_id(), ev->event_id());
+  return defines(ev->id());
 }
 
 
-const ZObs& ZAnnotation::getObs(unsigned thrid, unsigned evid) const
+const ZEventID& ZAnnotation::obs(const ZEventID& ev_id) const
 {
-  auto key = ZObs(thrid, evid);
-  auto it = mapping.find(key);
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  auto it = mapping.find(ev_id);
   assert(it != mapping.end());
   return it->second;
 }
 
 
-const ZObs& ZAnnotation::getObs(const ZEvent *ev) const
+const ZEventID& ZAnnotation::obs(const ZEvent *ev) const
 {
   assert(isRead(ev));
-  return getObs(ev->thread_id(), ev->event_id());
+  return obs(ev->id());
 }
 
 
@@ -74,12 +73,11 @@ void ZAnnotation::setLastLock(const ZEvent *ev)
   auto it = lastlock.find(ev->ml);
   if (it != lastlock.end())
     it = lastlock.erase(it);
-  lastlock.emplace_hint(it, ev->ml,
-                        ZObs(ev->thread_id(), ev->event_id()));
+  lastlock.emplace_hint(it, ev->ml, ev->id());
 }
 
 
-const ZObs& ZAnnotation::getLastLock(const ZEvent *ev) const
+const ZEventID& ZAnnotation::getLastLock(const ZEvent *ev) const
 {
   assert(isLock(ev));
   auto it = lastlock.find(ev->ml);
@@ -95,8 +93,7 @@ bool ZAnnotation::isLastLock(const ZEvent *ev) const
   if (it == lastlock.end())
     return false;
   else
-    return (it->second ==
-            ZObs(ev->thread_id(), ev->event_id()));
+    return (it->second == ev->id());
 }
 
 
@@ -139,5 +136,5 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot)
 
 
 void ZAnnotation::dump() const {
-  llvm::errs() << *this;
+  llvm::errs() << *this << "\n";
 }
