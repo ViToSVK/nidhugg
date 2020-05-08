@@ -34,10 +34,10 @@ class ZLinearization {
   const ZPartialOrder& po;
   const std::vector<ZEvent>& tr;  // reference-trace for heuristics
 
-/*
+
 
   unsigned numEventsInThread(unsigned thr, int aux = -1) const;
-
+/*
   class WrEntry {
    public:
     unsigned first, last;
@@ -140,36 +140,37 @@ class ZLinearization {
       return ss.str();
     }
   };
+  */
 
   class State {
    public:
     const ZLinearization& par;
-    Prefix prefix;
-    std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
-    unsigned tr_pos;
+    Key key;
+    // std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
+    // unsigned tr_pos;
 
-    State(const ZLinearization& par0, unsigned n)
-      : par(par0), prefix(n), tr_pos(0) {}
+    State(const ZLinearization& par0)
+      : par(par0){}
 
     // Returns the next event in the given thread, or nullptr if there is none.
     const ZEvent * currEvent(unsigned thr, int aux = -1) const;
 
-    bool isClosedVar(SymAddrSize ml) const;
-    bool canAdvanceAux(unsigned thr, int aux = 0) const;
-    void advance(unsigned thr, int aux, std::vector<ZEvent>& res);
+    //bool isClosedVar(SymAddrSize ml) const;
+    //bool canAdvance(unsigned thr) const;
+    void advance(unsigned thr, std::vector<ZEvent>& res);
 
-    // What can we play "for free"?
-    bool isUseless(const ZEvent *ev) const;
-    bool canPushUp(unsigned thr, int aux) const;
-    bool allPushedUp() const;
+    // Heuristic 1
+    // bool isUseless(const ZEvent *ev) const;
+    // bool canPushUp(unsigned thr, int aux) const;
+    // bool allPushedUp() const;
     void pushUp(std::vector<ZEvent>& res);
 
     // When all main events are already done, what remains is to play
     // the auxiliary events, in (almost) arbitrary order.
-    bool finished() const;
-    void finishOff(std::vector<ZEvent>& res) const;
+     bool finished() const;
+    // void finishOff(std::vector<ZEvent>& res) const;
   };
-
+/*
   class DummyKey {
    public:
     DummyKey(const State& state) {}
@@ -301,6 +302,8 @@ class ZLinearization {
   ZLinearization& operator=(ZLinearization& oth) = delete;
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
+
+  std::vector<ZEvent> linearize() const;
 /*
   template<class T>
   std::vector<ZEvent> linearizeTSO() const;
