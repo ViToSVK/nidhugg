@@ -38,7 +38,12 @@
 
 #include <csetjmp>
 #include <csignal>
-#include <malloc.h>
+#ifndef __clang__
+# include <malloc.h>
+#endif
+
+# include <stdlib.h>
+\
 #ifdef HAVE_VALGRIND_VALGRIND_H
 #include <valgrind/valgrind.h>
 #endif
@@ -148,7 +153,7 @@ static void cf_handler(int signum){
 }
 
 static void CheckedFree(void *ptr, std::function<void()> &on_error){
-  mallopt(M_CHECK_ACTION,2);
+  // mallopt(M_CHECK_ACTION,2);
   struct sigaction act, orig_act_segv, orig_act_abrt;
   act.sa_handler = cf_handler;
   act.sa_flags = SA_RESETHAND;
@@ -174,7 +179,7 @@ static void CheckedFree(void *ptr, std::function<void()> &on_error){
   }
   sigaction(SIGABRT,&orig_act_abrt,0);
   sigaction(SIGSEGV,&orig_act_segv,0);
-  mallopt(M_CHECK_ACTION,3);
+  // mallopt(M_CHECK_ACTION,3);
 }
 
 Interpreter::~Interpreter() {
