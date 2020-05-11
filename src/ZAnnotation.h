@@ -61,7 +61,7 @@ class ZAnnotation {
   using MappingT = std::map<ZEventID, ZAnn>;
   using LastLockT = std::unordered_map<SymAddrSize, ZEventID>;
 
- public:
+ private:
   MappingT mapping;
   LastLockT lastlock;
 

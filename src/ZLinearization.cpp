@@ -683,7 +683,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       int evid=par.gr.get_tailw_index( ml, ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
       // ZEventID idd=last_w[thr_no].at(ml);
-      if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
+      if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
         return false;
     }
     // ZAnn check_set=an.mapping[ev->_id].goodwrites;
