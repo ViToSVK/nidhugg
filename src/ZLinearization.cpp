@@ -282,11 +282,11 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
       if(occured[ml]==0){
         occured[ml]=key.size();
         key.push_back(thr);
-        last_w[thr][ml]=ev->_id;
+        // last_w[thr][ml]=ev->_id;
       }
       else{
         key[occured[ml]]=thr;
-        last_w[thr][ml]=ev->_id;
+        // last_w[thr][ml]=ev->_id;
       }
     // Update memory
     // auto it = curr_vals.find(ev->ml);
@@ -679,7 +679,10 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       if(occured.at(ml)==0)
         return false;
       unsigned thr_no=key[occured.at(ml)];
-      ZEventID idd=last_w[thr_no].at(ml);
+      CPid ii=par.gr.line_id_to_cpid(thr_no);
+      int evid=get_tailw_index( ml, ii, key[thr_no]);
+      ZEventID idd=par.gr.event(ii,evid)->_id;
+      // ZEventID idd=last_w[thr_no].at(ml);
       if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
         return false;
     }
