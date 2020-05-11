@@ -19,6 +19,7 @@
  */
 
 #include "ZEvent.h"
+#include "ZHelpers.h"
 
 
 ZEvent::ZEvent
@@ -70,20 +71,21 @@ ZEvent::ZEvent(bool initial)
   assert(initial);
 }
 
-
-ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
+// Returns a 'copy' of the event, with custom trace id
+// The event will be part of replay_trace
+ZEvent::ZEvent(const ZEvent& oth, int trace_id)
   : kind(oth.kind),
     _id(oth._id),
-    _thread_id(-1), /*set at PObuild time*/
+    _thread_id(oth._thread_id),
     _aux_id(oth._aux_id),
     _trace_id(trace_id),
-    observed_trace_id(-1),
-    write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
+    observed_trace_id(-1), /*not set for replay_trace events*/
+    write_other_trace_id(-1), /*not set for replay_trace events*/
+    write_other_ptr(nullptr), /*not set for replay_trace events*/
     childs_cpid(oth.childs_cpid),
     fence(oth.fence),
     ml(oth.ml),
-    value(-1),
+    value(-1), /*not set for replay_trace events*/
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
@@ -91,41 +93,35 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool blank)
     may_conflict(oth.may_conflict),
     instruction_id(oth.instruction_id) /*guide interpreter*/
 {
+  assert(!isInitial(oth) && "Should not copy initial event");
   assert(iid.get_pid() >= 0);
-  if (!blank) {
-    // The observed trace ID stays the same
-    // as we are reusing the whole trace
-    observed_trace_id = oth.observed_trace_id;
-    write_other_trace_id = oth.write_other_trace_id;
-    value = oth.value;
-  }
 }
 
 
 std::string ZEvent::to_string(bool write_cpid) const
 {
   if (this->kind == ZEvent::Kind::INITIAL)
-    return "-1_<>_[-1,-1,-1] initial_event";
+    return "-1::<>_[t-1,,a-1,,e-1] initial_event";
 
   std::stringstream res;
 
-  res << trace_id() << "_";
+  res << trace_id() << "::";
   if (write_cpid)
     res << cpid() << "_";
-  res << "[" << thread_id() << "," << aux_id() << "," << event_id() << "]";
+  res << "[t" << thread_id() << ",,a" << aux_id() << ",,e" << event_id() << "]";
   switch(kind) {
    case ZEvent::Kind::DUMMY :
      res << " <s:" << size << ">";
      break;
    case ZEvent::Kind::READ :
-     res << " read <- " << ml.addr.to_string()
+     res << " read " << ml.addr.to_string()
          << " <O:" << observed_trace_id << "> <val:" << value << ">";
      break;
    case ZEvent::Kind::WRITEB :
-     res << " writeB -> " << ml.addr.to_string() << " <val:" << value << ">";
+     res << " writeB " << ml.addr.to_string() << " <val:" << value << ">";
      break;
    case ZEvent::Kind::WRITEM :
-     res << " writeM -> " << ml.addr.to_string()
+     res << " writeM " << ml.addr.to_string()
          << " <B:" << write_other_trace_id << "> <val:" << value << ">";
      break;
    case ZEvent::Kind::SPAWN :
@@ -141,7 +137,8 @@ std::string ZEvent::to_string(bool write_cpid) const
      res << " mutexdestroy " << ml.addr.to_string();
      break;
    case ZEvent::Kind::M_LOCK :
-     res << " lock " << ml.addr.to_string();
+     res << " lock " << ml.addr.to_string()
+         << " <O:" << observed_trace_id << ">";
      break;
    case ZEvent::Kind::M_UNLOCK :
      res << " unlock " << ml.addr.to_string();
@@ -158,7 +155,7 @@ std::string ZEvent::to_string(bool write_cpid) const
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev)
 {
-  out << ev.to_string();
+  out << ev.to_string(true);
   return out;
 }
 

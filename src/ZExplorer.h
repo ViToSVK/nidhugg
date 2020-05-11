@@ -82,15 +82,11 @@ class ZExplorer {
 
   bool closePO
     (const ZTrace& annTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
-     bool mutationFollowsCurrentTrace);
+     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO);
 
   bool extendAndRecur
     (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
-     ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace);
-
-  TraceExtension reuseTrace(const ZTrace& parentTrace,
-                            const ZAnnotation& mutatedAnnotation);
+     ZPartialOrder&& mutatedPO);
 
   TraceExtension extendTrace(std::vector<ZEvent>&& tr);
 

@@ -277,6 +277,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
   start_err("advanceAux...");
   assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
   const ZEvent *ev = currEvent(thr, aux);
+  assert(ev && "Trying to advance with nullptr");
   if (isWriteM(ev)) {
     // Update memory
     auto it = curr_vals.find(ev->ml);
@@ -285,7 +286,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
     }
     curr_vals.emplace(ev->ml, ev->write_other_ptr);
   }
-  res.push_back(ev->copy(res.size(), true));
+  res.push_back(ZEvent(*ev, res.size()));
   prefix.at(thr, aux)++;
   // Update tr_pos
   while (tr_pos < par.tr.size()) {
@@ -415,7 +416,8 @@ void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
       unsigned tgt = par.numEventsInThread(thr, aux);
       for (unsigned i = prefix.at(thr, aux); i < tgt; i++) {
         const ZEvent *ev = par.gr(thr, aux).at(i);
-        res.push_back(ev->copy(res.size(), true));
+        assert(ev && "Line contains a nullptr event");
+        res.push_back(ZEvent(*ev, res.size()));
       }
     }
   }

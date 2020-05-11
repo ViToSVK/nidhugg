@@ -231,22 +231,9 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     preClosure.preClose(read, observation);
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-    bool mutationFollowsCurrentTrace = false;
-    if (observation.event_id() < 0) {
-      mutationFollowsCurrentTrace = (read->value == 0);
-      // DC (read->observed_trace_id == -1);
-    } else {
-      const ZEvent *obsB = annTrace.getEvent(observation);
-      assert(isWriteB(obsB) && isWriteM(obsB->write_other_ptr) &&
-             sameMl(read, obsB) && sameMl(read, obsB->write_other_ptr));
-      mutationFollowsCurrentTrace = (read->value == obsB->value);
-      // DC (read->observed_trace_id == obsB->trace_id() ||
-      // DC  read->observed_trace_id == obsB->write_other_ptr->trace_id());
-    }
-
     bool error = closePO
       (annTrace, read, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace);
+       std::move(mutatedPO));
 
     if (error) {
       assert(originalTB && originalTB->error_trace);
@@ -296,12 +283,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
       llvm::errs() << "Not locked before\n";
     }
 
-    bool mutationFollowsCurrentTrace =
-      (lock->observed_trace_id == -1);
-
     auto res = closePO
       (annTrace, lock, std::move(mutatedAnnotation),
-       std::move(mutatedPO), mutationFollowsCurrentTrace);
+       std::move(mutatedPO));
     end_err("?a");
     return res;
   }
@@ -347,13 +331,10 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   preClosure.preClose(lock, lastUnlock);
   time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-  bool mutationFollowsCurrentTrace =
-    (lock->observed_trace_id == lastUnlock->trace_id());
-
   end_err("?b");
   return closePO
     (annTrace, lock, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace);
+     std::move(mutatedPO));
 }
 
 
@@ -363,8 +344,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
 
 bool ZExplorer::closePO
 (const ZTrace& annTrace, const ZEvent *readLock,
- ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO,
- bool mutationFollowsCurrentTrace)
+ ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO)
 {
   start_err("closePO...");
   auto init = std::clock();
@@ -392,7 +372,7 @@ bool ZExplorer::closePO
 
   auto res = extendAndRecur
     (annTrace, std::move(mutatedAnnotation),
-     std::move(mutatedPO), mutationFollowsCurrentTrace);
+     std::move(mutatedPO));
   end_err("?");
   return res;
 }
@@ -404,34 +384,29 @@ bool ZExplorer::closePO
 
 bool ZExplorer::extendAndRecur
 (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
- ZPartialOrder&& mutatedPO, bool mutationFollowsCurrentTrace)
+ ZPartialOrder&& mutatedPO)
 {
   start_err("extendAndRecur...");
   TraceExtension mutatedTrace;
-  if (mutationFollowsCurrentTrace) {
-    mutatedTrace = reuseTrace(parentTrace, mutatedAnnotation);
+
+  clock_t init = std::clock();
+  ZLinearization linearizer(mutatedAnnotation, mutatedPO, parentTrace.trace);
+  auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
+  time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+  total_parents += linearizer.num_parents;
+  total_children += linearizer.num_children;
+  if (linear.empty()) {
+    end_err("0a");
+    return false;
   }
-  else {
-    clock_t init = std::clock();
-    ZLinearization linearizer(mutatedAnnotation, mutatedPO, parentTrace.trace);
-    auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
-    time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
-    total_parents += linearizer.num_parents;
-    total_children += linearizer.num_children;
-    if (linear.empty()) {
-      end_err("0a");
-      return false;
-    }
-    assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
-    // if (info) dumpTrace(linear);
-    mutatedTrace = extendTrace(std::move(linear));
-    // if (info) dumpTrace(mutatedTrace.trace);
-    assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
-  }
+  assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
+  // if (info) dumpTrace(linear);
+  mutatedTrace = extendTrace(std::move(linear));
+  // if (info) dumpTrace(mutatedTrace.trace);
+  assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
 
   executed_traces++;
   if (mutatedTrace.hasError) {
-    assert(!mutationFollowsCurrentTrace);
     end_err("1");
     return true; // Found an error
   }
@@ -452,7 +427,7 @@ bool ZExplorer::extendAndRecur
     return false;
   }
 
-  clock_t init = std::clock();
+  init = std::clock();
   assert(!mutatedTrace.empty() && !mutatedPO.empty());
   err_msg("creating extension");
   ZTrace mutatedZTrace
@@ -467,43 +442,6 @@ bool ZExplorer::extendAndRecur
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   auto res = exploreRec(mutatedZTrace);
-  end_err("?");
-  return res;
-}
-
-
-/* *************************** */
-/* REUSE TRACE                 */
-/* *************************** */
-
-ZExplorer::TraceExtension
-ZExplorer::reuseTrace
-(const ZTrace& parentTrace, const ZAnnotation& mutatedAnnotation)
-{
-  start_err("reuseTrace..");
-  std::vector<ZEvent> tr;
-  tr.reserve(parentTrace.trace.size());
-  bool somethingToAnnotate = false;
-
-  for (const ZEvent& ev : parentTrace.trace) {
-    if (!somethingToAnnotate) {
-      if (isRead(ev) && (!mutatedAnnotation.defines(&ev)))
-        somethingToAnnotate = true;
-      else if (isLock(ev)) {
-        if (!parentTrace.graph.hasEvent(&ev))
-          somethingToAnnotate = true;
-        else if (ev.event_id() == // last in its thraux
-                 (parentTrace.graph)(ev.thread_id(), ev.aux_id()).size() - 1
-                 && !mutatedAnnotation.isLastLock(&ev))
-          somethingToAnnotate = true;
-      }
-    }
-
-    tr.push_back(ev.copy(tr.size(), false));
-  }
-
-  auto res = TraceExtension(std::move(tr), somethingToAnnotate,
-                            parentTrace.assumeblocked);
   end_err("?");
   return res;
 }

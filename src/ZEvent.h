@@ -50,16 +50,14 @@ class ZEvent {
   // Constructor for initial event
   ZEvent(bool initial);
 
- private:
-  // Returns a 'copy' of the event
-  // If blank: the event will be a part of replay_trace
-  // If not blank: the event is used as if it came from an interpreter
-  ZEvent(const ZEvent& oth, int trace_id, bool blank);
+  // Returns a 'copy' of the event, with custom trace id
+  // The event will be part of replay_trace
+  ZEvent(const ZEvent& oth, int trace_id);
 
- public:
-  ZEvent copy(int id, bool blank) const {
-    return ZEvent(*this, id, blank);
-  }
+  ZEvent(const ZEvent& oth) = default;
+  ZEvent(ZEvent&& oth) = default;
+  ZEvent& operator=(const ZEvent& oth) = delete;
+  ZEvent& operator=(ZEvent&& oth) = delete;
 
   enum class Kind {
     DUMMY, INITIAL,
@@ -120,20 +118,12 @@ class ZEvent {
    * The first instruction of the thread is number 1 !!! */
   int instruction_id;
 
-  bool operator==(const ZEvent& oth) const {
-    return (thread_id() == oth.thread_id() &&
-            aux_id() == oth.aux_id() &&
-            event_id() == oth.event_id());
-  }
-
-  bool operator<(const ZEvent& oth) const { // Aux first
-    int maux = - aux_id();
-    int oth_maux = - oth.aux_id();
-    int ev = event_id();
-    int oth_ev = oth.event_id();
-    return std::tie(_thread_id, maux, ev)
-      < std::tie(oth._thread_id, oth_maux, oth_ev);
-  }
+  bool operator==(const ZEvent& c) const { return (id() == c.id()); }
+  bool operator!=(const ZEvent &c) const { return (id() != c.id()); }
+  bool operator<(const ZEvent &c) const { return (id() < c.id()); }
+  bool operator<=(const ZEvent &c) const { return (id() <= c.id()); }
+  bool operator>(const ZEvent &c) const { return (id() > c.id()); }
+  bool operator>=(const ZEvent &c) const { return (id() >= c.id()); }
 
   std::string to_string(bool write_cpid = true) const;
   void dump() const;
@@ -146,6 +136,7 @@ class ZEventPtrComp {
     return (e1->operator<(*e2));
   }
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev);
 
 
 void dumpTrace(const std::vector<ZEvent>& trace);
