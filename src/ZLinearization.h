@@ -39,7 +39,8 @@ class ZLinearization {
 
 
 
-  unsigned numEventsInThread(unsigned thr, int aux = -1) const;
+  unsigned numEventsInThread(unsigned thr) const;
+
 /*
   class WrEntry {
    public:
@@ -152,14 +153,17 @@ class ZLinearization {
     std::map<SymAddrSize,int> occured;
     //each thread last wrie at an ml corresponds to which id
     // size of last_w should be num_threads (have to set)
-    std::vector<map<SymAddrSize,ZEventID> > last_w;
+    std::vector<std::map<SymAddrSize,ZEventID> > last_w;
     // std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
     // unsigned tr_pos;
 
     State(const ZLinearization& par0);
 
     // Returns the next event in the given thread, or nullptr if there is none.
-    const ZEvent * currEvent(unsigned thr, int aux = -1) const;
+    const ZEvent * currEvent(unsigned thr) const;
+
+    bool canForce(unsigned thr) const;
+  void force(unsigned thr, std::vector<ZEvent>& res) ;
 
     //bool isClosedVar(SymAddrSize ml) const;
     //bool canAdvance(unsigned thr) const;
@@ -309,6 +313,7 @@ class ZLinearization {
   ZLinearization(ZLinearization&& oth) = delete;
   ZLinearization& operator=(ZLinearization&& oth) = delete;
 
+  bool linearize(State& curr, std::set<std::vector<int> >& marked, std::vector<ZEvent>& res) const ;
   std::vector<ZEvent> linearize() const;
 /*
   template<class T>

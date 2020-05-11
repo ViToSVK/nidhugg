@@ -22,11 +22,17 @@
 #include <iostream>
 
 #include "ZLinearization.h"
+static const bool DEBUG = false;
+#include "ZDebug.h"
+
+
+bool operator<(const SymAddrSize &a,const SymAddrSize &b){ 
+  return std::make_pair(a.addr,a.size)<std::make_pair(b.addr,b.size);
+}
 
 /*
 
-static const bool DEBUG = false;
-#include "ZDebug.h"
+
 
 
 #define KEY_TSO KeyTSO
@@ -212,12 +218,12 @@ unsigned ZLinearization::numEventsInThread(unsigned thr) const {
 const ZEvent * ZLinearization::State::currEvent(unsigned thr) const {
   start_err("currEvent...");
   assert(thr < par.gr.size() && "Non-existent main thread");
-  unsigned pos = key[thr];
+  unsigned pos = key[thr]+1;
   if (pos >= par.numEventsInThread(thr)) {
     end_err("0");
     return nullptr;
   }
-  auto cpid= par.gr.line_id_to_cpid(thr)
+  auto cpid= par.gr.line_id_to_cpid(thr);
   auto res = par.gr.event(cpid, pos);
   end_err("1");
   return res;
@@ -262,8 +268,7 @@ bool ZLinearization::State::canAdvance(unsigned thr) const {
 }
 
 */
-ZLinearization::State::State(const ZLinearization& par0){
-  par=par0;
+ZLinearization::State::State(const ZLinearization& par0): par(par0){
   last_w.resize(par.gr.size());
   key.resize(par.gr.size(),-1);
    
@@ -272,7 +277,7 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
   start_err("advanceAux...");
  // assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
   const ZEvent *ev = currEvent(thr);
-  if (ev.kind==Kind::WRITE) {
+  if (ev->kind==ZEvent::Kind::WRITE) {
     SymAddrSize ml=ev->_ml;
       if(occured[ml]==0){
         occured[ml]=key.size();
@@ -382,28 +387,12 @@ bool ZLinearization::State::allPushedUp() const {
 }
 
 */
-void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
-  start_err("pushUp...");
-  bool done = false;
-  while (!done) {
-    done = true;
-    for (unsigned thr = 0; thr < par.gr.size(); thr++) {
-      // if() {
-        while (currEvent(thr).kind==Kind::READ&& canforce(*this,thr)) {
-          advance(thr, res);
-          done = false;
-        }
-      
-    }
-  }
-  end_err();
-}
 
 
 bool ZLinearization::State::finished() const {
   start_err("finished...");
   for (unsigned thr = 0; thr < par.gr.size(); thr++) {
-    unsigned pos = (key.positions)[thr];
+    unsigned pos = key[thr];
     unsigned tgt = par.numEventsInThread(thr)-1;
     assert(pos <= tgt);
     if (pos != tgt) {
@@ -660,10 +649,10 @@ bool ZLinearization::MainReqsKeyPSO::operator< (const MainReqsKeyPSO& other) con
 }
 */
 
-bool ZLinearization::canForce(const State& state, unsigned thr) const {
+bool ZLinearization::State::canForce(unsigned thr) const {
   start_err("canForce...");
   // assert(state.allPushedUp() && "Can force only on an all-pushed-up state");
-  const ZEvent *ev = state.currEvent(thr);
+  const ZEvent *ev = currEvent(thr);
   if (!ev) {
     end_err("0: null");
     return false;
@@ -671,27 +660,27 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
   // General case
   // std::unordered_set<SymAddrSize> occupied;
   //check for partial order satisfiability
-  for (unsigned thr2 = 0; thr2 < gr.number_of_threads(); thr2++) {
+  for (unsigned thr2 = 0; thr2 < par.gr.size(); thr2++) {
     // for (int aux2 : gr.auxes(thr2)) {
       // if (aux2 == -1 && thr == thr2) {
       //   continue;
       // }
-      int req = po.pred(ev, thr2).second;
+      int req = par.po.pred(ev, par.gr.line_id_to_cpid(thr2)).second;
       // main thread
       // if (aux2 == -1) {
-      if (req > (int)state.key[thr2]) {
+      if (req > (int)key[thr2]) {
         end_err("0: other (main req >= pos)");
         return false;
       }
     }
     //  check for good write satisfiability
-    if(ev->kind==Kind::READ){
+    if(ev->kind==ZEvent::Kind::READ){
       SymAddrSize ml=ev->_ml;
-      if(state.occured[ml]==0)
+      if(occured.at(ml)==0)
         return false;
-      unsigned thr_no=state.key[state.occured[ml]];
-      ZEventID idd=last_w[thr_no][ml];
-      if(an.mapping[ev->_id].goodwrites.find(idd)==an.mapping[ev->_id].goodwrites.end())
+      unsigned thr_no=key[occured.at(ml)];
+      ZEventID idd=last_w[thr_no].at(ml);
+      if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
         return false;
     }
     // ZAnn check_set=an.mapping[ev->_id].goodwrites;
@@ -728,10 +717,10 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
 }
 
 
-void ZLinearization::force(State& state, unsigned thr, std::vector<ZEvent>& res) const {
+void ZLinearization::State::force(unsigned thr, std::vector<ZEvent>& res){
   start_err("force...");
-  assert(canForce(state, thr) && "According to .canForce, cannot force");
-  const ZEvent *ev = state.currEvent(thr);
+  assert(canForce(thr) && "According to .canForce, cannot force");
+  const ZEvent *ev = currEvent(thr);
   // for (unsigned thr2 = 0; thr2 < gr.number_of_threads(); thr2++) {
   //   for (int aux2 : gr.auxes(thr2)) {
   //     if (aux2 == -1) {
@@ -743,7 +732,7 @@ void ZLinearization::force(State& state, unsigned thr, std::vector<ZEvent>& res)
   //     }
   //   }
   // }
-  state.advance(thr,res);
+  advance(thr,res);
   end_err();
 }
 /*
@@ -772,8 +761,25 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
 }
 */
 
+void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
+  start_err("pushUp...");
+  bool done = false;
+  while (!done) {
+    done = true;
+    for (unsigned thr = 0; thr < par.gr.size(); thr++) {
+      // if() {
+        while (currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
+          advance(thr, res);
+          done = false;
+        }
+      
+    }
+  }
+  end_err();
+}
+
 //template<class T>
-bool ZLinearization::linearize(State& curr, std::set<Key>& marked, std::vector<ZEvent>& res) const {
+bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked, std::vector<ZEvent>& res) const {
   start_err("linearize/3...");
 
   // Push-up as much as possible (the boring stuff), then update marked
@@ -800,12 +806,12 @@ bool ZLinearization::linearize(State& curr, std::set<Key>& marked, std::vector<Z
   //unsigned start_thr = trHintPSO(curr);
   for (unsigned d = 0; d < n; d++) {
     unsigned thr = d;
-    if (!canforce(curr, thr)) {
+    if (!curr.canForce(thr)) {
       continue;
     }
     num_children++;
     State next=curr;
-    force(next, thr, res);
+    next.force(thr, res);
     if (linearize(next, marked, res)) {
       end_err("1b");
       return true;
@@ -820,15 +826,15 @@ bool ZLinearization::linearize(State& curr, std::set<Key>& marked, std::vector<Z
 
 
 //template<class T>
-std::vector<ZEvent> ZLinearization::linearizePSO() const
+std::vector<ZEvent> ZLinearization::linearize() const
 {
   start_err("linearizePSO/0...");
   // po.dump();
   assert(gr.size() > 0);
   State start(*this);
-  std::set< vector<int> > marked;
+  std::set<std::vector<int> > marked;
   std::vector<ZEvent> res;
-  linearizePSO(start, marked, res);
+  linearize(start, marked, res);
   end_err();
   // dumpTrace(res);
   return res;

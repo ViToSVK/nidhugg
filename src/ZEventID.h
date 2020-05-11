@@ -38,7 +38,7 @@
 class ZEventID {
 
  public:
-  ZEventID() = delete;
+  ZEventID() = default;
   // Default constructor
   ZEventID(const CPid& cpid, int event_id);
   // Constructor for initial event
@@ -46,8 +46,9 @@ class ZEventID {
 
   ZEventID(const ZEventID& oth) = default;
   ZEventID(ZEventID&& oth) = default;
-  ZEventID& operator=(const ZEventID& oth) = delete;
-  ZEventID& operator=(ZEventID&& oth) = delete;
+  //*** changed
+  ZEventID& operator=(const ZEventID& oth) = default;
+  ZEventID& operator=(ZEventID&& oth) = default;
 
   const CPid& cpid() const { return _cpid; }
   int event_id() const { return _event_id; }
