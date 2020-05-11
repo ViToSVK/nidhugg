@@ -265,7 +265,7 @@ bool ZLinearization::State::canAdvance(unsigned thr) const {
 void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
   start_err("advanceAux...");
  // assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
-  const ZEvent *ev = currEvent(thr, aux);
+  const ZEvent *ev = currEvent(thr);
   if (ev.kind==Kind::WRITE) {
     // Update memory
     // auto it = curr_vals.find(ev->ml);
