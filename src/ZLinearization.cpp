@@ -269,7 +269,7 @@ bool ZLinearization::State::canAdvance(unsigned thr) const {
 
 */
 ZLinearization::State::State(const ZLinearization& par0): par(par0){
-  last_w.resize(par.gr.size());
+ // last_w.resize(par.gr.size());
   key.resize(par.gr.size(),-1);
    
 }
@@ -680,7 +680,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
         return false;
       unsigned thr_no=key[occured.at(ml)];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
-      int evid=get_tailw_index( ml, ii, key[thr_no]);
+      int evid=par.gr.get_tailw_index( ml, ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
       // ZEventID idd=last_w[thr_no].at(ml);
       if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
