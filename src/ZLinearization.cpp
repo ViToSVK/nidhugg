@@ -789,7 +789,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   // and check for victory
   //Heuristic 1
   curr.pushUp(res);
-  err_msg("key: " + curr.key.str());
+  // err_msg("key: " + curr.key.str());
   //Key key(curr);
   if (marked.count(curr.key)) {
     end_err("0a");
