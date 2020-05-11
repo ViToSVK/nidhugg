@@ -25,6 +25,9 @@
 #include <sstream>
 
 #include "ZGraph.h"
+#include "ZAnnotation.h"
+
+
 
 
 class ZLinearization {
@@ -145,12 +148,15 @@ class ZLinearization {
   class State {
    public:
     const ZLinearization& par;
-    Key key;
+    std::vector<int> key;  //initial size should be number of threads
+    std::map<SymAddrSize,int> occured;
+    //each thread last wrie at an ml corresponds to which id
+    // size of last_w should be num_threads (have to set)
+    std::vector<map<SymAddrSize,ZEventID> > last_w;
     // std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
     // unsigned tr_pos;
 
-    State(const ZLinearization& par0)
-      : par(par0){}
+    State(const ZLinearization& par0);
 
     // Returns the next event in the given thread, or nullptr if there is none.
     const ZEvent * currEvent(unsigned thr, int aux = -1) const;
