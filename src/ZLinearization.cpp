@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "ZLinearization.h"
-static const bool DEBUG = false;
+static const bool DEBUG = true;
 #include "ZDebug.h"
 
 
@@ -218,7 +218,7 @@ unsigned ZLinearization::numEventsInThread(unsigned thr) const {
 const ZEvent * ZLinearization::State::currEvent(unsigned thr) const {
   start_err("currEvent...");
   assert(thr < par.gr.size() && "Non-existent main thread");
-  unsigned pos = key[thr]+1;
+  int pos = key[thr]+1;
   if (pos >= par.numEventsInThread(thr)) {
     end_err("0");
     return nullptr;
@@ -269,7 +269,7 @@ bool ZLinearization::State::canAdvance(unsigned thr) const {
 
 */
 ZLinearization::State::State(const ZLinearization& par0): par(par0){
-  last_w.resize(par.gr.size());
+  //last_w.resize(par.gr.size());
   key.resize(par.gr.size(),-1);
    
 }
@@ -392,8 +392,9 @@ bool ZLinearization::State::allPushedUp() const {
 bool ZLinearization::State::finished() const {
   start_err("finished...");
   for (unsigned thr = 0; thr < par.gr.size(); thr++) {
-    unsigned pos = key[thr];
-    unsigned tgt = par.numEventsInThread(thr)-1;
+    int pos = key[thr];
+    int tgt = par.numEventsInThread(thr)-1;
+    //start_err(std::to_string(pos)+" "+std::to_string(tgt));
     assert(pos <= tgt);
     if (pos != tgt) {
       end_err("0");
@@ -665,6 +666,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       // if (aux2 == -1 && thr == thr2) {
       //   continue;
       // }
+      if(thr2==thr) continue;
       int req = par.po.pred(ev, par.gr.line_id_to_cpid(thr2)).second;
       // main thread
       // if (aux2 == -1) {
@@ -680,7 +682,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
         return false;
       unsigned thr_no=key[occured.at(ml)];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
-      int evid=get_tailw_index( ml, ii, key[thr_no]);
+      int evid=par.gr.get_tailw_index( ml, ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
       // ZEventID idd=last_w[thr_no].at(ml);
       if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
@@ -789,7 +791,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   // and check for victory
   //Heuristic 1
   curr.pushUp(res);
-  err_msg("key: " + curr.key.str());
+  //err_msg("key: " + curr.key.str());
   //Key key(curr);
   if (marked.count(curr.key)) {
     end_err("0a");

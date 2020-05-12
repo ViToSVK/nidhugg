@@ -396,11 +396,11 @@ bool ZExplorer::extend_and_recur
     clock_t init = std::clock();
     ZLinearization linearizer(mutated_annotation, mutated_po, parent_trace.trace);
     std::vector<ZEvent> linear;
-    //linear = linearizer.linearize();
+    linear = linearizer.linearize();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
-    return false;
-    //total_parents += linearizer.num_parents;
-    //total_children += linearizer.num_children;
+    //return false;
+    total_parents += linearizer.num_parents;
+    total_children += linearizer.num_children;
     if (linear.empty()) {
       ++linearization_failed;
       end_err("0a");
