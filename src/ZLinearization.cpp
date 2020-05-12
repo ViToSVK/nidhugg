@@ -269,7 +269,6 @@ bool ZLinearization::State::canAdvance(unsigned thr) const {
 
 */
 ZLinearization::State::State(const ZLinearization& par0): par(par0){
-  //last_w.resize(par.gr.size());
   key.resize(par.gr.size(),-1);
    
 }
@@ -685,7 +684,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       int evid=par.gr.get_tailw_index( ml, ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
       // ZEventID idd=last_w[thr_no].at(ml);
-      if(par.an.mapping.at(ev->_id).goodwrites.find(idd)==par.an.mapping.at(ev->_id).goodwrites.end())
+      if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
         return false;
     }
     // ZAnn check_set=an.mapping[ev->_id].goodwrites;
@@ -791,7 +790,6 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   // and check for victory
   //Heuristic 1
   curr.pushUp(res);
-  //err_msg("key: " + curr.key.str());
   //Key key(curr);
   if (marked.count(curr.key)) {
     end_err("0a");
