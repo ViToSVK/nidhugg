@@ -535,7 +535,8 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
       // if() {
-        while (currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
+      //ZEvent* e = ;
+        while (currEvent(thr)!=NULL&&currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
           advance(thr, res);
           done = false;
         }
