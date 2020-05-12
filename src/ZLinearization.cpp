@@ -278,7 +278,7 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
   const ZEvent *ev = currEvent(thr);
   if (ev->kind==ZEvent::Kind::WRITE) {
     SymAddrSize ml=ev->_ml;
-      if(occured[ml]==0){
+      if(occured.find(ml)==occured.end()){
         occured[ml]=key.size();
         key.push_back(thr);
         // last_w[thr][ml]=ev->_id;
@@ -677,7 +677,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     //  check for good write satisfiability
     if(ev->kind==ZEvent::Kind::READ){
       SymAddrSize ml=ev->_ml;
-      if(occured.at(ml)==0)
+      if(occured.find(ml)==occured.end())
         return false;
       unsigned thr_no=key[occured.at(ml)];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
