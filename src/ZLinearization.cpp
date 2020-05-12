@@ -303,7 +303,7 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
     // curr_vals.emplace(ev->ml, ev->write_other_ptr);
     // (key.variables)[ev.ml()] = thr;
   }
-  res.push_back(ZEvent(ev));
+  res.push_back(*ev);
   key[thr]++;
   // key.positions[thr]++;
   // Update tr_pos
@@ -535,7 +535,9 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
       // if() {
-        while (currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
+      // if(!currEvent(thr))
+      //   continue;
+        while (currEvent(thr) && currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
           advance(thr, res);
           done = false;
         }
@@ -600,11 +602,18 @@ std::vector<ZEvent> ZLinearization::linearize() const
   assert(gr.size() > 0);
   State start(*this);
   std::set<std::vector<int> > marked;
-  std::vector<ZEvent> res;
-  linearize(start, marked, res);
-  end_err();
+  std::vector<ZEvent> res,res2;
+  bool suc=linearize(start, marked, res);
+  end_err("finished");
   // dumpTrace(res);
+  if(suc){
+    end_err("succeeded");
   return res;
+  }
+else{
+  end_err("linearisation not found");
+  return res2;
+}
 }
 /*
 std::vector<ZEvent> ZLinearization::linearizePSO() const {

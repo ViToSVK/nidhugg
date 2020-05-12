@@ -397,10 +397,13 @@ bool ZExplorer::extend_and_recur
     ZLinearization linearizer(mutated_annotation, mutated_po, parent_trace.trace);
     std::vector<ZEvent> linear;
     linear = linearizer.linearize();
+    end_err("finished linearisation1");
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+    end_err("finished linearisation2");
     //return false;
-    total_parents += linearizer.num_parents;
-    total_children += linearizer.num_children;
+    // total_parents += linearizer.num_parents;
+    // total_children += linearizer.num_children;
+    end_err("finished linearisation3");
     if (linear.empty()) {
       ++linearization_failed;
       end_err("0a");
