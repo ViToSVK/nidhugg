@@ -30,6 +30,14 @@ bool operator<(const SymAddrSize &a,const SymAddrSize &b){
   return std::make_pair(a.addr,a.size)<std::make_pair(b.addr,b.size);
 }
 
+std::string pr(std::vector<int> key){
+  std::string ans="";
+  for(int i = 0; i<key.size(); i++){
+    ans+=std::to_string(key[i])+" ";
+  }
+  return ans;
+}
+
 /*
 
 
@@ -403,251 +411,6 @@ bool ZLinearization::State::finished() const {
   end_err("1");
   return true;
 }
-/*
-
-void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
-  for (unsigned thr = 0; thr < par.gr.number_of_threads(); thr++) {
-    for (int aux : par.gr.auxes(thr)) {
-      unsigned tgt = par.numEventsInThread(thr, aux);
-      for (unsigned i = prefix.at(thr, aux); i < tgt; i++) {
-        const ZEvent *ev = par.gr(thr, aux).at(i);
-        res.push_back(ev->copy(res.size(), true));
-      }
-    }
-  }
-}
-
-
-// *************************** //
-// LINEARIZE TSO               //
-// *************************** //
-
-
-bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
-  assert(size() == other.size() && "Can compare only two TSOKeys with same size");
-  return vals < other.vals;
-}
-
-
-unsigned ZLinearization::trHintTSO(const State& state) const {
-  start_err("trHintTSO...");
-  if (state.tr_pos == tr.size()) {
-    end_err("0a");
-    return 0;
-  }
-  const ZEvent& evRef = tr.at(state.tr_pos);
-  if (!is_writeM(&evRef)) {
-    end_err("0b");
-    return 0;
-  }
-  auto res = evRef.thread_id();
-  end_err("1");
-  return res;
-}
-
-
-template<class T>
-bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const {
-  start_err("linearizeTSO/3...");
-
-  // Push-up as much as possible (the boring stuff), then update marked
-  // and check for victory
-  curr.pushUp(res);
-  err_msg("prefix: " + curr.prefix.str());
-  T key(curr);
-  if (marked.count(key)) {
-    end_err("0a");
-    return false;
-  }
-  marked.insert(key);
-  if (curr.finished()) {
-    curr.finishOff(res);
-    end_err("1a");
-    return true;
-  }
-  num_parents++;
-
-  // Now we have choices to make (advance which aux?); try them out
-  unsigned n = gr.number_of_threads();
-  unsigned orig_size = res.size();
-  unsigned start_thr = trHintTSO(curr);
-  for (unsigned d = 0; d < n; d++) {
-    unsigned thr = (start_thr + d) % n;
-    if (!curr.canAdvanceAux(thr)) {
-      continue;
-    }
-    num_children++;
-    State next(curr);
-    next.advance(thr, 0, res);
-    if (linearizeTSO(next, marked, res)) {
-      end_err("1b");
-      return true;
-    }
-    while (res.size() > orig_size) {
-      res.pop_back();
-    }
-  }
-  end_err("0b");
-  return false;
-}
-
-
-template<class T>
-std::vector<ZEvent> ZLinearization::linearizeTSO() const
-{
-  start_err("linearizeTSO/0...");
-  // po.dump();
-  assert(gr.size() > 0);
-  State start(*this, gr.number_of_threads());
-  std::set<T> marked;
-  std::vector<ZEvent> res;
-  linearizeTSO<T>(start, marked, res);
-  end_err();
-  // dumpTrace(res);
-  return res;
-}
-
-std::vector<ZEvent> ZLinearization::linearizeTSO() const {
-  return linearizeTSO<KEY_TSO>();
-}
-
-
-// *************************** //
-// LINEARIZE PSO               //
-// *************************** //
-
-
-ZLinearization::RdyAuxesKeyPSO::RdyAuxesKeyPSO(const State& state)
-  : main_prefix(state.prefix.numThreads())
-{
-  for (unsigned thr = 0; thr < numThreads(); thr++) {
-    main_prefix.at(thr) = state.prefix.at(thr);
-    for (int aux : state.par.gr.auxes(thr)) {
-      const ZEvent *ev = state.currEvent(thr, aux);
-      if (ev && !state.isUseless(ev)) {
-        ready_auxes.emplace(thr, aux);
-      }
-    }
-  }
-}
-
-bool ZLinearization::RdyAuxesKeyPSO::operator< (const RdyAuxesKeyPSO& other) const {
-  assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
-  if (main_prefix != other.main_prefix) {
-    return main_prefix < other.main_prefix;
-  }
-  return ready_auxes < other.ready_auxes;
-}
-
-
-ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
-  : main_prefix(state.prefix.numThreads())
-{
-  for (unsigned thr = 0; thr < numThreads(); thr++) {
-    main_prefix.at(thr) = state.prefix.at(thr);
-  }
-  for (unsigned thr = 0; thr < numThreads(); thr++) {
-    std::map<unsigned, unsigned> reqs;
-    // Find the next fence and bwrite (between curr_pos and the fence)
-    const ZEvent* next_fence = nullptr;
-    bool has_bwrite = false;
-    for (unsigned pos = main_prefix.at(thr); pos < state.par.numEventsInThread(thr); pos++) {
-      const ZEvent* ev = state.par.gr.event(thr, -1, pos);
-      if (ev->fence) {
-        next_fence = ev;
-        break;
-      }
-      if (is_writeB(ev)) {
-        has_bwrite = true;
-      }
-    }
-    // If no next fence, leave empty. If has_bwrite, put \bot. Otherwise
-     * go through all future mwrite Wm's ancestors of the fence, get their
-     * observers, and observers of whatever write is sitting on Wm's variable.
-     * Merge. //
-    if (!next_fence) {
-      continue;
-    }
-    if (has_bwrite) {
-      reqs.emplace(thr, UINT_MAX);
-    }
-    else {
-      for (int aux : state.par.gr.auxes(thr)) {
-        if (aux == -1) {
-          continue;
-        }
-        std::pair<const ZEvent *, int> p = state.par.po.pred(next_fence, thr, aux);
-        const ZEvent *wm = p.first;
-        int last_pred = p.second;
-        int curr_pos = state.prefix.at(thr, aux);
-        if (last_pred < curr_pos) {
-          continue;
-        }
-        // Collect all the observers
-        std::vector<ZObs> observers;
-        { // the blocking read
-          auto it = state.curr_vals.find(wm->ml);
-          const WrSet& wr_set = (it != state.curr_vals.end() ?
-            state.par.getObservers(it->second) : state.par.initialGetObservers(wm->ml)
-          );
-          for (ZObs obs : wr_set.toSet()) {
-            observers.push_back(obs);
-          }
-        }
-        { // the future mwrite ancestors of Wm
-          for (int pos = last_pred - 1; pos >= curr_pos; pos--) {
-            const ZEvent *ev = state.par.gr.event(thr, aux, pos);
-            if (!is_writeM(ev)) {
-              continue;
-            }
-            const WrSet& wr_set = state.par.getObservers(ev);
-            for (ZObs obs : wr_set.toSet()) {
-              observers.push_back(obs);
-            }
-          }
-          // in other threads
-          for (unsigned thr2 = 0; thr2 < numThreads(); thr2++) {
-            if (thr2 == thr) {
-              continue;
-            }
-            int aux2 = state.par.gr.auxForMl(wm->ml, thr2);
-            int last_pred2 = state.par.po.pred(wm, thr2, aux2).second;
-            int curr_pos2 = state.prefix.at(thr2, aux2);
-            for (int pos2 = last_pred2; pos2 >= curr_pos2; pos2--) {
-              const ZEvent *ev = state.par.gr.event(thr2, aux2, pos2);
-              if (!is_writeM(ev)) {
-                continue;
-              }
-              const WrSet& wr_set = state.par.getObservers(ev);
-              for (ZObs obs : wr_set.toSet()) {
-                observers.push_back(obs);
-              }
-            }
-          }
-        }
-        // merge the observers into reqs
-        for (ZObs obs : observers) {
-          if (obs.ev < state.prefix.at(obs.thr)) {
-            continue;
-          }
-          auto it = reqs.find(obs.thr);
-          unsigned nval = (it == reqs.end() ? obs.ev : std::max(obs.ev, it->second));
-          reqs[obs.thr] = nval;
-        }
-      }
-    }
-    main_reqs.emplace(thr, reqs);
-  }
-}
-
-bool ZLinearization::MainReqsKeyPSO::operator< (const MainReqsKeyPSO& other) const {
-  assert(numThreads() == other.numThreads() && "Can compare only KeyPSOs with same number of threads");
-  if (main_prefix != other.main_prefix) {
-    return main_prefix < other.main_prefix;
-  }
-  return main_reqs < other.main_reqs;
-}
-*/
 
 bool ZLinearization::State::canForce(unsigned thr) const {
   start_err("canForce...");
@@ -677,7 +440,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     //  check for good write satisfiability
     if(ev->kind==ZEvent::Kind::READ){
       SymAddrSize ml=ev->_ml;
-      if(occured.at(ml)==0)
+      if(occured.find(ml)==occured.end())
         return false;
       unsigned thr_no=key[occured.at(ml)];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
@@ -789,6 +552,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
   //Heuristic 1
+  start_err("key"+pr(curr.key));
   curr.pushUp(res);
   //Key key(curr);
   if (marked.count(curr.key)) {
