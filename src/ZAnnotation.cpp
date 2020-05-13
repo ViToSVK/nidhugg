@@ -143,7 +143,7 @@ std::string ZAnnotation::to_string() const
   if (!lastlock.empty()) {
     res << "LastLock: {\n";
     for (const auto& last : lastlock) {
-      res << last.first.to_string() << " ::lockedby:: ";
+      res << last.first.addr.to_string() << " ::lockedby:: ";
       res << last.second.to_string();
       res << "\n";
     }
