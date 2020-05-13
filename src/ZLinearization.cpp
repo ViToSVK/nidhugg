@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "ZLinearization.h"
-static const bool DEBUG = true;
+static const bool DEBUG = false;
 #include "ZDebug.h"
 
 
@@ -157,7 +157,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       CPid ii=par.gr.line_id_to_cpid(thr_no);
       int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
-      if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
+      if(par.an.ann(ev->_id).goodwrites.find(last_w[thr_no].at(ev->ml()))==par.an.ann(ev->_id).goodwrites.end())
         return false;
       if(thr==2){
         ev->dump();
@@ -191,7 +191,7 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
  
-        while (currEvent(thr) && currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
+        while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE && canForce(thr)) {
           advance(thr, res);
           done = false;
         }

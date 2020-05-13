@@ -153,7 +153,7 @@ class ZLinearization {
     std::unordered_map<SymAddrSize,int> occured;
     //each thread last wrie at an ml corresponds to which id
     // size of last_w should be num_threads (have to set)
-    std::vector<std::map<SymAddrSize,ZEventID> > last_w;
+    std::vector<std::unordered_map<SymAddrSize,ZEventID> > last_w;
     // std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
     // unsigned tr_pos;
 
