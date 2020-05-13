@@ -1,0 +1,36 @@
+digraph {
+subgraph cluster_0{
+style="bold,rounded" label = "Th0 <0>"
+NODE0 [shape="rectangle", label="0::0 mutexinit Global(3)"]
+NODE1 [shape="rectangle", label="1::1 spawn <0.0>"]
+NODE2 [shape="rectangle", label="2::2 spawn <0.1>"]
+NODE3 [shape="rectangle", label="3::3 spawn <0.2>"]
+NODE4 [shape="rectangle", label="4::4 <s:9>"]
+}
+subgraph cluster_1{
+style="bold,rounded" label = "Th1 <0.0>"
+NODE100000 [shape="rectangle", label="5::0 <s:3>"]
+NODE100001 [shape="rectangle", label="6::1 lock Global(3) <O:-1>"]
+}
+subgraph cluster_2{
+style="bold,rounded" label = "Th2 <0.1>"
+NODE200000 [shape="rectangle", label="7::0 <s:3>"]
+NODE200001 [shape="rectangle", label="16::1 lock Global(3) <O:12>"]
+}
+subgraph cluster_3{
+style="bold,rounded" label = "Th3 <0.2>"
+NODE300000 [shape="rectangle", label="8::0 <s:3>"]
+NODE300001 [shape="rectangle", label="28::1 lock Global(3) <O:20>"]
+}
+
+NODE0 -> NODE1[style=bold]
+NODE1 -> NODE2[style=bold]
+NODE2 -> NODE3[style=bold]
+NODE3 -> NODE4[style=bold]
+NODE100000 -> NODE100001[style=bold]
+NODE200000 -> NODE200001[style=bold]
+NODE300000 -> NODE300001[style=bold]
+NODE1 -> NODE100000
+NODE2 -> NODE200000
+NODE3 -> NODE300000
+}

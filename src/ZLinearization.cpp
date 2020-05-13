@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "ZLinearization.h"
-static const bool DEBUG = false;
+static const bool DEBUG = true;
 #include "ZDebug.h"
 
 
@@ -39,11 +39,16 @@ std::string pr(std::vector<int> key){
 }
 
 unsigned ZLinearization::numEventsInThread(unsigned thr) const {
-  start_err("numEventsInThread...");
+   // start_err("numEventsInThread...");
   assert(thr < gr.size() && "Non-existent thread");
-  LineT line = gr(gr.line_id_to_cpid(thr));
+  auto cp = gr.line_id_to_cpid(thr);
+  LineT line = gr(cp);
   unsigned res = line.size();
-  end_err("1");
+  const ZEvent* lastEv = gr.event(cp , res-1);
+  bool ahead = (lastEv->kind==ZEvent::Kind::READ && !an.defines(lastEv)) ||
+               (lastEv->kind==ZEvent::Kind::M_LOCK && !an.is_last_lock(lastEv));
+  res=res-ahead;
+  // end_err("1");
   return res;
 }
 /*
@@ -69,39 +74,43 @@ const ZEvent * ZLinearization::State::currEvent(unsigned thr) const {
 
 ZLinearization::State::State(const ZLinearization& par0): par(par0){
   key.resize(par.gr.size(),-1);
+  last_w.resize(par.gr.size());
    
 }
 void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
-  start_err("advanceAux...");
+  // start_err("advanceAux...");
   const ZEvent *ev = currEvent(thr);
   if (ev->kind==ZEvent::Kind::WRITE) {
-    SymAddrSize ml=ev->_ml;
-      if(occured.find(ml)==occured.end()){
-        occured[ml]=key.size();
+    SymAddrSize ml=ev->ml();
+      if(occured.find(ev->ml())==occured.end()){
+        occured[ev->ml()]=key.size();
         key.push_back(thr);
       }
       else{
-        key[occured[ml]]=thr;
+        key[occured.at(ev->ml())]=thr;
       }
+      last_w[thr][ev->ml()]=ev->_id;
  
   }
 
-  if(ev->kind==ZEvent::Kind::READ && !par.an.defines(ev))
-  {
+  // if((ev->kind==ZEvent::Kind::READ && !par.an.defines(ev)) || ((is_lock(ev) && !par.an.is_last_lock(ev))))
+  // {
 
-  }
-  else{
+  // }
+  // else{
     res.push_back(*ev);
-  }
+  // }
   key[thr]++;
 
-  end_err();
+  // end_err();
 }
 
 
 
 bool ZLinearization::State::finished() const {
-  start_err("finished...");
+
+  start_err("key"+pr(key));
+  // start_err("finished...");
   for (unsigned thr = 0; thr < par.gr.size(); thr++) {
     int pos = key[thr];
     int tgt = par.numEventsInThread(thr)-1;
@@ -111,19 +120,21 @@ bool ZLinearization::State::finished() const {
       return false;
     }
   }
-  end_err("1");
+  // end_err("1");
+
+  start_err("key"+pr(key));
   return true;
 }
 
 bool ZLinearization::State::canForce(unsigned thr) const {
-  start_err("canForce...");
+  // start_err("canForce...");
   const ZEvent *ev = currEvent(thr);
   if (!ev) {
     end_err("0: null");
     return false;
   }
-  if(ev->kind==ZEvent::Kind::READ && !par.an.defines(ev))
-    return true;
+  // if(ev->kind==ZEvent::Kind::READ && !par.an.defines(ev))
+    // return true;
 
   //check for partial order satisfiability
   for (unsigned thr2 = 0; thr2 < par.gr.size(); thr2++) {
@@ -140,23 +151,31 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     //  check for good write satisfiability
     if(ev->kind==ZEvent::Kind::READ){
       SymAddrSize ml=ev->_ml;
-      if(occured.find(ml)==occured.end())
+      if(occured.find(ev->ml())==occured.end())
         return false;
-      unsigned thr_no=key[occured.at(ml)];
+      unsigned thr_no=key[occured.at(ev->ml())];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
-      int evid=par.gr.get_tailw_index( ml, ii, key[thr_no]);
+      int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
       ZEventID idd=par.gr.event(ii,evid)->_id;
       if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
         return false;
+      if(thr==2){
+        ev->dump();
+        par.gr.event(ii,evid)->dump();
+        last_w[thr_no].at(ev->ml()).dump();
+        end_err(std::to_string(key[thr_no]));
+       end_err(std::to_string(thr_no));
+         
+      }
     }
   
-  end_err("1");
+  // end_err("1");
   return true;
 }
 
 
 void ZLinearization::State::force(unsigned thr, std::vector<ZEvent>& res){
-  start_err("force...");
+  // start_err("force...");
   assert(canForce(thr) && "According to .canForce, cannot force");
   const ZEvent *ev = currEvent(thr);
  
@@ -179,14 +198,14 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
       
     }
   }
-  end_err();
+  // end_err();
 }
 
 bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked, std::vector<ZEvent>& res) const {
-  start_err("linearize/3...");
+  // start_err("linearize/3...");
 
   //Heuristic 1
-  start_err("key"+pr(curr.key));
+  // start_err("key"+pr(curr.key));
   curr.pushUp(res);
   //Key key(curr);
   if (marked.count(curr.key)) {
@@ -214,14 +233,14 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
     State next=curr;
     next.force(thr, res);
     if (linearize(next, marked, res)) {
-      end_err("1b");
+      // end_err("1b");
       return true;
     }
     while (res.size() > orig_size) {
       res.pop_back();
     }
   }
-  end_err("0b");
+  // end_err("0b");
   return false;
 }
 
@@ -235,6 +254,8 @@ std::vector<ZEvent> ZLinearization::linearize() const
   std::vector<ZEvent> res,res2;
   bool suc=linearize(start, marked, res);
   end_err("finished");
+
+  start_err("key"+pr(start.key));
   // dumpTrace(res);
   if(suc){
     end_err("succeeded");
