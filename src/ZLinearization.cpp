@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "ZLinearization.h"
-static const bool DEBUG = true;
+static const bool DEBUG = false;
 #include "ZDebug.h"
 
 
