@@ -22,7 +22,7 @@
 #include <iostream>
 
 #include "ZLinearization.h"
-static const bool DEBUG = true;
+static const bool DEBUG = false;
 #include "ZDebug.h"
 
 
@@ -89,7 +89,7 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
       else{
         key[occured.at(ev->ml())]=thr;
       }
-     // last_w[thr][ev->ml()]=ev->_id;
+ //     last_w[thr][ev->ml()]=ev->_id;
  
   }
 
@@ -151,24 +151,28 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     //  check for good write satisfiability
     if(ev->kind==ZEvent::Kind::READ){
       SymAddrSize ml=ev->_ml;
-      if(occured.find(ev->ml())==occured.end())
+      if(occured.find(ev->ml())==occured.end()){
+        ZEventID idd= par.gr.initial()->_id;
+        if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
         return false;
+      else return true;
+      }
       unsigned thr_no=key[occured.at(ev->ml())];
       CPid ii=par.gr.line_id_to_cpid(thr_no);
-      int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
-      ZEventID idd=par.gr.event(ii,evid)->_id;
+      //int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
+      const ZEvent* ev1= par.gr.get_tailw(ev->ml(), ii, key[thr_no]);
+      ZEventID idd=ev1->_id;
       if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
         return false;
-      if(thr==2){
-        ev->dump();
-        par.gr.event(ii,evid)->dump();
-        //last_w[thr_no].at(ev->ml()).dump();
-        end_err(std::to_string(key[thr_no]));
-       end_err(std::to_string(thr_no));
+      // if(thr==2){
+      //   ev->dump();
+      //   //par.gr.event(ii,evid)->dump();
+      //  // last_w[thr_no].at(ev->ml()).dump();
+      //   end_err(std::to_string(key[thr_no]));
+      //  end_err(std::to_string(thr_no));
          
-      }
+      // }
     }
- 
   // end_err("1");
   return true;
 }
@@ -191,7 +195,7 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
  
-        while (currEvent(thr) && currEvent(thr)->kind==ZEvent::Kind::READ&& canForce(thr)) {
+        while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE && canForce(thr)) {
           advance(thr, res);
           done = false;
         }
