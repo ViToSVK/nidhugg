@@ -150,7 +150,7 @@ class ZLinearization {
    public:
     const ZLinearization& par;
     std::vector<int> key;  //initial size should be number of threads
-    std::map<SymAddrSize,int> occured;
+    std::unordered_map<SymAddrSize,int> occured;
     //each thread last wrie at an ml corresponds to which id
     // size of last_w should be num_threads (have to set)
     // std::vector<std::map<SymAddrSize,ZEventID> > last_w;

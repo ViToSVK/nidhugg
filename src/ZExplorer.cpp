@@ -603,6 +603,12 @@ bool ZExplorer::linearization_respects_annotation
     }
 
     if (is_lock(ev)) {
+    if(locked.count(ev->ml())){
+    	dump_trace(trace);
+    	mutated_po.dump();
+    	annotation.dump();
+    	ev->dump();
+    }
       assert(!locked.count(ev->ml()));
       locked.insert(ev->ml());
       last_lock[ev->ml()] = i;
