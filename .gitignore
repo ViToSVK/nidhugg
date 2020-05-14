@@ -33,3 +33,7 @@ test-driver
 src/GPATH
 src/GRTAGS
 src/GTAGS
+src/*.tmp
+src/*.dot
+src/*.png
+.DS_Store
