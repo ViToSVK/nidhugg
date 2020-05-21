@@ -397,12 +397,14 @@ bool ZExplorer::extend_and_recur
     ++total_lin;
     total_parents += linearizer.num_parents;
     total_children += linearizer.num_children;
-    std::cout <<"children parents "<< linearizer.num_children<<" "<<linearizer.num_parents<<"\n";
+    // std::cout <<"children parents "<< linearizer.num_children<<" "<<linearizer.num_parents<<"\n";
     double cur_br = ((double)linearizer.num_children/linearizer.num_parents);
+    if(linearizer.num_parents==0)
+      cur_br=1;
     avg_branch += ((double)(cur_br- avg_branch)/total_lin);
-     std::cout <<cur_br<<" "<<max_branch<<"\n";
+     // std::cout <<cur_br<<" "<<max_branch<<"\n";
     if(cur_br>max_branch){
-      std::cout <<cur_br<<" gone in if "<<max_branch<<"\n";
+      // std::cout <<cur_br<<" gone in if "<<max_branch<<"\n";
       max_branch = cur_br;
     }
     end_err("finished linearisation3");

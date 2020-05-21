@@ -24,7 +24,7 @@
 #include "ZLinearization.h"
 static const bool DEBUG = false;
 #include "ZDebug.h"
-
+using namespace std;
 
 bool operator<(const SymAddrSize &a,const SymAddrSize &b){
   return std::make_pair(a.addr,a.size)<std::make_pair(b.addr,b.size);
@@ -224,6 +224,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   }
   num_parents++;
   bool fl=0;
+  vector< pair<int,int> > thr_or;
   // Now we have choices to make (which main?); try them out
   unsigned n = gr.size();
   unsigned orig_size = res.size();
@@ -241,9 +242,16 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
     if (!curr.canForce(thr)) {
       continue;
     }
-    num_children++;
+    thr_or.push_back(make_pair(ev->trace_id(),thr));
+    // num_children++;
     fl=1;
+    
+  }
+  sort(thr_or.begin(),thr_or.end());
+  for(int i=0;i<thr_or.size();i++){
     State next=curr;
+    unsigned thr=thr_or[i].second;
+    num_children++;
     next.force(thr, res);
     if (linearize(next, marked, res)) {
       // end_err("1b");
