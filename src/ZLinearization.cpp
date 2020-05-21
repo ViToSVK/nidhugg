@@ -230,6 +230,14 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   //unsigned start_thr = trHintPSO(curr);
   for (unsigned d = 0; d < n; d++) {
     unsigned thr = d;
+    const ZEvent *ev = curr.currEvent(thr);
+    if (!ev) {
+      end_err("0: null");
+      continue;
+    }
+    else if(ev->kind!=ZEvent::Kind::WRITE){
+      continue;
+    }
     if (!curr.canForce(thr)) {
       continue;
     }

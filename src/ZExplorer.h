@@ -158,6 +158,12 @@ class ZExplorer {
   // Linearization: num of parents and children, to estimate branching factor
   unsigned total_parents = 0;
   unsigned total_children = 0;
+  // total linearization
+  unsigned total_lin = 0;
+  //avg branching factor
+  double avg_branch = 0;
+  // max branching factor
+  double max_branch = 0;
 
 };
 
