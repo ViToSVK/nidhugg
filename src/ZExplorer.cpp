@@ -118,11 +118,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
 {
   start_err("exploreRec...");
   if (info) {
-    //dumpTrace(ann_trace.trace);
-    ann_trace.graph.dump();
-    ann_trace.annotation.dump();
-    ann_trace.negative.dump();
-    //llvm::errs() << "-------------------------\n\n";
+    llvm::errs() << "-------------------------exploreRec\n\n";
   }
   assert(global_variables_initialized_with_value_zero(ann_trace.trace));
 
@@ -178,8 +174,7 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
   start_err("mutateRead...");
   assert(is_read(read));
   if (info) {
-      llvm::errs() << "Read to mutate:\n";
-      read->dump();
+    llvm::errs() << "Read to mutate:" << *read << "\n";
   }
 
   std::set<ZAnn> mutation_candidates = ann_trace.mutation_candidates(read);
@@ -254,8 +249,7 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
   assert(is_lock(lock));
 
   if (info) {
-    llvm::errs() << "Lock to mutate:\n";
-    lock->dump();
+    llvm::errs() << "Lock to mutate: " << *lock << "\n";
   }
 
   if (!ann_trace.annotation.location_has_some_lock(lock)) {
@@ -321,8 +315,7 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
   auto mutated_po = ann_trace.graph.copy_po();
 
   if (info) {
-    llvm::errs() << "Currently unlocked by:\n";
-    last_unlock->dump();
+    llvm::errs() << "Currently unlocked by: " << *last_unlock << "\n";
   }
 
   auto init = std::clock();
@@ -358,13 +351,11 @@ bool ZExplorer::close_po
   time_closure += time;
 
   if (!closed) {
-    //if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
     ++closure_failed;
     end_err("0");
     return false;
   }
 
-  //if (info) llvm::errs() << "Closure succeeded\n\n";
   ++closure_succeeded;
   if (closure.added_edges == 0) {
     closure_no_edge++;
@@ -421,9 +412,7 @@ bool ZExplorer::extend_and_recur
     assert(total_lin==linearization_succeeded+linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,
                                              mutated_po, parent_trace));
-    // if (info) dumpTrace(linear);
     mutated_trace = extend_trace(std::move(linear));
-    // if (info) dumpTrace(mutated_trace.trace);
     assert(extension_respects_annotation(mutated_trace.trace, mutated_annotation,
                                          mutated_po, parent_trace));
   }
@@ -445,7 +434,6 @@ bool ZExplorer::extend_and_recur
     executed_traces_full++;
     if (info) {
       llvm::errs() << "FULL\n";
-      //mutated_annotation.dump();
     }
     end_err("0b");
     return false;
@@ -562,12 +550,10 @@ bool ZExplorer::extension_respects_annotation
           }
         if (!observes_good_write) {
           parent_trace.dump();
-          llvm::errs() << "Closed annotated partial order\n";
-          mutated_po.dump();
+          llvm::errs() << "Closed annotated partial order\n" << mutated_po << "\n";
           llvm::errs() << "Extension\n";
           dump_trace(trace);
-          llvm::errs() << "Full annotation that should be respected\n";
-          annotation.dump();
+          llvm::errs() << "Full annotation that should be respected\n" << annotation << "\n";
           llvm::errs() << "This read         :::  " << ev->to_string(true) << "\n";
           llvm::errs() << "Has annotation    :::  " << ann.to_string() << "\n";
           llvm::errs() << "Actually observed :::  " << observed_id.to_string() << "\n";
@@ -612,12 +598,6 @@ bool ZExplorer::linearization_respects_annotation
     }
 
     if (is_lock(ev)) {
-      //   if (locked.count(ev->ml())) {
-      //   dump_trace(trace);
-      //   mutated_po.dump();
-      //   ev->dump();
-      //   annotation.dump();
-      // }
       assert(!locked.count(ev->ml()));
       locked.insert(ev->ml());
       last_lock[ev->ml()] = i;
@@ -654,12 +634,10 @@ bool ZExplorer::linearization_respects_annotation
         }
       if (!observes_good_write) {
         parent_trace.dump();
-        llvm::errs() << "Closed annotated partial order\n";
-        mutated_po.dump();
+        llvm::errs() << "Closed annotated partial order\n" << mutated_po << "\n";
         llvm::errs() << "Linearization\n";
         dump_trace(trace);
-        llvm::errs() << "Full annotation that should be respected\n";
-        annotation.dump();
+        llvm::errs() << "Full annotation that should be respected\n" << annotation << "\n";
         llvm::errs() << "This read         :::  " << ev->to_string(true) << "\n";
         llvm::errs() << "Has annotation    :::  " << ann.to_string() << "\n";
         llvm::errs() << "Actually observed :::  " << observed_id.to_string() << "\n";

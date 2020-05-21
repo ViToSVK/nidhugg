@@ -75,7 +75,6 @@ std::pair<bool, bool> ZClosure::rule_two
     }
   }
 
-  //po.dump();
   return {false, change}; // done, change-variable
 }
 
@@ -171,7 +170,6 @@ std::pair<bool, bool> ZClosure::rule_three
     }
   }
 
-  // po.dump();
   return {false, change}; // done, change-variable
 }
 
@@ -255,8 +253,6 @@ bool ZClosure::close(const ZEvent *newread) {
       }
     }
   }
-  //po.dump();
-  //an.dump();
   assert(!change);
   return true;
 }

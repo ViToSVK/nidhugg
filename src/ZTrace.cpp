@@ -65,7 +65,7 @@ std::string ZTrace::to_string(unsigned depth = 2) const
 
   res << graph.to_string();
   res << annotation.to_string();
-  res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n\n";
+  res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n";
 
   return res.str();
 }
@@ -73,5 +73,5 @@ std::string ZTrace::to_string(unsigned depth = 2) const
 
 void ZTrace::dump() const
 {
-  llvm::errs() << to_string();
+  llvm::errs() << to_string() << "\n";
 }

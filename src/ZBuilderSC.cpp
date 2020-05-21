@@ -340,18 +340,6 @@ void ZBuilderSC::mayConflict(const SymAddrSize *ml)
   #ifndef NDEBUG
   bool consistent = (!sch_replay ||
                      replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
-  /*
-  if (!consistent) {
-    llvm::errs() << "TRACE_TO_REPLAY\n";
-    dumpTrace(replay_trace);
-    llvm::errs() << "\nACTUALLY_REPLAYED\n";
-    dumpTrace(prefix);
-    llvm::errs() << "Problematic event (didn't go any further):\n";
-    llvm::errs() << "TRACE_TO_REPLAY[" << prefix_idx << "]   ::: ";
-    replay_trace[replay_trace_idx].dump();
-    llvm::errs() << "ACTUALLY_REPLAYED[" << prefix_idx << "] ::: ";
-    prefix[prefix_idx].dump();
-  }*/
   assert(consistent);
   #endif
 }
