@@ -223,7 +223,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
     return true;
   }
   num_parents++;
-
+  bool fl=0;
   // Now we have choices to make (which main?); try them out
   unsigned n = gr.size();
   unsigned orig_size = res.size();
@@ -242,6 +242,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
       continue;
     }
     num_children++;
+    fl=1;
     State next=curr;
     next.force(thr, res);
     if (linearize(next, marked, res)) {
@@ -252,6 +253,8 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
       res.pop_back();
     }
   }
+  if(!fl)
+    num_parents--;
   // end_err("0b");
   return false;
 }

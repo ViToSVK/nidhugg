@@ -397,9 +397,12 @@ bool ZExplorer::extend_and_recur
     ++total_lin;
     total_parents += linearizer.num_parents;
     total_children += linearizer.num_children;
-    double cur_br = (double)(linearizer.num_children/linearizer.num_parents);
-    avg_branch += (double)((cur_br- avg_branch)/total_lin);
+    std::cout <<"children parents "<< linearizer.num_children<<" "<<linearizer.num_parents<<"\n";
+    double cur_br = ((double)linearizer.num_children/linearizer.num_parents);
+    avg_branch += ((double)(cur_br- avg_branch)/total_lin);
+     std::cout <<cur_br<<" "<<max_branch<<"\n";
     if(cur_br>max_branch){
+      std::cout <<cur_br<<" gone in if "<<max_branch<<"\n";
       max_branch = cur_br;
     }
     end_err("finished linearisation3");
@@ -408,6 +411,8 @@ bool ZExplorer::extend_and_recur
       end_err("0a");
       return false;
     }
+
+     
     ++linearization_succeeded;
     assert(total_lin==linearization_succeeded+linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,
