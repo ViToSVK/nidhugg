@@ -34,11 +34,10 @@ class ZAnnotation {
   // Captures the buffer-write part of the observation
   // Special case: (CPid(),-1) for observing initial event
   using MappingT = std::map<ZEventID, ZEventID>;
-  using LastLockT = std::unordered_map<SymAddrSize, ZEventID>;
 
  private:
-  MappingT mapping;
-  LastLockT lastlock;
+  MappingT read_mapping;
+  MappingT lock_mapping;
 
  public:
   ZAnnotation() = default;
@@ -47,22 +46,23 @@ class ZAnnotation {
   ZAnnotation& operator=(const ZAnnotation&) = delete;
   ZAnnotation& operator=(ZAnnotation&& a) = delete;
 
-  bool empty() const { return mapping.empty() && lastlock.empty(); }
-  size_t size() const { return mapping.size(); }
+  bool empty() const { return read_mapping.empty() && lock_mapping.empty(); }
+  size_t size() const { return read_mapping.size(); }
 
   using iterator = MappingT::iterator;
   using const_iterator = MappingT::const_iterator;
-  iterator begin() { return mapping.begin(); }
-  const_iterator begin() const { return mapping.begin(); }
-  iterator end() { return mapping.end(); }
-  const_iterator end() const { return mapping.end(); }
+  iterator begin() { return read_mapping.begin(); }
+  const_iterator begin() const { return read_mapping.begin(); }
+  iterator end() { return read_mapping.end(); }
+  const_iterator end() const { return read_mapping.end(); }
+  const_iterator lock_begin() const { return lock_mapping.begin(); }
+  const_iterator lock_end() const { return lock_mapping.end(); }
 
   std::string to_string() const;
   void dump() const;
 
-
   /* *************************** */
-  /* MAPPING                     */
+  /* READS                       */
   /* *************************** */
 
   void add(const ZEventID& ev_id, const ZEventID& obs_id);
@@ -74,18 +74,18 @@ class ZAnnotation {
   const ZEventID& obs(const ZEventID& ev_id) const;
   const ZEventID& obs(const ZEvent *ev) const;
 
-
   /* *************************** */
-  /* LAST LOCK                   */
+  /* LOCKS                       */
   /* *************************** */
 
-  void setLastLock(const ZEvent *ev);
+  void lock_add(const ZEventID& ev_id, const ZEventID& obs_id);
+  void lock_add(const ZEvent *ev, const ZEvent *obs);
 
-  const ZEventID& getLastLock(const ZEvent *ev) const;
+  bool lock_defines(const ZEventID& ev_id) const;
+  bool lock_defines(const ZEvent *ev) const;
 
-  bool isLastLock(const ZEvent *ev) const;
-
-  bool locationHasSomeLock(const ZEvent *ev) const;
+  const ZEventID& lock_obs(const ZEventID& ev_id) const;
+  const ZEventID& lock_obs(const ZEvent *ev) const;
 };
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotation& annot);
 

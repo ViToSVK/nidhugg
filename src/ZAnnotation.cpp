@@ -21,12 +21,16 @@
 #include "ZAnnotation.h"
 
 
+/* *************************** */
+/* READS                       */
+/* *************************** */
+
 void ZAnnotation::add(const ZEventID& ev_id, const ZEventID& obs_id)
 {
   assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
-  auto it = mapping.find(ev_id);
-  assert(it == mapping.end());
-  mapping.emplace_hint(it, ev_id, obs_id);
+  auto it = read_mapping.find(ev_id);
+  assert(it == read_mapping.end());
+  read_mapping.emplace_hint(it, ev_id, obs_id);
 }
 
 
@@ -40,7 +44,7 @@ void ZAnnotation::add(const ZEvent *ev, const ZEvent *obs)
 bool ZAnnotation::defines(const ZEventID& ev_id) const
 {
   assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
-  return (mapping.find(ev_id) != mapping.end());
+  return (read_mapping.find(ev_id) != read_mapping.end());
 }
 
 
@@ -54,8 +58,8 @@ bool ZAnnotation::defines(const ZEvent *ev) const
 const ZEventID& ZAnnotation::obs(const ZEventID& ev_id) const
 {
   assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
-  auto it = mapping.find(ev_id);
-  assert(it != mapping.end());
+  auto it = read_mapping.find(ev_id);
+  assert(it != read_mapping.end());
   return it->second;
 }
 
@@ -66,41 +70,53 @@ const ZEventID& ZAnnotation::obs(const ZEvent *ev) const
   return obs(ev->id());
 }
 
+/* *************************** */
+/* LOCKS                       */
+/* *************************** */
 
-void ZAnnotation::setLastLock(const ZEvent *ev)
+void ZAnnotation::lock_add(const ZEventID& ev_id, const ZEventID& obs_id)
 {
-  assert(isLock(ev));
-  auto it = lastlock.find(ev->ml);
-  if (it != lastlock.end())
-    it = lastlock.erase(it);
-  lastlock.emplace_hint(it, ev->ml, ev->id());
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  auto it = lock_mapping.find(ev_id);
+  assert(it == lock_mapping.end());
+  lock_mapping.emplace_hint(it, ev_id, obs_id);
 }
 
 
-const ZEventID& ZAnnotation::getLastLock(const ZEvent *ev) const
+void ZAnnotation::lock_add(const ZEvent *ev, const ZEvent *obs)
+{
+  assert(isLock(ev) && isUnlock(obs));
+  lock_add(ev->id(), obs->id());
+}
+
+
+bool ZAnnotation::lock_defines(const ZEventID& ev_id) const
+{
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  return (lock_mapping.find(ev_id) != lock_mapping.end());
+}
+
+
+bool ZAnnotation::lock_defines(const ZEvent *ev) const
 {
   assert(isLock(ev));
-  auto it = lastlock.find(ev->ml);
-  assert(it != lastlock.end());
+  return lock_defines(ev->id());
+}
+
+
+const ZEventID& ZAnnotation::lock_obs(const ZEventID& ev_id) const
+{
+  assert(ev_id.event_id() >= 0 && !ev_id.cpid().is_auxiliary());
+  auto it = lock_mapping.find(ev_id);
+  assert(it != lock_mapping.end());
   return it->second;
 }
 
 
-bool ZAnnotation::isLastLock(const ZEvent *ev) const
+const ZEventID& ZAnnotation::lock_obs(const ZEvent *ev) const
 {
   assert(isLock(ev));
-  auto it = lastlock.find(ev->ml);
-  if (it == lastlock.end())
-    return false;
-  else
-    return (it->second == ev->id());
-}
-
-
-bool ZAnnotation::locationHasSomeLock(const ZEvent *ev) const
-{
-  assert(isLock(ev));
-  return (lastlock.count(ev->ml));
+  return lock_obs(ev->id());
 }
 
 
@@ -108,18 +124,18 @@ std::string ZAnnotation::to_string() const
 {
   std::stringstream res;
 
-  res << "Annotation: {\n";
-  for (auto& an : *this) {
+  res << "Annotation-reads: {\n";
+  for (const auto& an : *this) {
     res << an.first.to_string() << "  observes::  ";
     res << an.second.to_string();
     res << "\n";
   }
   res << "}\n";
-  if (!lastlock.empty()) {
-    res << "LastLock: {\n";
-    for (const auto& last : lastlock) {
-      res << last.first.to_string() << "  is locked by::  ";
-      res << last.second.to_string();
+  if (!lock_mapping.empty()) {
+    res << "Annotation-locks: {\n";
+    for (const auto& an : lock_mapping) {
+      res << an.first.to_string() << "  observes::  ";
+      res << an.second.to_string();
       res << "\n";
     }
     res << "}\n";

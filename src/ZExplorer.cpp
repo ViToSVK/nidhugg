@@ -261,7 +261,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     lock->dump();
   }
 
-  if (!annTrace.annotation.locationHasSomeLock(lock)) {
+  if (!annTrace.graph.ml_has_some_lock(lock, annTrace.annotation)) {
     // This lock hasn't been touched before
     annTrace.deadlocked = false;
     if (annTrace.negative.forbidsInitialEvent(lock)) {
@@ -276,7 +276,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     // Trivially realizable
     ++mutations_considered;
     ZAnnotation mutatedAnnotation(annTrace.annotation);
-    mutatedAnnotation.setLastLock(lock);
+    mutatedAnnotation.lock_add(lock->id(), ZEventID(true)); // initial
     auto mutatedPO = annTrace.graph.copyPO();
 
     if (info) {
@@ -291,8 +291,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   }
 
   // The lock has been touched before
-  auto lastLockObs = annTrace.annotation.getLastLock(lock);
-  auto lastUnlock = annTrace.graph.getUnlockOfThisLock(lastLockObs);
+  const ZEvent * lastLock = annTrace.graph.get_last_lock_of_ml(lock, annTrace.annotation);
+  assert(lastLock && isLock(lastLock));
+  const ZEvent * lastUnlock = annTrace.graph.getUnlockOfThisLock(lastLock->id());
 
   if (!lastUnlock) {
     // This lock is currently locked
@@ -318,7 +319,7 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   // Realizable
   ++mutations_considered;
   ZAnnotation mutatedAnnotation(annTrace.annotation);
-  mutatedAnnotation.setLastLock(lock);
+  mutatedAnnotation.lock_add(lock->id(), lastUnlock->id());
   auto mutatedPO = annTrace.graph.copyPO();
 
   if (info) {
@@ -591,7 +592,7 @@ bool ZExplorer::linearizationRespectsAnn
   // Trace index of the last write happening in the given location
   std::unordered_map<SymAddrSize, int> lastWrite;
   // Trace index of the last lock + whether given ML is currently locked
-  std::unordered_map<SymAddrSize, int> lastLock;
+  std::unordered_map<SymAddrSize, int> lastUnlock;
   std::unordered_set<SymAddrSize> locked;
   // ThreadID -> ML -> Writes in store queue of thr for ml
   std::unordered_map
@@ -643,19 +644,19 @@ bool ZExplorer::linearizationRespectsAnn
     if (isLock(ev)) {
       assert(!locked.count(ev->ml));
       locked.insert(ev->ml);
-      lastLock[ev->ml] = i;
+      // Check whether the lock is consistent with the annotation
+      assert(annotation.lock_defines(ev));
+      const auto& an = annotation.lock_obs(ev);
+      if (!lastUnlock.count(ev->ml))
+        assert(an == ZEventID(true)); // initial
+      else
+        assert(an == trace.at(lastUnlock.at(ev->ml)).id());
     }
-
     if (isUnlock(ev)) {
       assert(locked.count(ev->ml));
       locked.erase(ev->ml);
+      lastUnlock[ev->ml] = i;
     }
-  }
-
-  // Check whether last locks are consistent with annotation
-  for (auto entry : lastLock) {
-    const ZEvent *ev = &(trace.at(entry.second));
-    assert(annotation.isLastLock(ev));
   }
 
   for (unsigned i=0; i<trace.size(); ++i) {

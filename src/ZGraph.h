@@ -204,6 +204,10 @@ class ZGraph {
   std::set<ZEventID> getObsCandidates(const ZEvent *read,
                                       const ZAnnotationNeg& negative) const;
 
+  bool ml_has_some_lock(const ZEvent * lock, const ZAnnotation& annotation) const;
+
+  const ZEvent * get_last_lock_of_ml(const ZEvent * lock, const ZAnnotation& annotation) const;
+
 
   std::string to_string() const { return po.to_string(); }
   void dump() const { po.dump(); }

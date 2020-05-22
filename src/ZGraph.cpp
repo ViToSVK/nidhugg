@@ -434,9 +434,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
   std::unordered_set<unsigned> has_unannotated_read_or_lock;
   has_unannotated_read_or_lock.reserve(8);
 
-  std::unordered_set<SymAddrSize> found_last_lock_for_location;
-  found_last_lock_for_location.reserve(8);
-
   std::unordered_set<unsigned> forbidden_processes_ipid;
   forbidden_processes_ipid.reserve(8);
 
@@ -732,22 +729,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
     if (isLock(ev)) {
       // Check if ev is not annotated yet
-      if (!annotationPtr || !(annotationPtr->locationHasSomeLock(ev))) {
-        // No annotated lock has held this location yet
-        // This will be the last node for the corresponding thread
+      if (!annotationPtr || !annotationPtr->lock_defines(ev))
         has_unannotated_read_or_lock.insert(ev->thread_id());
-      } else {
-        // Some lock has already happened on this location
-        if (annotationPtr->isLastLock(ev)) {
-          // This is the last annotated lock for this location
-          assert(!found_last_lock_for_location.count(ev->ml));
-          found_last_lock_for_location.insert(ev->ml);
-        } else if (found_last_lock_for_location.count(ev->ml)) {
-          // This is a lock after the last annotated lock for this location
-          // This will be the last node for the corresponding thread
-          has_unannotated_read_or_lock.insert(ev->thread_id());
-        }
-      }
     }
     if (isLock(ev) || isUnlock(ev)) {
       // For each ml, for each thread, remember first access
@@ -973,7 +956,7 @@ std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotatio
     assert(!(*this)(thr_id, -1).empty());
     auto lastEv = getEvent(thr_id, -1, (*this)(thr_id, -1).size() - 1);
     if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
-        (isLock(lastEv) && !annotation.isLastLock(lastEv)))
+        (isLock(lastEv) && !annotation.lock_defines(lastEv)))
       res.push_back(lastEv);
     thr_id++;
   }
@@ -1174,5 +1157,45 @@ std::set<ZEventID> ZGraph::getObsCandidates
     }
   }
 
+  return res;
+}
+
+
+bool ZGraph::ml_has_some_lock(const ZEvent * lock, const ZAnnotation& annotation) const
+{
+  assert(isLock(lock));
+  const auto& lockml = lock->ml;
+  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
+    const ZEventID& anlockid = it->first;
+    const ZEvent * anlock = getEvent(anlockid);
+    assert(anlock && isLock(anlock));
+    if (anlock->ml == lockml) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
+const ZEvent * ZGraph::get_last_lock_of_ml(const ZEvent * lock, const ZAnnotation& annotation) const
+{
+  assert(isLock(lock));
+  const ZEvent * res = nullptr;
+  const auto& lockml = lock->ml;
+  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
+    const ZEventID& anlockid = it->first;
+    const ZEvent * anlock = getEvent(anlockid);
+    assert(anlock && isLock(anlock));
+    if (anlock->ml == lockml) {
+      if (!res)
+        res = anlock;
+      else {
+        assert(po.areOrdered(res, anlock));
+        if (po.hasEdge(res, anlock))
+          res = anlock;
+      }
+    }
+  }
+  assert(res);
   return res;
 }
