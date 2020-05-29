@@ -29,8 +29,7 @@ ZGraph ZPartialOrder::graphDummy = ZGraph();
 ZPartialOrder::ZPartialOrder(const ZGraph& graph)
   : graph(graph),
     _succ(),
-    _pred(),
-    closureSafeUntil()
+    _pred()
 {
   assert(empty());
 }
@@ -45,33 +44,7 @@ ZPartialOrder::ZPartialOrder()
 ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
   : graph(graph),
     _succ(std::move(oth._succ)),
-    _pred(std::move(oth._pred)),
-    closureSafeUntil(std::move(oth.closureSafeUntil))
-{
-  // We extend from a closed partial order, hence everything is safe
-  for (unsigned i=0; i<closureSafeUntil.size(); ++i) {
-    assert(graph.hasThreadAux(i, -1));
-    closureSafeUntil[i] = graph(i, -1).size();
-  }
-}
-
-
-// Chrono orderings
-ZPartialOrder::ZPartialOrder(const ZPartialOrder& oth)
-  : graph(oth.graph),
-    _succ(oth._succ),
-    _pred(oth._pred),
-    closureSafeUntil(oth.closureSafeUntil)
-{}
-
-
-bool ZPartialOrder::isClosureSafe(const ZEvent *read) const
-{
-  assert(isRead(read) && read->aux_id() == -1);
-  assert(graph.hasEvent(read));
-  assert(closureSafeUntil.size() >= read->thread_id());
-  return (read->event_id() < closureSafeUntil[read->thread_id()]);
-}
+    _pred(std::move(oth._pred)) {}
 
 
 std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const
@@ -250,27 +223,6 @@ void ZPartialOrder::addEdgeHelp(const ZEvent *from, const ZEvent *to)
           _pred[li][lj][li_evx] < (int) lj_evx && // ! lj[lj_evx] HB li[li_evx]
           "Inconsistent succ/pred vector clocks");
 
-
-  // Maintenance of closureSafeUntil
-  for (unsigned k=0; k<closureSafeUntil.size(); ++k) {
-    unsigned lk = graph.lineID(k, -1);
-    if (lk == lj) {
-      // This main thread is where the new edge leads to
-      // Everything up until 'to' remains safe
-      assert(to->thread_id() == k && to->aux_id() == -1);
-      if (closureSafeUntil[k] > to->event_id())
-        closureSafeUntil[k] = to->event_id();
-    } else {
-      // The new edge does not lead to this main thread
-      // Everything which was already happening before
-      // 'to' remains safe
-      int already = _pred[lj][lk][lj_evx] + 1;
-      assert(already >= 0);
-      if (closureSafeUntil[k] > (unsigned) already)
-        closureSafeUntil[k] = (unsigned) already;
-    }
-  }
-
   _succ[li][lj][li_evx] = (int) lj_evx;
   _pred[lj][li][lj_evx] = (int) li_evx;
 
@@ -330,15 +282,6 @@ void ZPartialOrder::addLine(const ZEvent * ev)
     _succ[lnew].push_back(std::vector<int>());
     _pred[lnew].push_back(std::vector<int>());
   }
-
-  // New thread?
-  if (ev->aux_id() == -1) {
-    assert(closureSafeUntil.size() == ev->thread_id());
-    closureSafeUntil.push_back(0);
-  }
-  // Nothing is closure-safe
-  for (unsigned i=0; i<closureSafeUntil.size(); ++i)
-    closureSafeUntil[i] = 0;
 }
 
 
@@ -362,22 +305,6 @@ void ZPartialOrder::addEvent(const ZEvent * ev)
     _pred[lID][li].push_back(newpred);
     assert(graph.lines[lID].size() == _succ[lID][li].size());
     assert(graph.lines[lID].size() == _pred[lID][li].size());
-  }
-
-  // Maintenance of closureSafeUntil
-  for (unsigned k=0; k<closureSafeUntil.size(); ++k) {
-    unsigned lk = graph.lineID(k, -1);
-    if (lk != lID) {
-      // The new event is not in this main thread
-      // Everything which was already happening before
-      // 'ev' remains safe
-      assert(_pred[lID][lk].size() - 1 == evID);
-      assert(evID == 0 || _pred[lID][lk][evID] == _pred[lID][lk][evID - 1]);
-      int already = _pred[lID][lk][evID] + 1;
-      assert(already >= 0);
-      if (closureSafeUntil[k] > (unsigned) already)
-        closureSafeUntil[k] = (unsigned) already;
-    }
   }
 }
 

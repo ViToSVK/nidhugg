@@ -242,7 +242,7 @@ bool ZClosure::close(const ZEvent *newread) {
         return true;
       }
       auto read = gr.getEvent(read_obs.first);
-      if ((!newread || newread != read) && !po.isClosureSafe(read)) {
+      if (!newread || newread != read) {
         auto res = rules(read, read_obs.second);
         if (res.first) { return false; }
         if (res.second) {
