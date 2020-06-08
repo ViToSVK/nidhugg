@@ -100,7 +100,7 @@ class ZBuilderSC : public TSOTraceBuilder {
   /* *************************** */
   /* PARAMETER PASSING           */
   /* *************************** */
-  unsigned star_root_index = 1;
+  bool initial_trace_only = false;
 
  public:
 
@@ -110,7 +110,7 @@ class ZBuilderSC : public TSOTraceBuilder {
 
   // Use at the very beginning to get an initial trace
   ZBuilderSC(const Configuration &conf, llvm::Module *m,
-             unsigned s_r_i);
+             bool init_only);
 
   // Use when you want to do the following:
   // (step1) replay the trace tr

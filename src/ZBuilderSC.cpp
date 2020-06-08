@@ -29,10 +29,10 @@ static const bool DEBUG = false;
 
 // Use at the very beginning to get an initial trace
 ZBuilderSC::ZBuilderSC
-(const Configuration &conf, llvm::Module *m, unsigned s_r_i)
+(const Configuration &conf, llvm::Module *m, bool init_only)
   : TSOTraceBuilder(conf),
     sch_replay(false), sch_extend(true),
-    star_root_index(s_r_i)
+    initial_trace_only(init_only)
 {
   config = &conf;
   M = m;
@@ -59,7 +59,13 @@ bool ZBuilderSC::reset()
 {
   if (this->has_error()) {
     this->error_trace = this->get_trace();
+    if (initial_trace_only) dump_trace(prefix);
     return true;
+  }
+
+  if (initial_trace_only) {
+    dump_trace(prefix);
+    return false;
   }
 
   // Add lock event for every thread ending with a failed mutex lock attempt

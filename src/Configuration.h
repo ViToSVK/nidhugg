@@ -41,6 +41,7 @@ public:
     POWER,
     PSO,
     TSO,
+    INITSC,
     VC, // value centric SC
   };
   enum DPORAlgorithm{

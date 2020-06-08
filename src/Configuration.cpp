@@ -53,6 +53,7 @@ cl_memory_model(llvm::cl::NotHidden, llvm::cl::init(Configuration::MM_UNDEF),
                                  clEnumValN(Configuration::POWER,"power","The POWER model"),
                                  clEnumValN(Configuration::PSO,"pso","Partial Store Order"),
                                  clEnumValN(Configuration::TSO,"tso","Total Store Order"),
+                                 clEnumValN(Configuration::INITSC,"initial_sc","Sequential Consistency initial trace only"),
                                  clEnumValN(Configuration::VC,"vc","Value-centric DPOR with Sequential Consistency")
 #ifdef LLVM_CL_VALUES_USES_SENTINEL
                                 ,clEnumValEnd
