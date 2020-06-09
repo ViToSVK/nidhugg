@@ -20,7 +20,14 @@
 
 #include "ZClosure.h"
 #include <iostream>
-// Got ZHelper due to header -> Graph -> AnnotationNeg -> Annotation -> Helper
+
+
+ZClosure::ZClosure
+(const ZAnnotation& annotation, ZPartialOrder& partialOrder)
+  : an(annotation),
+    gr(partialOrder.graph),
+    po(partialOrder) {}
+
 
 // return writeBuffer, writeMemory for obs
 std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZEventID& id) {
@@ -31,6 +38,59 @@ std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZEventID& id) {
   auto write_part = buffer_part->write_other_ptr;
   assert(isWriteM(write_part));
   return {buffer_part,write_part};
+}
+
+
+/* *************************** */
+/* RULE 1                      */
+/* *************************** */
+
+// true iff impossible
+bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
+  if (obs.event_id() == -1) {
+    // Handle initial-event observation separately
+    // Nothing to do in rule1
+    return false;
+  }
+
+  const ZEvent *obsEv = gr.getEvent(obs);
+  assert(obsEv && sameMl(ev, obsEv));
+  assert((isRead(ev) && isWriteB(obsEv)) ||
+         (isLock(ev) && isUnlock(obsEv)));
+
+  if (isLock(ev)) {
+    // Handle lock annotation
+    if (po.hasEdge(ev, obsEv))
+      return true;
+    if (!po.hasEdge(obsEv, ev))
+      po.addEdge(obsEv, ev);
+    return false;
+  }
+
+  // Handle read annotation
+  assert(isRead(ev) && obsEv->write_other_ptr);
+  if (ev->thread_id() != obsEv->thread_id()) {
+    auto obsMem = obsEv->write_other_ptr;
+    assert(isWriteM(obsMem));
+    if (po.hasEdge(ev, obsMem))
+      return true;
+    if (!po.hasEdge(obsMem, ev))
+      po.addEdge(obsMem, ev);
+    // Edge to 'obsMem' from memory-write of largest (by eventid)
+    // local buffer write which happens before read 'ev'
+    auto lastBuf = gr.getLocalBufferW(ev);
+    if(lastBuf) {
+      assert(isWriteB(lastBuf));
+      auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
+      assert(isWriteM(mem_counterpart));
+      if (po.hasEdge(obsMem, mem_counterpart))
+        return true;
+      if(!po.hasEdge(mem_counterpart, obsMem)) {
+        po.addEdge(mem_counterpart, obsMem); // Memory write before curr obs
+      }
+    }
+  }
+  return false;
 }
 
 
@@ -202,7 +262,8 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZEventID& ob
 /* RULES                       */
 /* *************************** */
 
-std::pair<bool, bool> ZClosure::rules(const ZEvent *read, const ZEventID& obs){
+std::pair<bool, bool> ZClosure::rulesTwoThree
+(const ZEvent *read, const ZEventID& obs) {
   assert(read && isRead(read));
   bool change = false;
   // Rule1 is done only the first time
@@ -221,103 +282,53 @@ std::pair<bool, bool> ZClosure::rules(const ZEvent *read, const ZEventID& obs){
 /* *************************** */
 /* CLOSE                       */
 /* *************************** */
-bool ZClosure::close(const ZEvent *newread) {
-  // Rules for new read
-  if (newread) {
-    auto res = rules(newread, an.obs(newread));
-    if (res.first) { return false; }
+bool ZClosure::close() {
+  // RULE 1 FOR ALL READS
+  for (auto it = an.read_begin(); it != an.read_end(); ++it) {
+    auto read = gr.getEvent(it->first);
+    assert(isRead(read));
+    bool res = ruleOne(read, it->second);
+    if (res) { return false; }
+  }
+  // RULE 1 FOR ALL LOCKS
+  for (auto it = an.lock_begin(); it != an.lock_end(); ++it) {
+    auto lock = gr.getEvent(it->first);
+    assert(isLock(lock));
+    bool res = ruleOne(lock, it->second);
+    if (res) { return false; }
   }
 
+  // IN A LOOP, RULE 2+3 FOR ALL READS UNTIL NO CHANGE
   bool change = true;
-  int last_change = an.size();
+  int last_change = an.read_size();
   while (change) {
     iterations++;
     change = false;
     int cur = -1;
-    for (const auto& read_obs : an) {
+    for (auto it = an.read_begin(); it != an.read_end(); ++it) {
       cur++;
       if (cur == last_change) {
         // One entire iteration without any changes
         // hence the partial order is closed
         return true;
       }
-      auto read = gr.getEvent(read_obs.first);
-      if (!newread || newread != read) {
-        auto res = rules(read, read_obs.second);
-        if (res.first) { return false; }
-        if (res.second) {
-          change = true;
-          last_change = cur;
-        }
-      }
-    }
-    cur++;
-    assert(cur == (int) an.size());
-    if (cur == last_change) {
-      // One entire iteration without any changes
-      // hence the partial order is closed
-      return true;
-    }
-    if (newread) {
-      auto res = rules(newread, an.obs(newread));
+      auto read = gr.getEvent(it->first);
+      assert(isRead(read));
+      auto res = rulesTwoThree(read, it->second);
       if (res.first) { return false; }
       if (res.second) {
         change = true;
         last_change = cur;
       }
     }
-  }
-  //po.dump();
-  //an.dump();
-  assert(!change);
-  return true;
-}
-
-
-/* *************************** */
-/* PRE-CLOSE                   */
-/* *************************** */
-
-void ZClosure::preClose(const ZEvent *ev, const ZEvent *obsEv) {
-  assert(sameMl(ev, obsEv));
-  assert((isRead(ev) && isWriteB(obsEv)) ||
-         (isLock(ev) && isUnlock(obsEv)));
-
-  if (isLock(ev)) {
-    assert(!po.hasEdge(ev, obsEv));
-    if (!po.hasEdge(obsEv, ev)) po.addEdge(obsEv, ev);
-    return;
-  }
-
-  assert(isRead(ev) && obsEv->write_other_ptr);
-  if (ev->thread_id() != obsEv->thread_id()) {
-    auto obsMem = obsEv->write_other_ptr;
-    assert(isWriteM(obsMem));
-    assert(!po.hasEdge(ev, obsMem));
-    if (!po.hasEdge(obsMem, ev))
-      po.addEdge(obsMem, ev);
-    // Edge to 'obsMem' from memory-write of largest (by eventid)
-    // local buffer write which happens before read 'ev'
-    auto lastBuf = gr.getLocalBufferW(ev);
-    if(lastBuf) {
-      assert(isWriteB(lastBuf));
-      auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
-      assert(isWriteM(mem_counterpart));
-      assert(!po.hasEdge(obsMem, mem_counterpart));
-      if(!po.hasEdge(mem_counterpart, obsMem)) {
-        po.addEdge(mem_counterpart, obsMem); // Memory write before curr obs
-      }
+    cur++;
+    assert(cur == (int) an.read_size());
+    if (cur == last_change) {
+      // One entire iteration without any changes
+      // hence the partial order is closed
+      return true;
     }
   }
-  // po.dump();
-}
-
-void ZClosure::preClose(const ZEvent *ev, const ZEventID& obs) {
-  if (obs.event_id() == -1) {
-    // Handle initial-event observation separately
-    // Nothing to do in preClosure (rule1)
-  } else {
-    preClose(ev, gr.getEvent(obs));
-  }
-  // po.dump();
+  assert(!change);
+  return true;
 }

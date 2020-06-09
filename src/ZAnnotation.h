@@ -48,6 +48,8 @@ class ZAnnotation {
 
   bool empty() const { return read_mapping.empty() && lock_mapping.empty(); }
   size_t size() const { return read_mapping.size(); }
+  size_t read_size() const { return read_mapping.size(); }
+  size_t lock_size() const { return lock_mapping.size(); }
 
   using iterator = MappingT::iterator;
   using const_iterator = MappingT::const_iterator;
@@ -55,6 +57,8 @@ class ZAnnotation {
   const_iterator begin() const { return read_mapping.begin(); }
   iterator end() { return read_mapping.end(); }
   const_iterator end() const { return read_mapping.end(); }
+  const_iterator read_begin() const { return read_mapping.begin(); }
+  const_iterator read_end() const { return read_mapping.end(); }
   const_iterator lock_begin() const { return lock_mapping.begin(); }
   const_iterator lock_end() const { return lock_mapping.end(); }
 

@@ -31,7 +31,6 @@ class ZPartialOrder {
   const ZGraph& graph;  ////
   static ZGraph graphDummy;
 
-
   // SUCCESSOR PREDECESSOR
   // succ[i][j][a] = b means:
   // t_i[<=a] *HB* t_j[b<=]
@@ -75,7 +74,6 @@ class ZPartialOrder {
   void addLine(const ZEvent * ev);
   void addEvent(const ZEvent * ev);
   void shrink();
-
 
  public:
   // Initial

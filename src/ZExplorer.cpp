@@ -226,11 +226,6 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
       llvm::errs() << "Observation:\n" << observation.to_string() << "\n";
     }
 
-    auto init = std::clock();
-    ZClosure preClosure(mutatedAnnotation, mutatedPO);
-    preClosure.preClose(read, observation);
-    time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
     bool error = closePO
       (annTrace, read, std::move(mutatedAnnotation),
        std::move(mutatedPO));
@@ -327,11 +322,6 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     lastUnlock->dump();
   }
 
-  auto init = std::clock();
-  ZClosure preClosure(mutatedAnnotation, mutatedPO);
-  preClosure.preClose(lock, lastUnlock);
-  time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
-
   end_err("?b");
   return closePO
     (annTrace, lock, std::move(mutatedAnnotation),
@@ -350,19 +340,16 @@ bool ZExplorer::closePO
   start_err("closePO...");
   auto init = std::clock();
   ZClosure closure(mutatedAnnotation, mutatedPO);
-  bool closed = closure.close
-    (isLock(readLock) ? nullptr : readLock);
+  bool closed = closure.close();
   double time = (double)(clock() - init)/CLOCKS_PER_SEC;
   time_closure += time;
 
   if (!closed) {
-    //if (info) llvm::errs() << "Closure failed\n\n-----\n\n";
     ++closure_failed;
     end_err("0");
     return false;
   }
 
-  //if (info) llvm::errs() << "Closure succeeded\n\n";
   ++closure_succeeded;
   if (closure.added_edges == 0) {
     closure_no_edge++;
