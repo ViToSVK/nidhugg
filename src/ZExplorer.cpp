@@ -218,7 +218,9 @@ bool ZExplorer::mutateRead(const ZTrace& annTrace, const ZEvent *read)
     ++mutations_considered;
 
     ZAnnotation mutatedAnnotation(annTrace.annotation);
+    assert(mutatedAnnotation == annTrace.annotation);
     mutatedAnnotation.add(read->id(), observation);
+    assert(mutatedAnnotation != annTrace.annotation);
     assert(mutatedAnnotation.size() == annTrace.annotation.size() + 1);
     auto mutatedPO = annTrace.graph.copyPO();
 
@@ -271,7 +273,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
     // Trivially realizable
     ++mutations_considered;
     ZAnnotation mutatedAnnotation(annTrace.annotation);
+    assert(mutatedAnnotation == annTrace.annotation);
     mutatedAnnotation.lock_add(lock->id(), ZEventID(true)); // initial
+    assert(mutatedAnnotation != annTrace.annotation);
     auto mutatedPO = annTrace.graph.copyPO();
 
     if (info) {
@@ -314,7 +318,9 @@ bool ZExplorer::mutateLock(const ZTrace& annTrace, const ZEvent *lock)
   // Realizable
   ++mutations_considered;
   ZAnnotation mutatedAnnotation(annTrace.annotation);
+  assert(mutatedAnnotation == annTrace.annotation);
   mutatedAnnotation.lock_add(lock->id(), lastUnlock->id());
+  assert(mutatedAnnotation != annTrace.annotation);
   auto mutatedPO = annTrace.graph.copyPO();
 
   if (info) {

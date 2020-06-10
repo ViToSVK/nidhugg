@@ -120,6 +120,57 @@ const ZEventID& ZAnnotation::lock_obs(const ZEvent *ev) const
 }
 
 
+int ZAnnotation::compare(const ZAnnotation &c) const
+{
+  if (read_size() < c.read_size()) { assert(to_string() != c.to_string()); return -1; }
+  if (read_size() > c.read_size()) { assert(to_string() != c.to_string()); return 1; }
+  if (lock_size() < c.lock_size()) { assert(to_string() != c.to_string()); return -1; }
+  if (lock_size() > c.lock_size()) { assert(to_string() != c.to_string()); return 1; }
+  assert(size() == c.size() && read_size() == c.read_size() && lock_size() == c.lock_size());
+
+  // Reads
+  auto cit = c.read_begin();
+  for (auto it = read_begin(); it != read_end(); ++it) {
+    assert(cit != c.read_end());
+    // Same read
+    const ZEventID& id = it->first;
+    const ZEventID& cid = cit->first;
+    int comp = id.compare(cid);
+    if (comp != 0) { assert(to_string() != c.to_string()); return comp; }
+    // Same observation-buffer-write
+    const ZEventID& wid = it->second;
+    const ZEventID& cwid = cit->second;
+    comp = wid.compare(cwid);
+    if (comp != 0) { assert(to_string() != c.to_string()); return comp; }
+    //
+    ++cit;
+  }
+  assert(cit == c.read_end());
+
+  // Locks
+  cit = c.lock_begin();
+  for (auto it = lock_begin(); it != lock_end(); ++it) {
+    assert(cit != c.lock_end());
+    // Same lock
+    const ZEventID& id = it->first;
+    const ZEventID& cid = cit->first;
+    int comp = id.compare(cid);
+    if (comp != 0) { assert(to_string() != c.to_string()); return comp; }
+    // Same observation-unlock
+    const ZEventID& uid = it->second;
+    const ZEventID& cuid = cit->second;
+    comp = uid.compare(cuid);
+    if (comp != 0) { assert(to_string() != c.to_string()); return comp; }
+    //
+    ++cit;
+  }
+  assert(cit == c.lock_end());
+
+  assert(to_string() == c.to_string());
+  return 0;
+}
+
+
 std::string ZAnnotation::to_string() const
 {
   std::stringstream res;

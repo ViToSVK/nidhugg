@@ -65,6 +65,15 @@ class ZAnnotation {
   std::string to_string() const;
   void dump() const;
 
+  /* Comparison implements a total order over ZAnnotations. */
+  bool operator==(const ZAnnotation &c) const { return compare(c) == 0; };
+  bool operator!=(const ZAnnotation &c) const { return compare(c) != 0; };
+  bool operator<(const ZAnnotation &c) const { return compare(c) < 0; };
+  bool operator<=(const ZAnnotation &c) const { return compare(c) <= 0; };
+  bool operator>(const ZAnnotation &c) const { return compare(c) > 0; };
+  bool operator>=(const ZAnnotation &c) const { return compare(c) >= 0; };
+  int compare(const ZAnnotation &c) const;
+
   /* *************************** */
   /* READS                       */
   /* *************************** */

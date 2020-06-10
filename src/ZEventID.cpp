@@ -60,7 +60,8 @@ std::size_t ZEventID::compute_hash() const
 }
 
 
-int ZEventID::compare(const ZEventID &c) const{
+int ZEventID::compare(const ZEventID &c) const
+{
   std::size_t h = hash();
   std::size_t ch = c.hash();
   if(h < ch) return -1;
