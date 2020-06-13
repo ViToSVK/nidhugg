@@ -166,10 +166,26 @@ void ZEvent::dump() const
 }
 
 
-void dumpTrace(const std::vector<ZEvent>& trace)
+std::string trace_to_string(const std::vector<ZEvent>& trace)
 {
-  llvm::errs() << "TRACE::: " << trace.size() << " EVENTS\n";
+  std::stringstream res;
+
+  res << "TRACE::: " << trace.size() << " EVENTS\n";
   for (const auto& ev : trace)
-    ev.dump();
-  llvm::errs() << "\n";
+    res << ev.to_string(true) << "\n";
+
+  return res.str();
+}
+
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<ZEvent>& trace)
+{
+  out << trace_to_string(trace);
+  return out;
+}
+
+
+void dump_trace(const std::vector<ZEvent>& trace)
+{
+  llvm::errs() << trace << "\n";
 }

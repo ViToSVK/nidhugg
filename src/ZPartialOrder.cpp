@@ -40,13 +40,6 @@ ZPartialOrder::ZPartialOrder()
   : ZPartialOrder(ZPartialOrder::graphDummy) {}
 
 
-// When extending
-ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
-  : graph(graph),
-    _succ(std::move(oth._succ)),
-    _pred(std::move(oth._pred)) {}
-
-
 std::pair<const ZEvent *, int> ZPartialOrder::succ(const ZEvent *from, unsigned to_line) const
 {
   assert(from && "Null pointer event");
@@ -420,7 +413,14 @@ std::string ZPartialOrder::to_string() const
 }
 
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZPartialOrder& po)
+{
+  out << po.to_string();
+  return out;
+}
+
+
 void ZPartialOrder::dump() const
 {
-  llvm::errs() << to_string();
+  llvm::errs() << *this << "\n";
 }

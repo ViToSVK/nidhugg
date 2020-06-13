@@ -47,7 +47,7 @@ class ZAnnotation {
   ZAnnotation& operator=(ZAnnotation&& a) = delete;
 
   bool empty() const { return read_mapping.empty() && lock_mapping.empty(); }
-  size_t size() const { return read_mapping.size(); }
+  size_t size() const { return read_size() + lock_size(); }
   size_t read_size() const { return read_mapping.size(); }
   size_t lock_size() const { return lock_mapping.size(); }
 

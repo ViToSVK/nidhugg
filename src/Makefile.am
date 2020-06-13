@@ -42,9 +42,6 @@ libnidhugg_a_SOURCES = \
   ZEvent.cpp ZEvent.h \
   ZHelpers.h \
   ZAnnotation.cpp ZAnnotation.h \
-  ZAnnotationNeg.cpp ZAnnotationNeg.h \
-  ZPartialOrder.cpp ZPartialOrder.h \
-  ZGraph.cpp ZGraph.h \
   ZTrace.cpp ZTrace.h \
   ZInterpreterSC.cpp ZInterpreterSC.h \
   ZBuilderSC.cpp ZBuilderSC.h \
@@ -52,6 +49,8 @@ libnidhugg_a_SOURCES = \
   ZBuilderTSO.cpp ZBuilderTSO.h \
   ZInterpreterPSO.cpp ZInterpreterPSO.h \
   ZBuilderPSO.cpp ZBuilderPSO.h \
+  ZPartialOrder.cpp ZPartialOrder.h \
+  ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
   ZExplorer.cpp ZExplorer.h

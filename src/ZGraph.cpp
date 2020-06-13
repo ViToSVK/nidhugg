@@ -28,7 +28,7 @@ static const bool DEBUG = false;
 
 // Empty
 ZGraph::ZGraph()
-  : tso(true),
+  : model(MemoryModel::SC),
     init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
@@ -44,8 +44,8 @@ ZGraph::ZGraph()
 
 
 // Initial
-ZGraph::ZGraph(const std::vector<ZEvent>& trace, bool tso)
-  : tso(tso),
+ZGraph::ZGraph(const std::vector<ZEvent>& trace, MemoryModel model)
+  : model(model),
     init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
@@ -63,7 +63,7 @@ ZGraph::ZGraph(const std::vector<ZEvent>& trace, bool tso)
 
 // Moving
 ZGraph::ZGraph(ZGraph&& oth)
-  : tso(oth.tso),
+  : model(oth.model),
     init(std::move(oth.init)),
     lines(std::move(oth.lines)),
     thread_aux_to_line_id(std::move(oth.thread_aux_to_line_id)),
@@ -86,7 +86,7 @@ ZGraph::ZGraph
  ZPartialOrder&& po,
  const std::vector<ZEvent>& trace,
  const ZAnnotation& annotation)
-  : tso(oth.tso),
+  : model(oth.model),
     init(ZEvent(true)),
     lines(oth.lines),
     thread_aux_to_line_id(oth.thread_aux_to_line_id),
@@ -191,7 +191,8 @@ void ZGraph::addEvent(const ZEvent *ev)
 
   unsigned event_id = line.size();
   assert(event_id == ev->event_id());
-  assert(tso || ev->aux_id() == -1 || line.empty() || sameMl(line[0], ev));
+  assert(model == MemoryModel::SC || model == MemoryModel::TSO ||
+         ev->aux_id() == -1 || line.empty() || sameMl(line[0], ev));
   event_to_position.emplace(ev, std::pair<unsigned,unsigned>(it->second, event_id));
   line.push_back(ev);
   assert(hasEvent(ev));
@@ -299,7 +300,7 @@ int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
     // No write events in this thread
     return -1;
   }
-  if (axs.size() == 2 && tso) {
+  if (axs.size() == 2 && (model == MemoryModel::SC || model == MemoryModel::TSO)) {
     #ifndef NDEBUG
     auto it = axs.begin();
     while (*it == -1) {
@@ -311,7 +312,7 @@ int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
     return 0;
   }
   // PSO below
-  assert(!tso);
+  assert(model == MemoryModel::PSO);
   assert(pso_thr_mlauxes.count(thr));
   for (auto aux : axs) {
     if (aux != -1) {
@@ -329,7 +330,7 @@ int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
 
 int ZGraph::psoGetAux(const ZEvent* writeM)
 {
-  assert(!tso && isWriteM(writeM));
+  assert(model == MemoryModel::PSO && isWriteM(writeM));
   unsigned thr_idx = writeM->thread_id();
   assert(thr_idx < 100);
   int aux_idx = -1;
@@ -495,7 +496,8 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
     // Check if this process is already known
     auto ipidit = ipid_to_thraux.find(ev->iid.get_pid());
-    if (tso && ipidit != ipid_to_thraux.end()) {
+    if ((model == MemoryModel::SC || model == MemoryModel::TSO) &&
+        ipidit != ipid_to_thraux.end()) {
       thr_idx = ipidit->second.first;
       assert(ev->aux_id() == ipidit->second.second);
     } else {
@@ -507,7 +509,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     ev->_thread_id = thr_idx;
-    if (!tso && isWriteM(ev)) {
+    if (model == MemoryModel::PSO && isWriteM(ev)) {
       // Handle aux for pso
       int aux_idx = psoGetAux(ev);
       ev->_aux_id = aux_idx;

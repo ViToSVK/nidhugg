@@ -128,6 +128,7 @@ class ZEvent {
   std::string to_string(bool write_cpid = true) const;
   void dump() const;
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev);
 
 
 class ZEventPtrComp {
@@ -136,9 +137,9 @@ class ZEventPtrComp {
     return (e1->operator<(*e2));
   }
 };
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev);
 
-
-void dumpTrace(const std::vector<ZEvent>& trace);
+std::string trace_to_string(const std::vector<ZEvent>& trace);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<ZEvent>& trace);
+void dump_trace(const std::vector<ZEvent>& trace);
 
 #endif // _Z_EVENT_H_

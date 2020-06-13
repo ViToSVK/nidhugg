@@ -23,8 +23,33 @@
 
 #include <vector>
 
-#include "ZAnnotationNeg.h"
-#include "ZGraph.h"
+#include "ZAnnotation.h"
+
+
+class ZTraceExtension {
+ public:
+  std::vector<ZEvent> extension;
+  int ext_from_id;
+  bool has_assume_blocked_thread;
+  bool has_deadlocked_thread;
+
+  ZTraceExtension() = delete;
+  ZTraceExtension(std::vector<ZEvent>&& extension,
+                  int ext_from_id,
+                  bool has_assume_blocked_thread,
+                  bool has_deadlocked_thread);
+
+  ZTraceExtension(const ZTraceExtension&) = delete;
+  ZTraceExtension(ZTraceExtension&&) = default;
+  ZTraceExtension& operator=(const ZTraceExtension&) = delete;
+  ZTraceExtension& operator=(ZTraceExtension&&) = delete;
+
+  bool empty() const { return (extension.empty()); }
+
+  std::string to_string() const;
+  void dump() const;
+};
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZTraceExtension& ext);
 
 
 class ZTrace {
@@ -32,66 +57,35 @@ class ZTrace {
   const ZTrace *parent;
 
  public:
-
-  const std::vector<ZEvent> trace;
-
+  std::vector<ZEvent> exec;
+  std::vector<ZEvent> tau;
   const ZAnnotation annotation;
-  ZAnnotationNeg negative;
+  const std::set<ZEventID> commited;
+  int ext_from_id;
+  std::vector<int> ext_reads_locks;
 
-  ZGraph graph;
+  ZTrace() = delete;
+  ZTrace(const ZTrace *parent_trace,
+         std::vector<ZEvent>&& new_exec,
+         std::vector<ZEvent>&& new_tau,
+         ZAnnotation&& new_annotation,
+         std::set<ZEventID>&& new_commited);
 
-  // Whether trace has an assume-blocked thread
-  bool assumeblocked;
-  // Whether this annotated trace is not full but no mutation
-  // is possible (i.e. deadlocked). We'll count it as full
-  mutable bool deadlocked;
+  ZTrace(const ZTrace&) = delete;
+  ZTrace(ZTrace&&) = default;
+  ZTrace& operator=(const ZTrace&) = delete;
+  ZTrace& operator=(ZTrace&&) = delete;
+
+  void extend(ZTraceExtension&& ext);
 
   bool empty() const {
-    return (trace.empty() && annotation.empty() &&
-            negative.empty() && graph.empty());
+    return (exec.empty() && tau.empty() &&
+            annotation.empty() && commited.empty());
   }
 
   std::string to_string(unsigned depth) const;
   void dump() const;
-
-
-  /* *************************** */
-  /* HELPERS                     */
-  /* *************************** */
-
-  std::list<const ZEvent *> getEventsToMutate() const {
-    return graph.getEventsToMutate(annotation);
-  }
-
-  std::set<ZEventID> getObsCandidates(const ZEvent *read) const {
-    return graph.getObsCandidates(read, negative);
-  }
-
-  const ZEvent *getEvent(const ZEventID& id) const {
-    return graph.getEvent(id);
-  }
-
-
-  /* *************************** */
-  /* CONSTRUCTORS                */
-  /* *************************** */
-
-  ZTrace();
-
-  ZTrace(std::vector<ZEvent>&& initial_trace,
-         bool assumeblocked, bool tso);
-
-  ZTrace(const ZTrace& parentTrace,
-         std::vector<ZEvent>&& new_trace,
-         ZAnnotation&& new_annotation,
-         ZPartialOrder&& new_po,
-         bool assumeblocked);
-
-  ZTrace(ZTrace&& tr) = default;
-  ZTrace& operator=(ZTrace&& tr) = delete;
-  ZTrace(const ZTrace&) = delete;
-  ZTrace& operator=(const ZTrace&) = delete;
-
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZTrace& tr);
 
 #endif // __Z_TRACE_H__

@@ -34,39 +34,19 @@
 
 
 class ZExplorer {
-
-  TSOPSOTraceBuilder * originalTB = nullptr;
-
-  ZTrace * initial;
-
+ public:
+  const MemoryModel model;
+  TSOPSOTraceBuilder * original_tb = nullptr;
   bool info = false;
-  const bool tso;
-  // SC flag is passed only to explorer, so it knows which builder to invoke
-  // during extensions; ZGraph is not passed this flag, it handles SC as TSO
-  const bool sc_flag;
-
-  class TraceExtension {
-   public:
-    TraceExtension() = default;
-    TraceExtension(std::vector<ZEvent>&& extension,
-                 bool someToAnn, bool assumeBlocked);
-
-    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& extension_someToAnn);
-
-    bool empty() const { return (trace.empty()); }
-
-    std::vector<ZEvent> trace;
-    bool somethingToAnnotate;
-    bool hasAssumeBlockedThread;
-    bool hasError;
-  };
-
 
   /* *************************** */
   /* ALGORITHM                   */
   /* *************************** */
 
  public:
+
+  bool extend_and_explore(
+    ZTrace& ann_trace, ZTraceExtension&& extension);
 
   bool explore();
 
@@ -88,7 +68,7 @@ class ZExplorer {
     (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
      ZPartialOrder&& mutatedPO);
 
-  TraceExtension extendTrace(std::vector<ZEvent>&& tr);
+  ZTraceExtension extendTrace(std::vector<ZEvent>&& tr);
 
   bool respectsAnnotation(const std::vector<ZEvent>& trace,
                           const ZAnnotation& annotation,

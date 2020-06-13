@@ -21,40 +21,84 @@
 #include "ZTrace.h"
 
 
-ZTrace::ZTrace()
-  : parent(nullptr), trace(), annotation(), negative(),
-    graph(), assumeblocked(false), deadlocked(false)
-{ assert(empty()); }
+/* *************************** */
+/* TRACE EXTENSION             */
+/* *************************** */
 
+ZTraceExtension::ZTraceExtension
+(std::vector<ZEvent>&& extension, int ext_from_id,
+ bool has_assume_blocked_thread, bool has_deadlocked_thread)
+ : extension(std::move(extension)),
+   ext_from_id(ext_from_id),
+   has_assume_blocked_thread(has_assume_blocked_thread),
+   has_deadlocked_thread(has_deadlocked_thread)
+{
+  assert(extension.empty());
+}
+
+
+std::string ZTraceExtension::to_string() const
+{
+  std::stringstream res;
+
+  res << trace_to_string(extension) << "\n";
+  res << "Extension starts from id ::: " << ext_from_id << "\n";
+  res << "Assume-blocked thread ::: " << has_assume_blocked_thread << "\n"
+      << "   Deadlocked thread ::: " << has_deadlocked_thread << "\n";
+
+  return res.str();
+}
+
+
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZTraceExtension& ext)
+{
+  out << ext.to_string();
+  return out;
+}
+
+
+void ZTraceExtension::dump() const
+{
+  llvm::errs() << *this << "\n";
+}
+
+
+/* *************************** */
+/* TRACE                       */
+/* *************************** */
 
 ZTrace::ZTrace
-(std::vector<ZEvent>&& initial_trace,
- bool assumeblocked, bool tso)
-  : parent(nullptr),
-    trace(std::move(initial_trace)),
-    annotation(),
-    negative(),
-    graph(this->trace, tso),
-    assumeblocked(assumeblocked),
-    deadlocked(false)
-{}
-
-
-ZTrace::ZTrace
-(const ZTrace& parentTrace,
- std::vector<ZEvent>&& new_trace,
+(const ZTrace *parent_trace,
+ std::vector<ZEvent>&& new_exec,
+ std::vector<ZEvent>&& new_tau,
  ZAnnotation&& new_annotation,
- ZPartialOrder&& new_po,
- bool assumeblocked)
-  : parent(&parentTrace),
-    trace(std::move(new_trace)),
-    annotation(std::move(new_annotation)),
-    negative(parentTrace.negative),
-    graph(parentTrace.graph, std::move(new_po),
-          this->trace, this->annotation),
-    assumeblocked(assumeblocked),
-    deadlocked(false)
-{}
+ std::set<ZEventID>&& new_commited)
+ : parent(parent_trace),
+   exec(std::move(new_exec)),
+   tau(std::move(new_tau)),
+   annotation(std::move(new_annotation)),
+   commited(std::move(new_commited)),
+   ext_from_id(-1),
+   ext_reads_locks()
+{
+  assert(new_exec.empty() && new_tau.empty() &&
+         new_annotation.empty() && new_commited.empty());
+}
+
+
+void ZTrace::extend(ZTraceExtension&& ext)
+{
+  ext_from_id = ext.ext_from_id;
+  exec = std::move(ext.extension);
+  assert(ext.extension.empty());
+  assert(ext_from_id <= (int) exec.size());
+  assert(ext_reads_locks.empty());
+  for (int i = ext_from_id; i < (int) exec.size(); ++i) {
+    tau.push_back(ZEvent(exec[i]));
+    if (isRead(exec[i]) || isLock(exec[i]))
+      ext_reads_locks.push_back(i);
+  }
+}
 
 
 std::string ZTrace::to_string(unsigned depth = 2) const
@@ -69,15 +113,30 @@ std::string ZTrace::to_string(unsigned depth = 2) const
     res << parent->to_string(depth-1);
   }
 
-  res << graph.getPo().to_string();
+  res << "EXECTUTION\n" << trace_to_string(exec);
+  res << "TAU\n" << trace_to_string(tau);
   res << annotation.to_string();
-  res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n\n";
+  res << "COMMITED\n";
+  for (const auto& id : commited)
+    res << id.to_string() << "  ";
+  res << "Extension from: " << ext_from_id
+      << " ::: reads/locks in extension:";
+  for (int id : ext_reads_locks)
+    res << " " << id;
+  res << "\n\nvvvvvvvvvvvvvvvvvvvvvvvv\n\n";
 
   return res.str();
 }
 
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZTrace& tr)
+{
+  out << tr.to_string();
+  return out;
+}
+
+
 void ZTrace::dump() const
 {
-  llvm::errs() << to_string();
+  llvm::errs() << *this << "\n";
 }

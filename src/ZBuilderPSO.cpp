@@ -34,6 +34,7 @@ ZBuilderPSO::ZBuilderPSO
   config = &conf;
   M = m;
   prefix.reserve(64);
+  ext_from_id = 0;
 }
 
 
@@ -49,6 +50,8 @@ ZBuilderPSO::ZBuilderPSO
   config = &conf;
   M = m;
   prefix.reserve(replay_trace.size() + 64);
+  assert(tr.empty() && !replay_trace.empty());
+  ext_from_id = replay_trace.size();
 }
 
 
@@ -59,14 +62,27 @@ bool ZBuilderPSO::reset()
     return true;
   }
 
-  // Add lock event for every thread ending with a failed mutex lock attempt
-  add_failed_lock_attempts();
+  // Lock event for every thread ending with a failed mutex lock attempt
+  // Do not add in the maximum-trace exploration
+  // add_failed_lock_attempts();
 
-  // Construct the explorer with the original TB, holding the initial trace
-  ZExplorer explorer = ZExplorer(*this);
+  // Construct the explorer with the original ZBuilder pointer
+  ZExplorer explorer(*this);
+
+  // Construct initial trace
+  ZTrace initial_trace(
+    nullptr, std::vector<ZEvent>(), std::vector<ZEvent>(),
+    ZAnnotation(), std::set<ZEventID>());
+
+  // Construct initial extension
+  ZTraceExtension initial_extension(
+    std::move(prefix), ext_from_id,
+    someThreadAssumeBlocked, !endsWithLockFail.empty());
+  assert(prefix.empty());
 
   // Call the main method
-  bool error = explorer.explore();
+  bool error = explorer.extend_and_explore(
+    initial_trace, std::move(initial_extension));
 
   // Print the result statistics
   explorer.print_stats();
@@ -183,25 +199,8 @@ bool ZBuilderPSO::schedule_arbitrarily(int *proc, int *aux)
 {
   assert(!sch_replay && sch_extend);
 
-  // We prefer scheduling threads that have not yet
-  // seen a new unannotated event; this improves
-  // chances that new unannotated reads observe in
-  // this trace a write that we will subsequently
-  // include in our partial order
-  // Further we prefer auxiliary before real threads
+  // We prefer auxiliary before real threads
 
-  for(int p_aux : available_auxs){ // Loop through auxiliary threads
-    assert(p_aux >= 0);
-    if (!somethingToAnnotate.count(threads[p_aux].proc))
-      if (schedule_thread(proc, aux, (unsigned) p_aux))
-        return true;
-  }
-  for(int p_real : available_threads){ // Loop through real threads
-    assert(p_real >= 0);
-    if (!somethingToAnnotate.count(threads[p_real].proc))
-      if (schedule_thread(proc, aux, (unsigned) p_real))
-        return true;
-  }
   for(int p_aux : available_auxs){ // Loop through auxiliary threads
     assert(p_aux >= 0);
     if (schedule_thread(proc, aux, (unsigned) p_aux))
@@ -324,9 +323,9 @@ void ZBuilderPSO::mayConflict(const SymAddrSize *ml)
                      replay_trace[prefix_idx].kind == prefix[prefix_idx].kind);
   if (!consistent) {
     llvm::errs() << "TRACE_TO_REPLAY\n";
-    dumpTrace(replay_trace);
+    dump_trace(replay_trace);
     llvm::errs() << "\nACTUALLY_REPLAYED\n";
-    dumpTrace(prefix);
+    dump_trace(prefix);
     llvm::errs() << "Problematic event (didn't go any further):\n";
     llvm::errs() << "TRACE_TO_REPLAY[" << prefix_idx << "]   ::: ";
     replay_trace[prefix_idx].dump();
@@ -573,10 +572,6 @@ void ZBuilderPSO::load(const SymAddrSize &ml, int val)
     else if (!visibleStoreQueue[p][ml].empty())
       obs_idx = visibleStoreQueue[p][ml].back();
     curnode().observed_trace_id = obs_idx;
-
-    if (!sch_replay)
-      somethingToAnnotate.insert
-        (threads[curnode().iid.get_pid()].proc);
   }
 }
 
@@ -697,8 +692,6 @@ void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
   curnode().observed_trace_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
-  if (!sch_replay)
-    somethingToAnnotate.insert(threads[ipid].proc);
   endsWithLockFail.erase(ipid);
 
   assert(!mutex.locked);
@@ -723,13 +716,11 @@ void ZBuilderPSO::mutex_lock_fail(const SymAddrSize &ml) {
   assert(mutex.locked);
   #endif
 
-  if (!sch_replay)
-    somethingToAnnotate.insert(threads[ipid].proc);
   endsWithLockFail.emplace(ipid, ml);
 }
 
 
-std::pair<std::vector<ZEvent>, bool> ZBuilderPSO::extendGivenTrace() {
+ZTraceExtension ZBuilderPSO::extendGivenTrace() {
   assert(sch_replay && !replay_trace.empty());
 
   std::unique_ptr<llvm::ExecutionEngine> EE(DPORDriver::create_execution_engine(M, *this, *config));
@@ -740,10 +731,15 @@ std::pair<std::vector<ZEvent>, bool> ZBuilderPSO::extendGivenTrace() {
   // Run static destructors.
   EE->runStaticConstructorsDestructors(true);
 
-  // Add lock event for every thread ending with a failed mutex lock attempt
-  add_failed_lock_attempts();
+  // Lock event for every thread ending with a failed mutex lock attempt
+  // Do not add in the maximum-trace exploration
+  // add_failed_lock_attempts();
 
-  return {prefix, !somethingToAnnotate.empty()};
+  ZTraceExtension res(
+    std::move(prefix), ext_from_id,
+    someThreadAssumeBlocked, !endsWithLockFail.empty());
+  assert(prefix.empty());
+  return res;
 }
 
 

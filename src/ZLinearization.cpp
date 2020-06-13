@@ -509,7 +509,7 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const
   std::vector<ZEvent> res;
   linearizeTSO<T>(start, marked, res);
   end_err();
-  // dumpTrace(res);
+  // dump_trace(res);
   return res;
 }
 
@@ -804,7 +804,7 @@ std::vector<ZEvent> ZLinearization::linearizePSO() const
   std::vector<ZEvent> res;
   linearizePSO<T>(start, marked, res);
   end_err();
-  // dumpTrace(res);
+  // dump_trace(res);
   return res;
 }
 

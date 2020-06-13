@@ -140,7 +140,7 @@ bool ZExplorer::exploreRec(ZTrace& annTrace)
 {
   start_err("exploreRec...");
   if (info) {
-    //dumpTrace(annTrace.trace);
+    //dump_trace(annTrace.trace);
     annTrace.graph.dump();
     annTrace.annotation.dump();
     annTrace.negative.dump();
@@ -394,9 +394,9 @@ bool ZExplorer::extendAndRecur
     return false;
   }
   assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
-  // if (info) dumpTrace(linear);
+  // if (info) dump_trace(linear);
   mutatedTrace = extendTrace(std::move(linear));
-  // if (info) dumpTrace(mutatedTrace.trace);
+  // if (info) dump_trace(mutatedTrace.trace);
   assert(respectsAnnotation(mutatedTrace.trace, mutatedAnnotation, mutatedPO, parentTrace));
 
   executed_traces++;
@@ -552,7 +552,7 @@ bool ZExplorer::respectsAnnotation
           llvm::errs() << "Closed annotated partial order\n";
           mutatedPO.dump();
           llvm::errs() << "Extension\n";
-          dumpTrace(trace);
+          dump_trace(trace);
           llvm::errs() << "Full annotation that should be respected\n";
           annotation.dump();
           llvm::errs() << "This read         :::  ";
@@ -675,7 +675,7 @@ bool ZExplorer::linearizationRespectsAnn
         llvm::errs() << "Closed annotated partial order\n";
         mutatedPO.dump();
         llvm::errs() << "Linearization\n";
-        dumpTrace(trace);
+        dump_trace(trace);
         llvm::errs() << "Full annotation that should be respected\n";
         annotation.dump();
         llvm::errs() << "This read         :::  ";

@@ -26,15 +26,19 @@
 #include "ZPartialOrder.h"
 
 
+enum class MemoryModel {
+  SC, TSO, PSO
+};
+
+
 typedef std::vector<const ZEvent *> LineT;
 typedef std::vector<LineT> LinesT;
 
 
 class ZGraph {
   friend class ZPartialOrder;
-  // TSO/PSO
  public:
-  const bool tso;
+  const MemoryModel model;
 
 
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
@@ -140,7 +144,7 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::vector<ZEvent>& trace, bool tso);
+  ZGraph(const std::vector<ZEvent>& trace, MemoryModel model);
   // Moving
   ZGraph(ZGraph&& oth);
 
@@ -201,8 +205,7 @@ class ZGraph {
   std::list<const ZEvent *> getEventsToMutate(const ZAnnotation& annotation) const;
 
   // Returns observation candidates for a read node
-  std::set<ZEventID> getObsCandidates(const ZEvent *read,
-                                      const ZAnnotationNeg& negative) const;
+  std::set<ZEventID> getObsCandidates(const ZEvent *read) const;
 
   bool ml_has_some_lock(const ZEvent * lock, const ZAnnotation& annotation) const;
 

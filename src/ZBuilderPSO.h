@@ -35,7 +35,7 @@
 #include "DPORDriver.h"
 #include "PSOTraceBuilder.h"
 #include "Trace.h"
-#include "ZEvent.h"
+#include "ZTrace.h"
 
 
 class ZBuilderPSO : public PSOTraceBuilder {
@@ -76,8 +76,8 @@ class ZBuilderPSO : public PSOTraceBuilder {
   // I'm commenting it here so I'm aware of it
   // int prefix_idx = -1;
 
-  // Is there something in the extension to annotate?
-  std::unordered_set<unsigned> somethingToAnnotate;
+  // Extension starts from this prefix id
+  int ext_from_id;
   // Does a thread end with a failed mutex lock attempt?
   // This can happen in case of a deadlock
   std::unordered_map<unsigned, SymAddrSize> endsWithLockFail;
@@ -208,7 +208,7 @@ class ZBuilderPSO : public PSOTraceBuilder {
 
   // Called from ZExplorer on a TB created exclusively for this
   // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<ZEvent>, bool> extendGivenTrace();
+  ZTraceExtension extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;

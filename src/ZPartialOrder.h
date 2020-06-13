@@ -21,7 +21,7 @@
 #ifndef _Z_PARTIAL_ORDER_H_
 #define _Z_PARTIAL_ORDER_H_
 
-#include "ZAnnotationNeg.h"
+#include "ZAnnotation.h"
 
 
 class ZGraph;
@@ -80,8 +80,6 @@ class ZPartialOrder {
   ZPartialOrder(const ZGraph& graph);
   // Empty
   ZPartialOrder();
-  // When extending
-  ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph);
 
   ZPartialOrder(const ZPartialOrder& oth) = default;
   ZPartialOrder(ZPartialOrder&& oth) = default;
@@ -100,6 +98,7 @@ class ZPartialOrder {
   std::string to_string() const;
   void dump() const;
 };
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZPartialOrder& po);
 
 
 class POcomp {

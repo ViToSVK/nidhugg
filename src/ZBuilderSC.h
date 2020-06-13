@@ -34,7 +34,7 @@
 #include "DPORDriver.h"
 #include "TSOTraceBuilder.h"
 #include "Trace.h"
-#include "ZEvent.h"
+#include "ZTrace.h"
 
 
 class ZBuilderSC : public TSOTraceBuilder {
@@ -80,8 +80,8 @@ class ZBuilderSC : public TSOTraceBuilder {
   // (other-thread-ev7, b-write-ev8, m-write-ev9)
   int replay_trace_idx = -1;
 
-  // Is there something in the extension to annotate?
-  std::unordered_set<unsigned> somethingToAnnotate;
+  // Extension starts from this prefix id
+  int ext_from_id;
   // Does a thread end with a failed mutex lock attempt?
   // This can happen in case of a deadlock
   std::unordered_map<unsigned, SymAddrSize> endsWithLockFail;
@@ -207,7 +207,7 @@ class ZBuilderSC : public TSOTraceBuilder {
 
   // Called from ZExplorer on a TB created exclusively for this
   // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<ZEvent>, bool> extendGivenTrace();
+  ZTraceExtension extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;
