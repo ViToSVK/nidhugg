@@ -22,7 +22,7 @@
 #include "ZGraph.h"
 
 
-ZGraph ZPartialOrder::graphDummy = ZGraph();
+ZGraph ZPartialOrder::graphDummy = ZGraph(MemoryModel::SC);
 
 
 // Initial

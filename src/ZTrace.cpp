@@ -70,34 +70,19 @@ void ZTraceExtension::dump() const
 ZTrace::ZTrace
 (const ZTrace *parent_trace,
  std::vector<ZEvent>&& new_exec,
- std::vector<ZEvent>&& new_tau,
+ std::vector<std::unique_ptr<ZEvent>>&& new_tau,
  ZAnnotation&& new_annotation,
- std::set<ZEventID>&& new_commited)
+ std::set<ZEventID>&& new_committed)
  : parent(parent_trace),
    exec(std::move(new_exec)),
    tau(std::move(new_tau)),
    annotation(std::move(new_annotation)),
-   commited(std::move(new_commited)),
+   committed(std::move(new_committed)),
    ext_from_id(-1),
    ext_reads_locks()
 {
   assert(new_exec.empty() && new_tau.empty() &&
-         new_annotation.empty() && new_commited.empty());
-}
-
-
-void ZTrace::extend(ZTraceExtension&& ext)
-{
-  ext_from_id = ext.ext_from_id;
-  exec = std::move(ext.extension);
-  assert(ext.extension.empty());
-  assert(ext_from_id <= (int) exec.size());
-  assert(ext_reads_locks.empty());
-  for (int i = ext_from_id; i < (int) exec.size(); ++i) {
-    tau.push_back(ZEvent(exec[i]));
-    if (isRead(exec[i]) || isLock(exec[i]))
-      ext_reads_locks.push_back(i);
-  }
+         new_annotation.empty() && new_committed.empty());
 }
 
 
@@ -116,8 +101,8 @@ std::string ZTrace::to_string(unsigned depth = 2) const
   res << "EXECTUTION\n" << trace_to_string(exec);
   res << "TAU\n" << trace_to_string(tau);
   res << annotation.to_string();
-  res << "COMMITED\n";
-  for (const auto& id : commited)
+  res << "COMMITTED\n";
+  for (const auto& id : committed)
     res << id.to_string() << "  ";
   res << "Extension from: " << ext_from_id
       << " ::: reads/locks in extension:";

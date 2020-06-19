@@ -26,7 +26,7 @@
 
 class ZClosure {
  public:
-  ZClosure(const ZAnnotation& annotation, ZPartialOrder& partialOrder);
+  ZClosure(const ZAnnotation& annotation, ZGraph& graph);
   ZClosure(const ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure& oth) = delete;
   ZClosure(ZClosure&& oth) = delete;
@@ -48,7 +48,7 @@ class ZClosure {
   bool close();
 
   const ZAnnotation& an;
-  const ZGraph& gr;
+  ZGraph& gr;
   ZPartialOrder& po;
 
   unsigned added_edges = 0;

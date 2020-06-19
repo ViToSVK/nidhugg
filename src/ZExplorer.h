@@ -35,74 +35,31 @@
 
 class ZExplorer {
  public:
-  const MemoryModel model;
   TSOPSOTraceBuilder * original_tb = nullptr;
-  bool info = false;
-
-  /* *************************** */
-  /* ALGORITHM                   */
-  /* *************************** */
-
- public:
-
-  bool extend_and_explore(
-    ZTrace& ann_trace, ZTraceExtension&& extension);
-
-  bool explore();
-
-  void print_stats() const;
+  const MemoryModel model;
 
  private:
-
-  bool exploreRec(ZTrace& annTrace);
-
-  bool mutateRead(const ZTrace& annTrace, const ZEvent *read);
-
-  bool mutateLock(const ZTrace& annTrace, const ZEvent *lock);
-
-  bool closePO
-    (const ZTrace& annTrace, const ZEvent *readLock,
-     ZAnnotation&& mutatedAnnotation, ZPartialOrder&& mutatedPO);
-
-  bool extendAndRecur
-    (const ZTrace& parentTrace, ZAnnotation&& mutatedAnnotation,
-     ZPartialOrder&& mutatedPO);
-
-  ZTraceExtension extendTrace(std::vector<ZEvent>&& tr);
-
-  bool respectsAnnotation(const std::vector<ZEvent>& trace,
-                          const ZAnnotation& annotation,
-                          const ZPartialOrder& mutatedPO,
-                          const ZTrace& parentTrace) const;
-
-  bool linearizationRespectsAnn(const std::vector<ZEvent>& trace,
-                                const ZAnnotation& annotation,
-                                const ZPartialOrder& mutatedPO,
-                                const ZTrace& parentTrace) const;
-
+  std::map<int, std::map<ZAnnotation, ZTrace>> schedules;
+  std::map<int, std::set<ZAnnotation>> failed_schedules;
 
   /* *************************** */
   /* CONSTRUCTOR                 */
   /* *************************** */
 
  public:
-
-  ~ZExplorer();
-
   ZExplorer(ZBuilderSC& tb);
   ZExplorer(ZBuilderTSO& tb);
   ZExplorer(ZBuilderPSO& tb);
-
- private:
 
   /* *************************** */
   /* STATISTICS                  */
   /* *************************** */
 
+ private:
   // Number of fully executed traces
   unsigned executed_traces_full = 0;
   // Number of executed traces
-  unsigned executed_traces = 1;
+  unsigned executed_traces = 0;
   // Number of times we used the interpreter to get a trace
   unsigned interpreter_used = 1;
   // Number of executed traces with some thread assume-blocked
@@ -114,9 +71,9 @@ class ZExplorer {
   unsigned no_mut_choices = 0;
   // Number of mutations considered
   unsigned mutations_considered = 0;
-  // Closure of mutated PO (already chrono-ordered) failed
+  // Closure of mutated PO failed
   unsigned closure_failed = 0;
-  // Closure of mutated PO (already chrono-ordered) succeeded
+  // Closure of mutated PO succeeded
   unsigned closure_succeeded = 0;
   // Succeeded closure without any added edge
   unsigned closure_no_edge = 0;
@@ -137,7 +94,27 @@ class ZExplorer {
   // Linearization: num of parents and children, to estimate branching factor
   unsigned total_parents = 0;
   unsigned total_children = 0;
+  //
+ public:
+  void print_stats() const;
 
+  /* *************************** */
+  /* ALGORITHM                   */
+  /* *************************** */
+
+ public:
+  bool extend_and_explore(
+    ZTrace& ann_trace, ZTraceExtension&& ext);
+
+ private:
+  bool explore(const ZTrace& ann_trace);
+
+  void mutate(const ZTrace& ann_trace, const ZGraph& graph,
+              const ZEvent * const readlock, const ZEventID& mutation);
+
+  bool recur(const ZTrace& ann_trace);
+
+  bool get_extension(ZTrace& ann_trace);
 };
 
 #endif // __Z_EXPLORER_H__

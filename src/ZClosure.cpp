@@ -23,10 +23,10 @@
 
 
 ZClosure::ZClosure
-(const ZAnnotation& annotation, ZPartialOrder& partialOrder)
+(const ZAnnotation& annotation, ZGraph& graph)
   : an(annotation),
-    gr(partialOrder.graph),
-    po(partialOrder) {}
+    gr(graph),
+    po(graph.po) {}
 
 
 // return writeBuffer, writeMemory for obs
@@ -249,6 +249,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZEventID& ob
         if(!po.hasEdge(read,res)) {
           po.addEdge(read,res);
           change = true;
+          added_edges++;
         }
       }
     }

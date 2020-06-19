@@ -73,7 +73,7 @@ ZEvent::ZEvent(bool initial)
 
 // Returns a 'copy' of the event, with custom trace id
 // The event will be part of replay_trace
-ZEvent::ZEvent(const ZEvent& oth, int trace_id)
+ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool keepvalue)
   : kind(oth.kind),
     _id(oth._id),
     _thread_id(oth._thread_id),
@@ -85,7 +85,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id)
     childs_cpid(oth.childs_cpid),
     fence(oth.fence),
     ml(oth.ml),
-    value(-1), /*not set for replay_trace events*/
+    value(keepvalue ? oth.value : -1), /*not set for replay_trace events*/
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
@@ -178,6 +178,20 @@ std::string trace_to_string(const std::vector<ZEvent>& trace)
 }
 
 
+std::string trace_to_string(const std::vector<std::unique_ptr<ZEvent>>& trace)
+{
+  std::stringstream res;
+
+  res << "TRACE::: " << trace.size() << " EVENTS\n";
+  for (const auto& ev : trace) {
+    assert(ev.get() && "No nullptrs stored in trace");
+    res << ev->to_string(true) << "\n";
+  }
+
+  return res.str();
+}
+
+
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<ZEvent>& trace)
 {
   out << trace_to_string(trace);
@@ -185,7 +199,20 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<ZEvent>&
 }
 
 
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<std::unique_ptr<ZEvent>>& trace)
+{
+  out << trace_to_string(trace);
+  return out;
+}
+
+
 void dump_trace(const std::vector<ZEvent>& trace)
+{
+  llvm::errs() << trace << "\n";
+}
+
+
+void dump_trace(const std::vector<std::unique_ptr<ZEvent>>& trace)
 {
   llvm::errs() << trace << "\n";
 }

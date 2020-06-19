@@ -33,7 +33,7 @@ class ZTraceExtension {
   bool has_assume_blocked_thread;
   bool has_deadlocked_thread;
 
-  ZTraceExtension() = delete;
+  ZTraceExtension() = default;
   ZTraceExtension(std::vector<ZEvent>&& extension,
                   int ext_from_id,
                   bool has_assume_blocked_thread,
@@ -42,7 +42,7 @@ class ZTraceExtension {
   ZTraceExtension(const ZTraceExtension&) = delete;
   ZTraceExtension(ZTraceExtension&&) = default;
   ZTraceExtension& operator=(const ZTraceExtension&) = delete;
-  ZTraceExtension& operator=(ZTraceExtension&&) = delete;
+  ZTraceExtension& operator=(ZTraceExtension&&) = default;
 
   bool empty() const { return (extension.empty()); }
 
@@ -58,16 +58,16 @@ class ZTrace {
 
  public:
   std::vector<ZEvent> exec;
-  std::vector<ZEvent> tau;
-  const ZAnnotation annotation;
-  const std::set<ZEventID> commited;
+  std::vector<std::unique_ptr<ZEvent>> tau;
+  ZAnnotation annotation;
+  const std::set<ZEventID> committed;
   int ext_from_id;
   std::vector<int> ext_reads_locks;
 
   ZTrace() = delete;
   ZTrace(const ZTrace *parent_trace,
          std::vector<ZEvent>&& new_exec,
-         std::vector<ZEvent>&& new_tau,
+         std::vector<std::unique_ptr<ZEvent>>&& new_tau,
          ZAnnotation&& new_annotation,
          std::set<ZEventID>&& new_commited);
 
@@ -76,11 +76,9 @@ class ZTrace {
   ZTrace& operator=(const ZTrace&) = delete;
   ZTrace& operator=(ZTrace&&) = delete;
 
-  void extend(ZTraceExtension&& ext);
-
   bool empty() const {
     return (exec.empty() && tau.empty() &&
-            annotation.empty() && commited.empty());
+            annotation.empty() && committed.empty());
   }
 
   std::string to_string(unsigned depth) const;

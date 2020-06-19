@@ -60,6 +60,10 @@ ZBuilderSC::ZBuilderSC
 
 bool ZBuilderSC::reset()
 {
+  #ifndef NDEBUG
+    std::cout << "RUNNING DEBUG VERSION\n";
+  #endif
+
   if (this->has_error()) {
     this->error_trace = this->get_trace();
     return true;
@@ -74,7 +78,7 @@ bool ZBuilderSC::reset()
 
   // Construct initial trace
   ZTrace initial_trace(
-    nullptr, std::vector<ZEvent>(), std::vector<ZEvent>(),
+    nullptr, std::vector<ZEvent>(), std::vector<std::unique_ptr<ZEvent>>(),
     ZAnnotation(), std::set<ZEventID>());
 
   // Construct initial extension

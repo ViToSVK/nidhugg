@@ -50,10 +50,10 @@ libnidhugg_a_SOURCES = \
   ZInterpreterPSO.cpp ZInterpreterPSO.h \
   ZBuilderPSO.cpp ZBuilderPSO.h \
   ZPartialOrder.cpp ZPartialOrder.h \
-  ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
-  ZExplorer.cpp ZExplorer.h
+  ZExplorer.cpp ZExplorer.h \
+  ZGraph.cpp ZGraph.h
 
 libnidhugg_a_CXXFLAGS = -fno-rtti
 

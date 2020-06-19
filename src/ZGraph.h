@@ -88,19 +88,19 @@ class ZGraph {
   std::pair<unsigned, bool> getThreadID(const ZEvent * ev);
   unsigned getThreadIDnoAdd(const std::vector<int>& proc_seq) const;
   unsigned getThreadIDnoAdd(const ZEvent * ev) const;
-
+  std::unordered_set<std::vector<int>> all_proc_seq() const;
 
   // EVENT->POSITION (changed at recursion child with new ZEvent pointers from new trace)
  private:
   std::unordered_map<const ZEvent *, std::pair<unsigned, unsigned>> event_to_position; ////
  public:
   bool hasEvent(const ZEvent *ev) const;
+  bool hasEvent(const ZEventID& ev_id) const;
 
 
   // PO
- private:
-  ZPartialOrder po;
  public:
+  ZPartialOrder po;
   const ZPartialOrder& getPo() const { return po; }
   ZPartialOrder copyPO() const { return ZPartialOrder(po); }
 
@@ -142,49 +142,37 @@ class ZGraph {
 
   ~ZGraph() {};
   // Empty
-  ZGraph();
-  // Initial
-  ZGraph(const std::vector<ZEvent>& trace, MemoryModel model);
+  ZGraph() = delete;
+  ZGraph(MemoryModel model);
   // Moving
   ZGraph(ZGraph&& oth);
 
-  // Extending
-  // Partial order that will be moved as original
-  // Trace and annotation that will extend this copy of the graph
-  ZGraph(const ZGraph& oth,
-         ZPartialOrder&& po,
-         const std::vector<ZEvent>& trace,
-         const ZAnnotation& annotation);
-
-  ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph(const ZGraph& oth) = delete;
+  ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph& operator=(const ZGraph& oth) = delete;
 
   /* *************************** */
-  /* GRAPH EXTENSION             */
+  /* GRAPH CONSTRUCTION          */
   /* *************************** */
 
- private:
+  bool constructed = false;
 
-  // At the point of calling the method, this graph
-  // is linked to some 'orig_trace', graph's nodes
-  // point to the events of 'orig_trace'
-  // Argument: 'trace' - extension of 'orig_trace'
-  // The method links this graph with 'trace' as follows:
-  // 1) events of 'trace' that already happened in 'orig_trace'
-  //    replace their corresponding 'orig_trace' pointers
-  // 2) new events of 'trace' extend existing threads / create new threads
-  // 3) partial order is extended to accomodate new
-  //    threads+events while keeping all the original info
-  // Special case: initial trace extends an empty graph
-  void traceToPO(const std::vector<ZEvent>& trace, const ZAnnotation *annotationPtr);
+  void construct(const std::vector<std::unique_ptr<ZEvent>>& trace,
+                 int pre_tau_limit, std::set<int> causes_after);
+
+  void add_reads_from_edges(const ZAnnotation& annotation);
 
 
   /* *************************** */
   /* MAIN ALGORITHM              */
   /* *************************** */
 
- public:
+  std::list<ZEventID> get_mutations(
+    const ZEvent * const ev, const ZEventID base_obs,
+    int mutations_only_from_idx) const;
+
+  std::pair<std::set<int>, std::set<const ZEvent *>> get_causes_after(
+    const ZEvent * const readlock, const ZEventID& mutation) const;
 
   // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
   // return first memory-write to ml (resp. return its index in cache.wm)

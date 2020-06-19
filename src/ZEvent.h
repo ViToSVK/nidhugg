@@ -52,9 +52,9 @@ class ZEvent {
 
   // Returns a 'copy' of the event, with custom trace id
   // The event will be part of replay_trace
-  ZEvent(const ZEvent& oth, int trace_id);
+  ZEvent(const ZEvent& oth, int trace_id, bool keepvalue = false);
 
-  ZEvent(const ZEvent& oth) = default;
+  ZEvent(const ZEvent& oth) = delete;
   ZEvent(ZEvent&& oth) = default;
   ZEvent& operator=(const ZEvent& oth) = delete;
   ZEvent& operator=(ZEvent&& oth) = delete;
@@ -139,7 +139,10 @@ class ZEventPtrComp {
 };
 
 std::string trace_to_string(const std::vector<ZEvent>& trace);
+std::string trace_to_string(const std::vector<std::unique_ptr<ZEvent>>& trace);
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<ZEvent>& trace);
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const std::vector<std::unique_ptr<ZEvent>>& trace);
 void dump_trace(const std::vector<ZEvent>& trace);
+void dump_trace(const std::vector<std::unique_ptr<ZEvent>>& trace);
 
 #endif // _Z_EVENT_H_
