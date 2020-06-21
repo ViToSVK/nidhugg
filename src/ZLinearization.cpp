@@ -145,6 +145,8 @@ void ZLinearization::calculateWrMapping() {
   for (auto it = an.begin(); it != an.end(); it++) {
     assert(it->first.event_id() >= 0); // read cannot be initial event
     unsigned thr = gr.getThreadIDnoAdd(it->first.cpid().get_proc_seq());
+    assert(thr < 100 && gr.thr_to_lin_id.count(thr));
+    thr = gr.thr_to_lin_id.at(thr);
     assert(thr < gr.number_of_threads());
     unsigned ev = (unsigned) it->first.event_id();
     ZObs obsR(thr, ev);
@@ -154,6 +156,8 @@ void ZLinearization::calculateWrMapping() {
     if (it->second.event_id() >= 0) {
       // not initial
       thr = gr.getThreadIDnoAdd(it->second.cpid().get_proc_seq());
+      assert(thr < 100 && gr.thr_to_lin_id.count(thr));
+      thr = gr.thr_to_lin_id.at(thr);
       assert(thr < gr.number_of_threads());
       ev = (unsigned) it->second.event_id();
     }
@@ -194,23 +198,20 @@ const ZLinearization::WrSet& ZLinearization::getObservers(const ZObs& obs) const
   return it->second;
 }
 const ZLinearization::WrSet& ZLinearization::getObservers(const ZEvent *ev) const {
-  return getObservers(ZObs(toWriteB(ev)));
+  return getObservers(ZObs(toWriteB(ev), gr));
 }
 
 
 unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
   start_err("numEventsInThread...");
   assert(thr < gr.number_of_threads() && "Non-existent thread");
-  if (!gr.hasThreadAux(thr, aux)) {
+  if (!gr.hasThreadAux(gr.lin_to_thr_id.at(thr), aux)) {
     end_err("0");
     return 0;
   }
-  assert(gr.auxes(thr).count(aux) && "Non-existent aux for given thread");
-  LineT line = gr(thr, aux);
-  const ZEvent *lastEv = line.back();
-  bool ahead = (isRead(lastEv) && !an.defines(lastEv)) ||
-               (isLock(lastEv) && !an.lock_defines(lastEv));
-  unsigned res = line.size() - ahead;
+  assert(gr.auxes(gr.lin_to_thr_id.at(thr)).count(aux) && "Non-existent aux for given thread");
+  LineT line = gr(gr.lin_to_thr_id.at(thr), aux);
+  unsigned res = line.size();
   end_err("1");
   return res;
 }
@@ -229,7 +230,7 @@ const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
     end_err("0");
     return nullptr;
   }
-  auto res = par.gr.getEvent(thr, aux, pos);
+  auto res = par.gr.getEvent(gr.lin_to_thr_id.at(thr), aux, pos);
   end_err("1");
   return res;
 }
@@ -284,19 +285,19 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
     if (it != curr_vals.end()) {
       curr_vals.erase(ev->ml);
     }
-    curr_vals.emplace(ev->ml, ev->write_other_ptr);
+    curr_vals.emplace(ev->ml, ZObs(ev->write_other_ptr, gr));
   }
   res.push_back(ZEvent(*ev, res.size()));
   prefix.at(thr, aux)++;
   // Update tr_pos
   while (tr_pos < par.tr.size()) {
     const ZEvent& evRef = par.tr.at(tr_pos);
-    if (evRef.event_id() >= prefix.at(evRef.thread_id(), evRef.aux_id())) {
+    if (evRef.event_id() >= prefix.at(gr.thr_to_lin_id.at(evRef.thread_id()), evRef.aux_id())) {
       break;
     }
     tr_pos++;
   }
-  end_err("haha");
+  end_err();
 }
 
 
@@ -317,7 +318,7 @@ bool ZLinearization::State::isUseless(const ZEvent *ev) const {
     return true;
   }
   unsigned thr = wr_set.getOnlyThread();
-  if (ev->write_other_ptr->thread_id() != thr) {
+  if (gr.thr_to_lin_id.at(ev->write_other_ptr->thread_id()) != thr) {
     end_err("0b");
     return false;
   }
@@ -344,11 +345,11 @@ bool ZLinearization::State::canPushUp(unsigned thr, int aux) const {
     return false;
   }
   for (unsigned thr2 = 0; thr2 < par.gr.number_of_threads(); thr2++) {
-    for (int aux2 : par.gr.auxes(thr2)) {
+    for (int aux2 : par.gr.auxes(gr.lin_to_thr_id.at(thr2))) {
       if (thr == thr2 && aux2 == -1) {
         continue;
       }
-      int req = par.po.pred(ev, thr2, aux2).second;
+      int req = par.po.pred(ev, gr.lin_to_thr_id.at(thr2), aux2).second;
       int pos = prefix.at(thr2, aux2);
       if (req >= pos) {
         end_err("0b");
@@ -364,7 +365,7 @@ bool ZLinearization::State::canPushUp(unsigned thr, int aux) const {
 bool ZLinearization::State::allPushedUp() const {
   start_err("allPushedUp...");
   for (unsigned thr = 0; thr < par.gr.number_of_threads(); thr++) {
-    for (int aux : par.gr.auxes(thr)) {
+    for (int aux : par.gr.auxes(gr.lin_to_thr_id.at(thr))) {
       if (canPushUp(thr, aux)) {
         end_err("0");
         return false;
@@ -382,7 +383,7 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
   while (!done) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.number_of_threads(); thr++) {
-      for (int aux : par.gr.auxes(thr)) {
+      for (int aux : par.gr.auxes(gr.lin_to_thr_id.at(thr))) {
         while (canPushUp(thr, aux)) {
           advance(thr, aux, res);
           done = false;
@@ -412,10 +413,10 @@ bool ZLinearization::State::finished() const {
 
 void ZLinearization::State::finishOff(std::vector<ZEvent>& res) const {
   for (unsigned thr = 0; thr < par.gr.number_of_threads(); thr++) {
-    for (int aux : par.gr.auxes(thr)) {
+    for (int aux : par.gr.auxes(gr.lin_to_thr_id.at(thr))) {
       unsigned tgt = par.numEventsInThread(thr, aux);
       for (unsigned i = prefix.at(thr, aux); i < tgt; i++) {
-        const ZEvent *ev = par.gr(thr, aux).at(i);
+        const ZEvent *ev = par.gr(gr.lin_to_thr_id.at(thr), aux).at(i);
         assert(ev && "Line contains a nullptr event");
         res.push_back(ZEvent(*ev, res.size()));
       }
@@ -446,7 +447,7 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
     end_err("0b");
     return 0;
   }
-  auto res = evRef.thread_id();
+  auto res = gr.thr_to_lin_id.at(evRef.thread_id());
   end_err("1");
   return res;
 }
@@ -524,11 +525,11 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const {
 
 
 ZLinearization::RdyAuxesKeyPSO::RdyAuxesKeyPSO(const State& state)
-  : main_prefix(state.prefix.numThreads())
+  : main_prefix(state.prefix.numThreads()), gr(state.gr)
 {
   for (unsigned thr = 0; thr < numThreads(); thr++) {
     main_prefix.at(thr) = state.prefix.at(thr);
-    for (int aux : state.par.gr.auxes(thr)) {
+    for (int aux : state.par.gr.auxes(gr.lin_to_thr_id.at(thr))) {
       const ZEvent *ev = state.currEvent(thr, aux);
       if (ev && !state.isUseless(ev)) {
         ready_auxes.emplace(thr, aux);
@@ -547,7 +548,7 @@ bool ZLinearization::RdyAuxesKeyPSO::operator< (const RdyAuxesKeyPSO& other) con
 
 
 ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
-  : main_prefix(state.prefix.numThreads())
+  : main_prefix(state.prefix.numThreads()), gr(state.gr)
 {
   for (unsigned thr = 0; thr < numThreads(); thr++) {
     main_prefix.at(thr) = state.prefix.at(thr);
@@ -558,7 +559,7 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
     const ZEvent* next_fence = nullptr;
     bool has_bwrite = false;
     for (unsigned pos = main_prefix.at(thr); pos < state.par.numEventsInThread(thr); pos++) {
-      const ZEvent* ev = state.par.gr.getEvent(thr, -1, pos);
+      const ZEvent* ev = state.par.gr.getEvent(gr.lin_to_thr_id.at(thr), -1, pos);
       if (ev->fence) {
         next_fence = ev;
         break;
@@ -578,11 +579,11 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
       reqs.emplace(thr, UINT_MAX);
     }
     else {
-      for (int aux : state.par.gr.auxes(thr)) {
+      for (int aux : state.par.gr.auxes(gr.lin_to_thr_id.at(thr))) {
         if (aux == -1) {
           continue;
         }
-        std::pair<const ZEvent *, int> p = state.par.po.pred(next_fence, thr, aux);
+        std::pair<const ZEvent *, int> p = state.par.po.pred(next_fence, gr.lin_to_thr_id.at(thr), aux);
         const ZEvent *wm = p.first;
         int last_pred = p.second;
         int curr_pos = state.prefix.at(thr, aux);
@@ -602,7 +603,7 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
         }
         { // the future mwrite ancestors of Wm
           for (int pos = last_pred - 1; pos >= curr_pos; pos--) {
-            const ZEvent *ev = state.par.gr.getEvent(thr, aux, pos);
+            const ZEvent *ev = state.par.gr.getEvent(gr.lin_to_thr_id.at(thr), aux, pos);
             if (!isWriteM(ev)) {
               continue;
             }
@@ -616,11 +617,11 @@ ZLinearization::MainReqsKeyPSO::MainReqsKeyPSO(const State& state)
             if (thr2 == thr) {
               continue;
             }
-            int aux2 = state.par.gr.auxForMl(wm->ml, thr2);
-            int last_pred2 = state.par.po.pred(wm, thr2, aux2).second;
+            int aux2 = state.par.gr.auxForMl(wm->ml, gr.lin_to_thr_id.at(thr2));
+            int last_pred2 = state.par.po.pred(wm, gr.lin_to_thr_id.at(thr2), aux2).second;
             int curr_pos2 = state.prefix.at(thr2, aux2);
             for (int pos2 = last_pred2; pos2 >= curr_pos2; pos2--) {
-              const ZEvent *ev = state.par.gr.getEvent(thr2, aux2, pos2);
+              const ZEvent *ev = state.par.gr.getEvent(gr.lin_to_thr_id.at(thr2), aux2, pos2);
               if (!isWriteM(ev)) {
                 continue;
               }
@@ -666,11 +667,11 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
   // General case
   std::unordered_set<SymAddrSize> occupied;
   for (unsigned thr2 = 0; thr2 < gr.number_of_threads(); thr2++) {
-    for (int aux2 : gr.auxes(thr2)) {
+    for (int aux2 : gr.auxes(gr.lin_to_thr_id.at(thr2))) {
       if (aux2 == -1 && thr == thr2) {
         continue;
       }
-      int req = po.pred(ev, thr2, aux2).second;
+      int req = po.pred(ev, gr.lin_to_thr_id.at(thr2), aux2).second;
       // main thread
       if (aux2 == -1) {
         if (req >= (int)state.prefix.at(thr2, aux2)) {
@@ -689,7 +690,7 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
         return false;
       }
       for (int i = pos; i <= req; i++) {
-        const ZEvent *evAux = gr.getEvent(thr2, aux2, i);
+        const ZEvent *evAux = gr.getEvent(gr.lin_to_thr_id.at(thr2), aux2, i);
         if (occupied.count(evAux->ml)) {
           end_err("0: other (too many advances)");
           return false;
@@ -708,11 +709,11 @@ void ZLinearization::force(State& state, unsigned thr, std::vector<ZEvent>& res)
   assert(canForce(state, thr) && "According to .canForce, cannot force");
   const ZEvent *ev = state.currEvent(thr);
   for (unsigned thr2 = 0; thr2 < gr.number_of_threads(); thr2++) {
-    for (int aux2 : gr.auxes(thr2)) {
+    for (int aux2 : gr.auxes(gr.lin_to_thr_id.at(thr2))) {
       if (aux2 == -1) {
         continue;
       }
-      int req = po.pred(ev, thr2, aux2).second;
+      int req = po.pred(ev, gr.lin_to_thr_id.at(thr2), aux2).second;
       while ((int)state.prefix.at(thr2, aux2) <= req) {
         state.advance(thr2, aux2, res);
       }
@@ -743,7 +744,7 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
     return 0;
   }
   end_err("?");
-  return tr.at(pos).thread_id();
+  return gr.thr_to_lin_id.at(tr.at(pos).thread_id());
 }
 
 

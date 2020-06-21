@@ -63,6 +63,7 @@ class ZTrace {
   const std::set<ZEventID> committed;
   int ext_from_id;
   std::vector<int> ext_reads_locks;
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id;
 
   ZTrace() = delete;
   ZTrace(const ZTrace *parent_trace,
@@ -78,7 +79,8 @@ class ZTrace {
 
   bool empty() const {
     return (exec.empty() && tau.empty() &&
-            annotation.empty() && committed.empty());
+            annotation.empty() && committed.empty() &&
+            proc_seq_to_thread_id.empty());
   }
 
   std::string to_string(unsigned depth) const;

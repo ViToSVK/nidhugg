@@ -32,8 +32,8 @@ class ZObs {
   ZObs() = delete;
   ZObs(unsigned thread_idx, unsigned event_idx)
     : thr(thread_idx), ev(event_idx) {}
-  ZObs(const ZEvent *ev)
-    : thr(ev->thread_id()), ev(ev->event_id())
+  ZObs(const ZEvent *ev, const ZGraph& gr)
+    : thr(gr.thr_to_lin_id.at(ev->thread_id())), ev(ev->event_id())
     { assert(ev->aux_id() == -1); }
 
   ZObs(const ZObs& oth) = default;
@@ -172,6 +172,7 @@ class ZLinearization {
       return thr_vals.at(a);
     }
     const unsigned at (unsigned thr, int aux = -1) const {
+      assert(thr < vals.size());
       const std::vector<unsigned>& thr_vals = vals.at(thr);
       unsigned a = aux + 1;
       return (a < thr_vals.size() ? thr_vals.at(a) : 0);
@@ -196,9 +197,10 @@ class ZLinearization {
     Prefix prefix;
     std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
     unsigned tr_pos;
+    const ZGraph& gr;
 
     State(const ZLinearization& par0, unsigned n)
-      : par(par0), prefix(n), tr_pos(0) {}
+      : par(par0), prefix(n), tr_pos(0), gr(par.gr) {}
 
     // Returns the next event in the given thread, or nullptr if there is none.
     const ZEvent * currEvent(unsigned thr, int aux = -1) const;
@@ -273,6 +275,7 @@ class ZLinearization {
    private:
     std::vector<unsigned> main_prefix;
     std::set<std::pair<unsigned, int>> ready_auxes;
+    const ZGraph& gr;
 
     unsigned numThreads() const {
       return main_prefix.size();
@@ -297,6 +300,7 @@ class ZLinearization {
    private:
     std::vector<unsigned> main_prefix;
     std::map<unsigned, std::map<unsigned, unsigned>> main_reqs;
+    const ZGraph& gr;
 
     unsigned numThreads() const {
       return main_prefix.size();

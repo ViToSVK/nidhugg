@@ -78,6 +78,8 @@ class ZGraph {
  private:
   std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
  public:
+  std::unordered_map<int, unsigned> thr_to_lin_id; ////
+  std::unordered_map<unsigned, int> lin_to_thr_id; ////
   // <threadID, added_with_this_call?>
   void addThreadID(const ZEvent *ev);
   std::pair<unsigned, bool> getThreadID(const ZEvent * ev);

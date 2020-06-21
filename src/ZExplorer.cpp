@@ -95,10 +95,19 @@ bool ZExplorer::extend_and_explore
   std::unordered_map<
     std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
   // Extend ann_trace.tau/annotation/ext_reads_locks
+  if (INFO) dump_trace(ann_trace.exec);
   for (int i = ann_trace.ext_from_id; i < (int) ann_trace.exec.size(); ++i) {
     ann_trace.tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       ann_trace.exec[i], i, true)));
     ZEvent * ev = ann_trace.tau.back().get();
+    // Fix the thread_id
+    if (ann_trace.proc_seq_to_thread_id.count(ev->cpid().get_proc_seq()))
+      ev->_thread_id = ann_trace.proc_seq_to_thread_id[ev->cpid().get_proc_seq()];
+    else {
+      ev->_thread_id = ann_trace.proc_seq_to_thread_id.size();
+      ann_trace.proc_seq_to_thread_id.emplace(
+        ev->cpid().get_proc_seq(), ev->thread_id());
+    }
     if (isRead(ev) || isLock(ev)) {
       ann_trace.ext_reads_locks.push_back(i);
       // Initialize schedules
@@ -120,8 +129,10 @@ bool ZExplorer::extend_and_explore
           if (isWriteB(obs_ev))
             ann_trace.annotation.add(ev->id(), obs_ev.id());
           else {
-            assert(isWriteB(obs_ev.write_other_ptr) && sameMl(ev, obs_ev.write_other_ptr));
-            ann_trace.annotation.add(ev->id(), obs_ev.write_other_ptr->id());
+            assert(obs_ev.write_other_trace_id < obs_ev.trace_id());
+            assert(isWriteB(ann_trace.exec[ obs_ev.write_other_trace_id ]) &&
+                   sameMl(*ev, ann_trace.exec[ obs_ev.write_other_trace_id ]));
+            ann_trace.annotation.add(ev->id(), ann_trace.exec[ obs_ev.write_other_trace_id ].id());
           }
         }
       } else {
@@ -256,7 +267,7 @@ void ZExplorer::mutate
   ++mutations_considered;
   clock_t init = std::clock();
   // Construct full annotation
-  err_msg("attempt-annotation-graph");
+  err_msg("attempt-annotation");
   ZAnnotation mutated_annotation(mutated_key);
   assert((isRead(readlock) && mutated_annotation.defines(readlock)) ||
          (isLock(readlock) && mutated_annotation.lock_defines(readlock)));
@@ -281,6 +292,7 @@ void ZExplorer::mutate
     }
   }
   // Construct the mutation graph
+  err_msg("attempt-graph");
   ZGraph mutated_graph(model);
   mutated_graph.construct(
     ann_trace.tau, readlock->trace_id(), causes_all_idx);
@@ -326,15 +338,67 @@ void ZExplorer::mutate
   // TODO  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));  TODO
   // Construct tau
   init = std::clock();
-  err_msg("attempt-tau-committed");
+  err_msg("attempt-tau");
   std::vector<std::unique_ptr<ZEvent>> mutated_tau;
-  for (int i = 0; i <= readlock->trace_id(); ++i)
+  // Thread -> ML -> Pointers to WriteB's
+  std::unordered_map<
+    std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
+  for (int i = 0; i <= readlock->trace_id(); ++i) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[i].get(), i, true)));
-  for (int cause_idx : causes_all_idx)
+    ZEvent * const ev = mutated_tau.back().get();
+    // Maintain buffers
+    if (!buffers.count(ev->cpid().get_proc_seq()))
+      buffers.emplace(ev->cpid().get_proc_seq(),
+                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
+    if (isWriteB(ev)) {
+      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
+        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
+    }
+    // Set up proper WriteB <-> WriteM pointers
+    if (isWriteM(ev)) {
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
+      assert(isWriteB(evB) && sameMl(ev, evB));
+      ev->write_other_ptr = evB;
+      ev->write_other_trace_id = evB->trace_id();
+      evB->write_other_ptr = ev;
+      evB->write_other_trace_id = ev->trace_id();
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
+    }
+  }
+  for (int cause_idx : causes_all_idx) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[cause_idx].get(), mutated_tau.size(), true)));
+    ZEvent * const ev = mutated_tau.back().get();
+    // Maintain buffers
+    if (!buffers.count(ev->cpid().get_proc_seq()))
+      buffers.emplace(ev->cpid().get_proc_seq(),
+                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
+    if (isWriteB(ev)) {
+      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
+        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
+    }
+    // Set up proper WriteB <-> WriteM pointers
+    if (isWriteM(ev)) {
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
+      assert(isWriteB(evB) && sameMl(ev, evB));
+      ev->write_other_ptr = evB;
+      ev->write_other_trace_id = evB->trace_id();
+      evB->write_other_ptr = ev;
+      evB->write_other_trace_id = ev->trace_id();
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
+    }
+  }
   // Construct committed reads
+  err_msg("attempt-committed");
   std::set<ZEventID> mutated_committed;
   for (const auto& ev_id : ann_trace.committed) {
     assert(graph.hasEvent(ev_id));
@@ -343,9 +407,11 @@ void ZExplorer::mutate
   }
   assert(!ann_trace.committed.count(readlock->id()));
   mutated_committed.emplace(readlock->id());
-  assert(graph.hasEvent(mutation) && graph.hasEvent(readlock));
-  const ZEvent * mut_ev = graph.getEvent(mutation);
-  assert(isWriteB(mut_ev) || isUnlock(mut_ev) || isInitial(mut_ev));
+  assert((mutation == ZEventID(true) || graph.hasEvent(mutation)) &&
+         graph.hasEvent(readlock));
+  const ZEvent * mut_ev = mutation == ZEventID(true) ?
+    nullptr : graph.getEvent(mutation);
+  assert(!mut_ev || isWriteB(mut_ev) || isUnlock(mut_ev));
   auto remaining_proc = mutated_graph.all_proc_seq();
   for (const auto& tauidx_sch : schedules) {
     const ZEvent * causal = ann_trace.tau[tauidx_sch.first].get();
@@ -355,7 +421,7 @@ void ZExplorer::mutate
       continue;
     if (*causal == *readlock ||
         (!graph.getPo().hasEdge(causal, readlock) &&
-         !graph.getPo().hasEdge(causal, mut_ev))) {
+         (!mut_ev || !graph.getPo().hasEdge(causal, mut_ev)))) {
       assert(remaining_proc.count(causal->cpid().get_proc_seq()));
       remaining_proc.erase(causal->cpid().get_proc_seq());
       if (remaining_proc.empty())

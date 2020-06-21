@@ -79,8 +79,12 @@ ZTrace::ZTrace
    annotation(std::move(new_annotation)),
    committed(std::move(new_committed)),
    ext_from_id(-1),
-   ext_reads_locks()
+   ext_reads_locks(),
+   proc_seq_to_thread_id()
 {
+  if (parent_trace)
+    proc_seq_to_thread_id = std::unordered_map<
+      std::vector<int>, unsigned>(parent_trace->proc_seq_to_thread_id);
   assert(new_exec.empty() && new_tau.empty() &&
          new_annotation.empty() && new_committed.empty());
 }

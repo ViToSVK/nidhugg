@@ -22,7 +22,7 @@
 #include "ZGraph.h"
 #include "ZBuilderTSO.h"
 
-static const bool DEBUG = false;
+static const bool DEBUG = true;
 #include "ZDebug.h"
 
 
@@ -34,6 +34,8 @@ ZGraph::ZGraph(MemoryModel model)
     thread_aux_to_line_id(),
     threads_auxes(),
     proc_seq_to_thread_id(),
+    thr_to_lin_id(),
+    lin_to_thr_id(),
     event_to_position(),
     po(*this),
     cache()
@@ -50,12 +52,15 @@ ZGraph::ZGraph(ZGraph&& oth)
     thread_aux_to_line_id(std::move(oth.thread_aux_to_line_id)),
     threads_auxes(std::move(oth.threads_auxes)),
     proc_seq_to_thread_id(std::move(oth.proc_seq_to_thread_id)),
+    thr_to_lin_id(std::move(oth.thr_to_lin_id)),
+    lin_to_thr_id(std::move(oth.lin_to_thr_id)),
     event_to_position(std::move(oth.event_to_position)),
     po(std::move(oth.po)),
     cache(std::move(oth.cache))
 {
   assert(oth.empty());
 }
+
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr)
 {
@@ -96,6 +101,7 @@ const ZEvent * const ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned e
 
 const ZEvent * const ZGraph::getEvent(const ZEventID& id) const
 {
+  assert(id != ZEventID(true) && "Called for initial event");
   unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
   int aux = id.cpid().is_auxiliary() ? id.cpid().get_aux_index() : -1;
   unsigned ev = id.event_id();
@@ -422,6 +428,16 @@ void ZGraph::construct
     */
     addThreadID(ev);
 
+    // Set linearization_thr_id
+    assert(ev->thread_id() < 100);
+    assert(thr_to_lin_id.size() == lin_to_thr_id.size());
+    if (!thr_to_lin_id.count(ev->thread_id())) {
+      unsigned lin_id = lin_to_thr_id.size();
+      assert(!lin_to_thr_id.count(lin_id));
+      thr_to_lin_id.emplace(ev->thread_id(), lin_id);
+      lin_to_thr_id.emplace(lin_id, ev->thread_id());
+    }
+
     // THIS MIGHT NOT BE NEEDED FOR MAXIMAL TRACES
     /*
     if (model == MemoryModel::PSO && isWriteM(ev)) {
@@ -678,6 +694,7 @@ void ZGraph::construct
 
 void ZGraph::add_reads_from_edges(const ZAnnotation& annotation)
 {
+  start_err("starting reads-from-edges");
   // Reads
   for (auto it = annotation.read_begin(); it != annotation.read_end(); ++it) {
     assert(hasEvent(it->first));
@@ -688,7 +705,7 @@ void ZGraph::add_reads_from_edges(const ZAnnotation& annotation)
       const ZEvent * const wM = getEvent(it->second)->write_other_ptr;
       assert(isWriteM(wM) && sameMl(read, wM));
       assert(!po.hasEdge(read, wM) && "Inconsistent annotation");
-      po.addEdge(wM, read);
+      if (!po.hasEdge(wM, read)) po.addEdge(wM, read);
     }
   }
   // Locks
@@ -701,9 +718,10 @@ void ZGraph::add_reads_from_edges(const ZAnnotation& annotation)
       const ZEvent * const unlock = getEvent(it->second);
       assert(isUnlock(unlock) && sameMl(lock, unlock));
       assert(!po.hasEdge(lock, unlock) && "Inconsistent annotation");
-      po.addEdge(unlock, lock);
+      if (!po.hasEdge(unlock, lock)) po.addEdge(unlock, lock);
     }
   }
+  end_err("ending reads-from-edges");
 }
 
 
