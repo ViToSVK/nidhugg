@@ -167,6 +167,7 @@ bool ZBuilderPSO::schedule_replay_trace(int *proc, int *aux)
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
@@ -270,10 +271,28 @@ void ZBuilderPSO::update_prefix(unsigned p)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
+}
+
+
+void ZBuilderPSO::curnode_set_thread_id()
+{
+  unsigned thr_idx = INT_MAX;
+
+  auto it = proc_seq_to_thread_id.find(curnode().cpid().get_proc_seq());
+  if (it == proc_seq_to_thread_id.end()) {
+    thr_idx = proc_seq_to_thread_id.size();
+    proc_seq_to_thread_id.emplace_hint(
+      it, curnode().cpid().get_proc_seq(), thr_idx);
+  } else
+    thr_idx = it->second;
+
+  assert(thr_idx < 100);
+  curnode()._thread_id = (int) thr_idx;
 }
 
 
@@ -405,6 +424,7 @@ void ZBuilderPSO::join(int tgt_proc)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
@@ -685,6 +705,7 @@ void ZBuilderPSO::mutex_lock(const SymAddrSize &ml)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
@@ -760,6 +781,7 @@ void ZBuilderPSO::add_failed_lock_attempts() {
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);

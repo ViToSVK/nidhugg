@@ -93,6 +93,10 @@ class ZBuilderSC : public TSOTraceBuilder {
   std::unordered_map<int, std::vector<int>> visibleStoreQueue;
   // During replay: in which ipids we are, for now, delaying a buffer-write
   std::unordered_set<unsigned> delayed_bwrite;
+  // Ipid to thraux to set up thread-id in events
+  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thraux;
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id;
+  void curnode_set_thread_id();
 
   ZEvent& curnode() {
     assert(0 <= prefix_idx);

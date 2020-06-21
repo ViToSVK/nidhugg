@@ -41,7 +41,7 @@ std::string ZTraceExtension::to_string() const
 {
   std::stringstream res;
 
-  res << trace_to_string(extension) << "\n";
+  res << trace_to_string(extension);
   res << "Extension starts from id ::: " << ext_from_id << "\n";
   res << "Assume-blocked thread ::: " << has_assume_blocked_thread << "\n"
       << "   Deadlocked thread ::: " << has_deadlocked_thread << "\n";

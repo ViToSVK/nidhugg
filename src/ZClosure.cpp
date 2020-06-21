@@ -111,12 +111,12 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZEventID& obs)
   // Idea: Iterate on all (but self) threads, in each thread i:
   // get 'memory_pred' - conflicting memory-write predecessor of read in thread i
   // add edge if not already present, that 'memory_pred' -> 'write_memory'
-  unsigned totThreads =  gr.number_of_threads();
+  //unsigned totThreads =  gr.number_of_threads();
   unsigned readThread = read->thread_id();
   unsigned writeThread = write_memory ? write_memory->thread_id() : INT_MAX;
   auto location = read->ml; // SymAddrSize of read
   bool change = false;
-  for(unsigned i=0; i < totThreads; ++i) { // looping over all threads
+  for(unsigned i : gr.get_threads()) { // looping over all threads
     if(i != readThread and i != writeThread) { // all but read thread and observation-write thread
       int readaux = gr.auxForMl(location, i);
       if(readaux == -1) continue;
@@ -176,11 +176,11 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZEventID& ob
   // Idea: Iterate on all (but self and writeM) threads, for each thread i:
   // get 'bad_writeM' - conflicting memory-write successor of write_memory
   // add edge if not already present, that 'read' -> 'bad_writeM'
-  unsigned totThreads =  gr.number_of_threads();
+  //unsigned totThreads =  gr.number_of_threads();
   unsigned readThread = read->thread_id();
   unsigned writeThread = write_memory ? write_memory->thread_id():INT_MAX;
   bool change = false;
-  for(unsigned i=0; i < totThreads; ++i) {  // looping over all threads
+  for(unsigned i : gr.get_threads()) {  // looping over all threads
     if(i != readThread and i != writeThread) {  // all but read thread
       int lastBefore = gr.getLatestNotAfterIndex(read,i,po); // {0,1,..,lastBefore} in cache at same ml with r </ wM
       if(lastBefore == -1) continue;

@@ -95,6 +95,9 @@ class ZBuilderPSO : public PSOTraceBuilder {
   std::unordered_map<std::vector<int>, unsigned> cpidMainToIpid;
   std::unordered_map<std::vector<int>,
     std::unordered_map<SymAddrSize, unsigned>> cpidMlToIpid;
+  // ProcSeq to thread-id to set up thread-id in events
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id;
+  void curnode_set_thread_id();
 
 
   ZEvent& curnode() {

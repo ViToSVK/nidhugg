@@ -99,8 +99,9 @@ bool ZAnnotation::lock_defines(const ZEventID& ev_id) const
 
 bool ZAnnotation::lock_defines(const ZEvent *ev) const
 {
-  assert(isLock(ev));
-  return lock_defines(ev->id());
+  bool res = lock_defines(ev->id());
+  assert(isLock(ev) || !res);
+  return res;
 }
 
 

@@ -205,6 +205,7 @@ bool ZBuilderSC::schedule_replay_trace(int *proc, int *aux)
                         threads[p].executed_instructions + 1, // +1 so that first will be 1
                         threads[p].executed_events, // so that first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     fence(); // Each event in SC has fence
     // Mark that thread executes a new event
     ++threads[p].executed_events;
@@ -335,11 +336,41 @@ void ZBuilderSC::update_prefix(unsigned p)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     fence(); // Each event in SC has fence
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);
   }
+}
+
+
+void ZBuilderSC::curnode_set_thread_id()
+{
+  unsigned thr_idx = INT_MAX;
+
+  // Check if this process is already known
+  auto ipidit = ipid_to_thraux.find(curnode().iid.get_pid());
+  if (ipidit != ipid_to_thraux.end()) {
+    thr_idx = ipidit->second.first;
+    assert(curnode().aux_id() == ipidit->second.second);
+  } else {
+    auto it = proc_seq_to_thread_id.find(curnode().cpid().get_proc_seq());
+    if (it == proc_seq_to_thread_id.end()) {
+      thr_idx = proc_seq_to_thread_id.size();
+      proc_seq_to_thread_id.emplace_hint(
+        it, curnode().cpid().get_proc_seq(), thr_idx);
+    } else
+      thr_idx = it->second;
+
+    // add to ipid cache for faster lookup next time
+    ipid_to_thraux.emplace(
+      curnode().iid.get_pid(),
+      std::pair<unsigned, int>(thr_idx, curnode().aux_id()));
+  }
+
+  assert(thr_idx < 100);
+  curnode()._thread_id = (int) thr_idx;
 }
 
 
@@ -478,6 +509,7 @@ void ZBuilderSC::join(int tgt_proc)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     fence(); // Each event in SC has fence
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
@@ -555,6 +587,7 @@ void ZBuilderSC::atomic_store(const SymData &sd)
                       threads[auxp].executed_instructions, // first will be 1
                       threads[auxp].executed_events, // first will be 0
                       prefix.size());
+  curnode_set_thread_id();
   // Auxiliary events do not have fence themselves -- fence();
   ++threads[auxp].executed_events;
   curnode().size = buffer_size; // We copy the size of buffer-write counterpart
@@ -722,6 +755,7 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     fence(); // Each event in SC has fence
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
@@ -803,6 +837,7 @@ void ZBuilderSC::add_failed_lock_attempts() {
                         threads[p].executed_instructions, // first will be 1
                         threads[p].executed_events, // first will be 0
                         prefix.size());
+    curnode_set_thread_id();
     ++threads[p].executed_events;
     assert(prefix.back().trace_id() == (int) prefix.size() - 1);
     assert((unsigned) prefix_idx == prefix.size() - 1);

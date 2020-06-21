@@ -24,8 +24,8 @@
 #include "ZExplorer.h"
 #include "ZHelpers.h"
 
-static const bool DEBUG = false;
-static const bool INFO = false;
+static const bool DEBUG = true;
+static const bool INFO = true;
 #include "ZDebug.h"
 
 
@@ -92,7 +92,8 @@ bool ZExplorer::extend_and_explore
   assert(ann_trace.ext_from_id <= (int) ann_trace.exec.size());
   assert(ann_trace.ext_reads_locks.empty());
   // Thread -> ML -> Pointers to WriteB's
-  std::map<CPid, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
+  std::unordered_map<
+    std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
   // Extend ann_trace.tau/annotation/ext_reads_locks
   for (int i = ann_trace.ext_from_id; i < (int) ann_trace.exec.size(); ++i) {
     ann_trace.tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
@@ -136,28 +137,30 @@ bool ZExplorer::extend_and_explore
       }
     }
     // Maintain buffers
-    if (!buffers.count(ev->cpid()))
-      buffers.emplace(ev->cpid(), std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
+    if (!buffers.count(ev->cpid().get_proc_seq()))
+      buffers.emplace(ev->cpid().get_proc_seq(),
+                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
     if (isWriteB(ev)) {
-      if (!buffers[ev->cpid()].count(ev->ml))
-        buffers[ev->cpid()].emplace(ev->ml, std::list<ZEvent *>());
-      buffers[ev->cpid()][ev->ml].push_back(ev);
+      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
+        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
     }
     // Set up proper WriteB <-> WriteM pointers
     if (isWriteM(ev)) {
-      assert(!buffers.at(ev->cpid()).at(ev->ml).empty());
-      ZEvent * evB = buffers[ev->cpid()][ev->ml].front();
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
       assert(isWriteB(evB) && sameMl(ev, evB));
       ev->write_other_ptr = evB;
       ev->write_other_trace_id = evB->trace_id();
       evB->write_other_ptr = ev;
       evB->write_other_trace_id = ev->trace_id();
-      buffers[ev->cpid()][ev->ml].pop_front();
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
     }
   }
   // Explore mutations with extended ann_trace
   end_err("extend-done");
-  if (INFO) ann_trace.dump();
   return explore(ann_trace);
 }
 
@@ -194,8 +197,8 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
       ann_trace.annotation.obs(ev): ann_trace.annotation.lock_obs(ev);
     bool is_from_extension = ev->trace_id() >= ann_trace.ext_from_id;
     int mutations_only_from_idx = is_from_extension ?
-      0 : ann_trace.ext_from_id;
-    std::list<ZEventID> mutations = graph.get_mutations(
+      -1 : ann_trace.ext_from_id;
+    std::set<ZEventID> mutations = graph.get_mutations(
       ev, base_obs, mutations_only_from_idx);
     // Perform the mutations
     for (const ZEventID& mutation : mutations)
@@ -217,9 +220,10 @@ void ZExplorer::mutate
  const ZEvent * const readlock, const ZEventID& mutation)
 {
   start_err(std::string("mutate") + readlock->to_string() +
-            "-to-see-" + mutation.to_string() + "...");
+            "   -to-see-   " + mutation.to_string() + "...");
   assert(isRead(readlock) || isLock(readlock));
-  auto causes_after = graph.get_causes_after(readlock, mutation);
+  auto causes_after = graph.get_causes_after(
+    readlock, mutation, ann_trace.tau);
   std::set<int>& causes_all_idx = causes_after.first;
   std::set<const ZEvent *>& causes_readslocks = causes_after.second;
   // Key - annotation only for readlock and causes_readslocks
@@ -303,6 +307,7 @@ void ZExplorer::mutate
   closure_edges += closure.added_edges;
   closure_iter += closure.iterations;
   // Linearize
+  if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
   err_msg("attempt-linearization");
   init = std::clock();
   ZLinearization linearizer(
@@ -319,7 +324,6 @@ void ZExplorer::mutate
     return;
   }
   // TODO  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));  TODO
-  if (INFO) dump_trace(linear);
   // Construct tau
   init = std::clock();
   err_msg("attempt-tau-committed");
@@ -393,7 +397,6 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
     failed_schedules[idx].clear();
     // Recur on each schedule
     for (auto& key_trace : sch) {
-      if (INFO) key_trace.second.dump();
       if (get_extension(key_trace.second))
         return true;
     }

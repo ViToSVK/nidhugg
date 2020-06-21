@@ -86,6 +86,10 @@ class ZBuilderTSO : public TSOTraceBuilder {
   std::unordered_map<SymAddrSize, int> lastWrite;
   // Ipid -> Trace indices of writes in store queue of thread Ipid
   std::unordered_map<int, std::vector<int>> visibleStoreQueue;
+  // Ipid to thraux to set up thread-id in events
+  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thraux;
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id;
+  void curnode_set_thread_id();
 
 
   ZEvent& curnode() {

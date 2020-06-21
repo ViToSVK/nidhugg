@@ -54,7 +54,7 @@ class ZEvent {
   // The event will be part of replay_trace
   ZEvent(const ZEvent& oth, int trace_id, bool keepvalue = false);
 
-  ZEvent(const ZEvent& oth) = delete;
+  ZEvent(const ZEvent& oth) = default;
   ZEvent(ZEvent&& oth) = default;
   ZEvent& operator=(const ZEvent& oth) = delete;
   ZEvent& operator=(ZEvent&& oth) = delete;

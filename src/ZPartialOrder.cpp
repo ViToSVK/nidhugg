@@ -324,16 +324,17 @@ std::string ZPartialOrder::to_string() const
 {
   std::stringstream res;
 
-  res << "\ndigraph {\n";
+  res << "digraph {\n";
 
   const auto& th_aux = graph.threads_auxes;
 
   // NODES
-  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
+  for (const auto& tid_auxes : th_aux) {
+    unsigned tid = (unsigned) tid_auxes.first;
     res << "subgraph cluster_" << tid << "{\n";
     res << "style=\"bold,rounded\" label = \"Th" << tid
         << " " << graph(tid, -1)[0]->cpid() << "\"\n";
-    for (const auto& aux : th_aux[tid]) {
+    for (const auto& aux : tid_auxes.second) {
       unsigned line =  graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
       res << "subgraph cluster_" << 1001+tid*100+aux << "{\n";
       res << "style=\"invis\" label = \"" << ((aux==-1)?"real":"aux") << "\"\n";
@@ -348,11 +349,11 @@ std::string ZPartialOrder::to_string() const
 
     res << "}\n";
   }
-  res << "\n";
 
   // THREAD ORDER
-  for (unsigned tid = 0; tid < th_aux.size(); ++tid) {
-    for (const auto& aux : th_aux[tid]) {
+  for (const auto& tid_auxes : th_aux) {
+    unsigned tid = tid_auxes.first;
+    for (const auto& aux : tid_auxes.second) {
       unsigned line =  graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tid, aux));
       for (int evid = 0; evid < (int) graph(tid, aux).size() - 1; ++evid) {
         res << "NODE" << line * 100000 + evid
@@ -362,14 +363,16 @@ std::string ZPartialOrder::to_string() const
   }
 
   // REST ORDER
-  for (unsigned tidI = 0; tidI < th_aux.size(); ++tidI) {
-  for (const auto& auxI : th_aux.at(tidI)) {
+  for (const auto& tid_auxesI : th_aux) {
+  unsigned tidI = tid_auxesI.first;
+  for (const auto& auxI : tid_auxesI.second) {
     unsigned lI = graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, auxI));
     unsigned realI = (auxI == -1) ? lI
     : graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidI, -1));
 
-    for (unsigned tidJ = 0; tidJ < th_aux.size(); ++tidJ) {
-    for (const auto& auxJ : th_aux.at(tidJ)) {
+    for (const auto& tid_auxesJ : th_aux) {
+    unsigned tidJ = tid_auxesJ.first;
+    for (const auto& auxJ : tid_auxesJ.second) {
       unsigned lJ = graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, auxJ));
       unsigned realJ = (auxJ == -1) ? lJ
       : graph.thread_aux_to_line_id.at(std::pair<unsigned,int>(tidJ, -1));
@@ -407,7 +410,7 @@ std::string ZPartialOrder::to_string() const
   }
   }
 
-  res << "}\n\n";
+  res << "}\n";
 
   return res.str();
 }

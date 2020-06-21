@@ -163,10 +163,12 @@ class ZLinearization {
     }
 
     unsigned& at (unsigned thr, int aux = -1) {
+      assert(thr < vals.size());
       std::vector<unsigned>& thr_vals = vals.at(thr);
       unsigned a = aux + 1;
       unsigned nsize = std::max(a + 1, (unsigned)thr_vals.size());
       thr_vals.resize(nsize, 0);
+      assert(a < thr_vals.size());
       return thr_vals.at(a);
     }
     const unsigned at (unsigned thr, int aux = -1) const {

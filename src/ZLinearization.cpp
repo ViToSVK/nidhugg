@@ -274,7 +274,7 @@ bool ZLinearization::State::canAdvanceAux(unsigned thr, int aux) const {
 
 
 void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& res) {
-  start_err("advanceAux...");
+  start_err(std::string("advanceAux_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
   const ZEvent *ev = currEvent(thr, aux);
   assert(ev && "Trying to advance with nullptr");
@@ -296,7 +296,7 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
     }
     tr_pos++;
   }
-  end_err();
+  end_err("haha");
 }
 
 

@@ -27,37 +27,18 @@ static const bool DEBUG = false;
 
 
 // Empty
-ZGraph::ZGraph()
-  : model(MemoryModel::SC),
-    init(ZEvent(true)),
-    lines(),
-    thread_aux_to_line_id(),
-    threads_auxes(),
-    pso_thr_mlauxes(),
-    proc_seq_to_thread_id(),
-    event_to_position(),
-    po(*this),
-    cache()
-{
-  assert(empty());
-}
-
-
-// Initial
-ZGraph::ZGraph(const std::vector<ZEvent>& trace, MemoryModel model)
+ZGraph::ZGraph(MemoryModel model)
   : model(model),
     init(ZEvent(true)),
     lines(),
     thread_aux_to_line_id(),
     threads_auxes(),
-    pso_thr_mlauxes(),
     proc_seq_to_thread_id(),
     event_to_position(),
     po(*this),
     cache()
 {
   assert(empty());
-  traceToPO(trace, nullptr);
 }
 
 
@@ -68,7 +49,6 @@ ZGraph::ZGraph(ZGraph&& oth)
     lines(std::move(oth.lines)),
     thread_aux_to_line_id(std::move(oth.thread_aux_to_line_id)),
     threads_auxes(std::move(oth.threads_auxes)),
-    pso_thr_mlauxes(std::move(oth.pso_thr_mlauxes)),
     proc_seq_to_thread_id(std::move(oth.proc_seq_to_thread_id)),
     event_to_position(std::move(oth.event_to_position)),
     po(std::move(oth.po)),
@@ -77,27 +57,10 @@ ZGraph::ZGraph(ZGraph&& oth)
   assert(oth.empty());
 }
 
-
-// Extending
-// Partial order that will be moved as original
-// Trace and annotation that will extend this copy of the graph
-ZGraph::ZGraph
-(const ZGraph& oth,
- ZPartialOrder&& po,
- const std::vector<ZEvent>& trace,
- const ZAnnotation& annotation)
-  : model(oth.model),
-    init(ZEvent(true)),
-    lines(oth.lines),
-    thread_aux_to_line_id(oth.thread_aux_to_line_id),
-    threads_auxes(oth.threads_auxes),
-    pso_thr_mlauxes(oth.pso_thr_mlauxes),
-    proc_seq_to_thread_id(oth.proc_seq_to_thread_id),
-    event_to_position(oth.event_to_position),
-    po(std::move(po), *this),
-    cache()
+llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr)
 {
-  traceToPO(trace, &annotation);
+  out << gr.getPo().to_string();
+  return out;
 }
 
 
@@ -120,7 +83,7 @@ const LineT& ZGraph::operator()(unsigned thread_id, int aux_id) const
 }
 
 
-const ZEvent * ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
+const ZEvent * const ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
 {
   assert(thread_id != INT_MAX && "Called for initial event");
   assert(hasThreadAux(thread_id, aux_id));
@@ -131,30 +94,12 @@ const ZEvent * ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_i
 }
 
 
-const ZEvent * ZGraph::getEvent(const ZEventID& id) const
+const ZEvent * const ZGraph::getEvent(const ZEventID& id) const
 {
   unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
   int aux = id.cpid().is_auxiliary() ? id.cpid().get_aux_index() : -1;
   unsigned ev = id.event_id();
   return getEvent(thr, aux, ev);
-}
-
-
-const ZEvent * ZGraph::getUnlockOfThisLock(const ZEventID& id) const
-{
-  unsigned curEv = id.event_id();
-  auto lock = getEvent(id);
-  assert(isLock(lock));
-  unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
-
-  while (curEv + 1 < (*this)(thr, -1).size()) {
-    curEv++;
-    auto res = getEvent(thr, -1, curEv);
-    if (isUnlock(res) && sameMl(lock, res))
-      return res;
-  }
-
-  return nullptr;
 }
 
 
@@ -167,9 +112,8 @@ void ZGraph::addLine(const ZEvent *ev)
 
   auto key = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
   thread_aux_to_line_id.emplace(key, lines.size());
-  assert(ev->thread_id() <= threads_auxes.size());
-  if (ev->thread_id() == threads_auxes.size())
-    threads_auxes.push_back(std::set<int>());
+  if (!threads_auxes.count(ev->thread_id()))
+    threads_auxes.emplace(ev->thread_id(), std::set<int>());
   assert(!threads_auxes.at(ev->thread_id()).count(ev->aux_id()));
   threads_auxes[ev->thread_id()].emplace(ev->aux_id());
   lines.push_back(LineT());
@@ -199,33 +143,14 @@ void ZGraph::addEvent(const ZEvent *ev)
 }
 
 
-void ZGraph::replaceEvent(const ZEvent *oldEv, const ZEvent *newEv)
-{
-  assert(oldEv && newEv);
-  assert(oldEv != newEv && (*oldEv == *newEv)
-         && "different pointers but same thread/aux/eventID");
-  assert(oldEv->kind == newEv->kind &&
-         oldEv->cpid() == newEv->cpid() &&
-         oldEv->ml == newEv->ml);
-  assert(hasEvent(oldEv) && !hasEvent(newEv));
-
-  auto line_event = event_to_position[oldEv];
-  event_to_position.erase(oldEv);
-  event_to_position.emplace(newEv, line_event);
-
-  assert(line_event.first < lines.size() &&
-         line_event.second < lines[line_event.first].size() &&
-         lines[line_event.first][line_event.second] == oldEv);
-  lines[line_event.first][line_event.second] = newEv;
-  assert(!hasEvent(oldEv) && hasEvent(newEv));
-}
-
-
 void ZGraph::shrink()
 {
   lines.shrink_to_fit();
   for (unsigned i=0; i<lines.size(); ++i)
     lines[i].shrink_to_fit();
+  for (auto& ml_x : cache.wm)
+    for (auto& thr_mw : ml_x.second)
+      thr_mw.second.shrink_to_fit();
 }
 
 
@@ -251,7 +176,7 @@ unsigned ZGraph::lineID(const ZEvent *ev) const
 bool ZGraph::hasThreadAux(std::pair<unsigned, int> ids) const
 {
   assert(ids.first != INT_MAX && "Called for initial event");
-  assert(threads_auxes.size() <= ids.first ||
+  assert(!threads_auxes.count(ids.first) ||
          !threads_auxes.at(ids.first).count(ids.second) ||
          thread_aux_to_line_id.count(ids));
   assert(!thread_aux_to_line_id.count(ids) ||
@@ -266,41 +191,41 @@ bool ZGraph::hasThreadAux(unsigned thread_id, int aux_id) const
 }
 
 
-std::vector<unsigned> ZGraph::real_sizes_minus_one() const
-{
-  std::vector<unsigned> res;
-  for (unsigned thr = 0; thr < number_of_threads(); ++thr) {
-    assert(!(*this)(thr, -1).empty());
-    res.push_back((*this)(thr, -1).size() - 1);
-  }
-  return res;
-}
-
-
 unsigned ZGraph::number_of_threads() const
 {
   return threads_auxes.size();
 }
 
 
+std::set<unsigned> ZGraph::get_threads() const
+{
+  std::set<unsigned> res;
+  for (const auto& tid_auxes : threads_auxes) {
+    assert(tid_auxes.first >= 0);
+    res.emplace((unsigned) tid_auxes.first);
+  }
+  return res;
+}
+
+
 const std::set<int>& ZGraph::auxes(unsigned thread_id) const
 {
   assert(thread_id != INT_MAX && "Called for initial event");
-  assert(thread_id < threads_auxes.size());
-  return threads_auxes[thread_id];
+  assert(threads_auxes.count(thread_id));
+  return threads_auxes.at(thread_id);
 }
 
 
 int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
 {
-  assert(thr < number_of_threads());
+  assert(threads_auxes.count(thr));
   auto axs = auxes(thr);
   assert(!axs.empty());
   if (axs.size() == 1) {
     // No write events in this thread
     return -1;
   }
-  if (axs.size() == 2 && (model == MemoryModel::SC || model == MemoryModel::TSO)) {
+  if (axs.size() == 2 && model != MemoryModel::PSO) {
     #ifndef NDEBUG
     auto it = axs.begin();
     while (*it == -1) {
@@ -313,14 +238,15 @@ int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
   }
   // PSO below
   assert(model == MemoryModel::PSO);
-  assert(pso_thr_mlauxes.count(thr));
   for (auto aux : axs) {
     if (aux != -1) {
       assert(!((*this)(thr, aux).empty()));
       const ZEvent *first = (*this)(thr, aux)[0];
       assert(isWriteM(first));
-      if (first->ml == ml)
+      if (first->ml == ml) {
+        assert(first->aux_id() == aux);
         return aux;
+      }
     }
   }
   // This thread has no event for this ml
@@ -328,45 +254,16 @@ int ZGraph::auxForMl(const SymAddrSize& ml, unsigned thr) const
 }
 
 
-int ZGraph::psoGetAux(const ZEvent* writeM)
+void ZGraph::addThreadID(const ZEvent *ev)
 {
-  assert(model == MemoryModel::PSO && isWriteM(writeM));
-  unsigned thr_idx = writeM->thread_id();
-  assert(thr_idx < 100);
-  int aux_idx = -1;
-  if (!pso_thr_mlauxes.count(thr_idx)) {
-    // First aux
-    pso_thr_mlauxes.emplace
-      (thr_idx, std::vector<SymAddrSize>());
-    pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
-    aux_idx = 0;
-  } else {
-    for (unsigned ax = 0; ax < pso_thr_mlauxes[thr_idx].size(); ++ax)
-      if (pso_thr_mlauxes[thr_idx][ax] == writeM->ml) {
-        aux_idx = ax;
-        break;
-      }
-    if (aux_idx == -1) {
-      // New aux
-      aux_idx = pso_thr_mlauxes[thr_idx].size();
-      pso_thr_mlauxes[thr_idx].push_back(writeM->ml);
-    }
-  }
-  assert(aux_idx >= 0);
-  return aux_idx;
-}
-
-
-// <threadID, added_with_this_call?>
-std::pair<unsigned, bool> ZGraph::getThreadID(const std::vector<int>& proc_seq)
-{
-  auto it = proc_seq_to_thread_id.find(proc_seq);
+  assert(ev);
+  assert(!isInitial(ev) && "Called for initial event");
+  auto it = proc_seq_to_thread_id.find(ev->cpid().get_proc_seq());
   if (it == proc_seq_to_thread_id.end()) {
-    unsigned res = proc_seq_to_thread_id.size();
-    proc_seq_to_thread_id.emplace_hint(it, proc_seq, res);
-    return {res, true};
-  };
-  return {it->second, false};
+    proc_seq_to_thread_id.emplace_hint(
+      it, ev->cpid().get_proc_seq(), ev->thread_id());
+    assert(ev->thread_id() >= 0);
+  }
 }
 
 
@@ -375,7 +272,14 @@ std::pair<unsigned, bool> ZGraph::getThreadID(const ZEvent *ev)
 {
   assert(ev);
   assert(!isInitial(ev) && "Called for initial event");
-  return getThreadID(ev->cpid().get_proc_seq());
+  auto it = proc_seq_to_thread_id.find(ev->cpid().get_proc_seq());
+  if (it == proc_seq_to_thread_id.end()) {
+    proc_seq_to_thread_id.emplace_hint(
+      it, ev->cpid().get_proc_seq(), ev->thread_id());
+    assert(ev->thread_id() >= 0);
+    return {(unsigned) ev->thread_id(), true};
+  }
+  return {it->second, false};
 }
 
 
@@ -397,6 +301,17 @@ unsigned ZGraph::getThreadIDnoAdd(const ZEvent * ev) const
 }
 
 
+std::unordered_set<std::vector<int>> ZGraph::all_proc_seq() const
+{
+  std::unordered_set<std::vector<int>> res;
+  for (const auto& proc_idx : proc_seq_to_thread_id) {
+    assert(!res.count(proc_idx.first));
+    res.emplace(proc_idx.first);
+  }
+  return res;
+}
+
+
 bool ZGraph::hasEvent(const ZEvent *ev) const
 {
   assert(ev);
@@ -412,38 +327,41 @@ bool ZGraph::hasEvent(const ZEvent *ev) const
 }
 
 
-/* *************************** */
-/* GRAPH EXTENSION             */
-/* *************************** */
-
-// Extends this graph so it corresponds to 'trace'
-// Check the header file for the method description
-void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
-                       const ZAnnotation *annotationPtr)
+bool ZGraph::hasEvent(const ZEventID& id) const
 {
-  err_msg("starting trace-to-po");
-  assert(!trace.empty());
-  assert(trace.size() >= events_size());
+  if (id == ZEventID(true))
+    return true;
+  if (!proc_seq_to_thread_id.count(id.cpid().get_proc_seq()))
+    return false;
+  unsigned thr = proc_seq_to_thread_id.at(id.cpid().get_proc_seq());
+  int aux = id.cpid().is_auxiliary() ? id.cpid().get_aux_index() : -1;
+  assert(thr != INT_MAX && "Called for initial event");
+  if (!hasThreadAux(thr, aux))
+    return false;
+  const LineT& line = this->operator()(thr, aux);
+  if (id.event_id() >= line.size())
+    return false;
+  assert(line[id.event_id()]->id() == id);
+  return true;
+}
 
-  std::unordered_map<int, std::pair<unsigned, int>> ipid_to_thraux;
-  ipid_to_thraux.reserve(8);
+
+/* *************************** */
+/* GRAPH CONSTRUCTION          */
+/* *************************** */
+
+void ZGraph::construct
+(const std::vector<std::unique_ptr<ZEvent>>& trace,
+ int pre_tau_limit, std::set<int> causes_after)
+{
+  start_err("starting trace-to-po");
+  assert(!trace.empty());
+  assert(!constructed);
+  constructed = true;
 
   std::unordered_map<std::pair<unsigned, int>, unsigned>
     cur_evidx;
   cur_evidx.reserve(8);
-
-  std::unordered_set<unsigned> has_unannotated_read_or_lock;
-  has_unannotated_read_or_lock.reserve(8);
-
-  std::unordered_set<unsigned> forbidden_processes_ipid;
-  forbidden_processes_ipid.reserve(8);
-
-  std::unordered_set<std::vector<int>> proc_seq_within_po;
-  proc_seq_within_po.reserve(8);
-  proc_seq_within_po.insert(trace[0].cpid().get_proc_seq());
-
-  std::unordered_set<std::pair<unsigned, int>> thraux_with_event_we_dont_add;
-  thraux_with_event_we_dont_add.reserve(8);
 
   std::unordered_map
     <unsigned, std::unordered_map
@@ -477,27 +395,19 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     <SymAddrSize, std::unordered_map<unsigned, const ZEvent *>> mutex_last;
   mutex_first.reserve(8);
 
-  for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    const ZEvent *ev = &(*traceit);
-
-    if (forbidden_processes_ipid.count(ev->iid.get_pid())) {
-        // This is a forbidden process because it
-        // happens after a so-far unannotated node
-        continue;
-    }
-    if (!proc_seq_within_po.count(ev->cpid().get_proc_seq())) {
-      // This is a forbidden process because it
-      // is created after a so-far unannotated node
-      forbidden_processes_ipid.insert(ev->iid.get_pid());
+  for (int i = 0; i < trace.size(); ++i) {
+    // Limit to events until including pre_tau, and causes_after
+    if (i > pre_tau_limit && !causes_after.count(i))
       continue;
-    }
+    const ZEvent * const ev = trace[i].get();
+    assert(i != pre_tau_limit || isRead(ev) || isLock(ev));
 
+    /*
     unsigned thr_idx = INT_MAX;
 
     // Check if this process is already known
     auto ipidit = ipid_to_thraux.find(ev->iid.get_pid());
-    if ((model == MemoryModel::SC || model == MemoryModel::TSO) &&
-        ipidit != ipid_to_thraux.end()) {
+    if (model != MemoryModel::PSO && ipidit != ipid_to_thraux.end()) {
       thr_idx = ipidit->second.first;
       assert(ev->aux_id() == ipidit->second.second);
     } else {
@@ -509,110 +419,51 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     ev->_thread_id = thr_idx;
+    */
+    addThreadID(ev);
+
+    // THIS MIGHT NOT BE NEEDED FOR MAXIMAL TRACES
+    /*
     if (model == MemoryModel::PSO && isWriteM(ev)) {
       // Handle aux for pso
       int aux_idx = psoGetAux(ev);
       ev->_aux_id = aux_idx;
     }
+    */
 
     auto thraux = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
 
-    // Check possible cases why we cannot add this event
-    //
-    // Check if we already haven't added a thraux-predecessor of this event
-    if (thraux_with_event_we_dont_add.count(thraux)) {
-      assert(!hasThreadAux(thraux) ||
-             cur_evidx.at(thraux) == (*this)(thraux).size());
-      continue;
-    }
-    // Check if thraux already has an unannotated read
-    if (has_unannotated_read_or_lock.count(thraux.first) &&
-        thraux.second == -1) {
-      // This event happens after something we need to
-      // annotate first, so we don't add it into the graph
-      assert(!hasThreadAux(thraux) ||
-             cur_evidx.at(thraux) == (*this)(thraux).size());
-      thraux_with_event_we_dont_add.insert(thraux);
-      continue;
-    }
-    // Joins of threads with an event we didn't include also
-    // can not be included and neither any of their successors
-    if (isJoin(ev)) {
-      bool dontInclude = false;
-      auto childs_proc_it = proc_seq_within_po.find(ev->childs_cpid.get_proc_seq());
-      if (childs_proc_it == proc_seq_within_po.end()) {
-        dontInclude = true;
-      } else {
-        auto thr_added = getThreadID(ev->childs_cpid.get_proc_seq());
-        assert(!thr_added.second);
-        auto childs_thraux = std::pair<unsigned, int>(thr_added.first, -1);
-        // It is enough to check the presence of the real thread
-        if (thraux_with_event_we_dont_add.count(childs_thraux))
-          dontInclude = true;
-      }
-      if (dontInclude) {
-        assert(!hasThreadAux(thraux) ||
-               cur_evidx.at(thraux) == (*this)(thraux).size());
-        thraux_with_event_we_dont_add.insert(thraux);
-        continue;
-      }
-    }
-    // Memory-writes cannot be added if their buffer-write
-    // was not added
+    // Memory-writes cannot be added if their buffer-write was not added
     if (isWriteM(ev)) {
       assert(ev->aux_id() != -1 && "Only auxiliary threads");
-      if (!store_buffer.count(ev->thread_id()) ||
-          !store_buffer[ev->thread_id()].count(ev->ml) ||
-          store_buffer[ev->thread_id()][ev->ml].empty()) {
-        assert(!hasThreadAux(thraux) ||
-               cur_evidx.at(thraux) == (*this)(thraux).size());
-        thraux_with_event_we_dont_add.insert(thraux);
-        continue;
-      }
+      assert(hasEvent(ev->write_other_ptr));
     }
 
     // We will add the event
     // First, add line if not already present
     if (!hasThreadAux(thraux)) {
-      // A new thread/aux appeared,
-      // we've checked above that it is allowed
+      // A new thread/aux appeared
       assert(!cur_evidx.count(thraux));
       cur_evidx.emplace(thraux, 0);
+      assert(ev->event_id() == 0);
 
       addLine(ev);
       po.addLine(ev);
     }
-
     if (!cur_evidx.count(thraux)) {
       assert(ev->event_id() == 0);
       cur_evidx.emplace(thraux, 0);
     }
+
     unsigned ev_idx = cur_evidx[thraux];
-
     assert(ev->event_id() == ev_idx);
-    if (ev_idx == (*this)(thraux).size()) {
-      // New event
-      addEvent(ev);
-      po.addEvent(ev);
-
-      // XXX: function pointer calls not handled
-      if (isSpawn(ev))
-        spawns.push_back(ev);
-      if (isJoin(ev))
-        joins.push_back(ev);
-
-    } else {
-      // Already known event
-      const ZEvent *oldev = getEvent(ev->thread_id(),
-                                     ev->aux_id(),
-                                     ev->event_id());
-      replaceEvent(oldev, ev);
-    }
-
+    assert(ev_idx == (*this)(thraux).size());
+    // New event
+    addEvent(ev);
+    po.addEvent(ev);
     ++cur_evidx[thraux];
 
     // Handle Fence
-    //
     if (ev->fence) {
       if (store_buffer.count(ev->thread_id()))
         for (const auto& ml_last : last_mwrite[ev->thread_id()]) {
@@ -625,15 +476,16 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     // Handle Spawn
-    //
     if (isSpawn(ev)) {
-      proc_seq_within_po.insert(ev->childs_cpid.get_proc_seq());
+      spawns.push_back(ev);
       assert(number_of_threads() > 0);
       assert(ev->fence);
     }
+    // Handle Join
+    if (isJoin(ev))
+      joins.push_back(ev);
 
     // Handle Buffer-Write
-    //
     if (isWriteB(ev)) {
       assert(ev->aux_id() == -1 && "Only real threads");
       // Store buffer
@@ -658,12 +510,13 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     // Handle Memory-Write
-    //
     if (isWriteM(ev)) {
       assert(ev->aux_id() != -1 && "Only auxiliary threads");
       // Store buffer
       assert(store_buffer.count(ev->thread_id()) &&
              store_buffer[ev->thread_id()].count(ev->ml));
+      // Done already during extend
+      /*
       assert(!ev->write_other_ptr);
       ev->write_other_ptr = store_buffer[ev->thread_id()][ev->ml].front();
       assert(isWriteB(ev->write_other_ptr) && sameMl(ev, ev->write_other_ptr));
@@ -671,6 +524,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
       ev->write_other_ptr->write_other_ptr = ev;
       assert(ev->write_other_ptr->trace_id() == ev->write_other_trace_id);
       assert(ev->write_other_ptr->write_other_trace_id == ev->trace_id());
+      */
       store_buffer[ev->thread_id()][ev->ml].pop_front();
       // WB -> WM thread order
       assert(!po.hasEdge(ev, ev->write_other_ptr));
@@ -695,15 +549,7 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     // Handle Read
-    //
     if (isRead(ev)) {
-      // Check if nd is not annotated yet
-      if (!annotationPtr || !(annotationPtr->defines(ev))) {
-        // This will be the last node for the corresponding thread
-        has_unannotated_read_or_lock.insert(ev->thread_id());
-      } else {
-        assert(annotationPtr->defines(ev));
-      }
       // Cache - wm
       if (!cache.wm.count(ev->ml))
         cache.wm.emplace
@@ -720,7 +566,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     }
 
     // Handle Mutex events
-    //
     if (isMutexInit(ev)) {
       assert(!mutex_inits.count(ev->ml));
       mutex_inits.emplace(ev->ml, ev);
@@ -728,11 +573,6 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
     if (isMutexDestroy(ev)) {
       assert(!mutex_destroys.count(ev->ml));
       mutex_destroys.emplace(ev->ml, ev);
-    }
-    if (isLock(ev)) {
-      // Check if ev is not annotated yet
-      if (!annotationPtr || !annotationPtr->lock_defines(ev))
-        has_unannotated_read_or_lock.insert(ev->thread_id());
     }
     if (isLock(ev) || isUnlock(ev)) {
       // For each ml, for each thread, remember first access
@@ -748,6 +588,15 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         mutex_last[ev->ml].reserve(8);
       }
       mutex_last[ev->ml][ev->thread_id()] = ev;
+    }
+    if (isUnlock(ev)) {
+      // Cache - unl
+      if (!cache.unl.count(ev->ml))
+        cache.unl.emplace
+          (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
+      if (!cache.unl[ev->ml].count(ev->thread_id()))
+        cache.unl[ev->ml].emplace(ev->thread_id(), std::vector<const ZEvent *>());
+      cache.unl[ev->ml][ev->thread_id()].push_back(ev);
     }
 
   } // end of loop for traversing trace and creating nodes
@@ -765,11 +614,15 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
   // EDGES - spawns
   for (const ZEvent *spwn : spawns) {
-    auto thr_added = getThreadID(spwn->childs_cpid.get_proc_seq());
-    assert(!thr_added.second);
-    for (int aux : auxes(thr_added.first)) {
-      assert(!(*this)(thr_added.first, aux).empty());
-      const ZEvent *nthr = getEvent(thr_added.first, aux, 0);
+    unsigned child_thr = getThreadIDnoAdd(spwn->childs_cpid.get_proc_seq());
+    if (child_thr >= proc_seq_to_thread_id.size()) {
+      // When mutating with just part of the trace, spawns may
+      // be present where the actual spawned thread is not at all
+      continue;
+    }
+    for (int aux : auxes(child_thr)) {
+      assert(!(*this)(child_thr, aux).empty());
+      const ZEvent *nthr = getEvent(child_thr, aux, 0);
 
       assert(!po.hasEdge(nthr, spwn));
       if (!po.hasEdge(spwn, nthr))
@@ -779,12 +632,12 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 
   // EDGES - joins
   for (const ZEvent *jn : joins) {
-    auto thr_joined = getThreadID(jn->childs_cpid.get_proc_seq());
-    assert(!thr_joined.second);
-    for (int aux : auxes(thr_joined.first)) {
-      assert(!(*this)(thr_joined.first, aux).empty());
-      unsigned lastev_idx = (*this)(thr_joined.first, aux).size() - 1;
-      const ZEvent *wthr = getEvent(thr_joined.first, aux, lastev_idx);
+    unsigned child_thr = getThreadIDnoAdd(jn->childs_cpid.get_proc_seq());
+    assert(child_thr < proc_seq_to_thread_id.size());
+    for (int aux : auxes(child_thr)) {
+      assert(!(*this)(child_thr, aux).empty());
+      unsigned lastev_idx = (*this)(child_thr, aux).size() - 1;
+      const ZEvent *wthr = getEvent(child_thr, aux, lastev_idx);
 
       assert(!po.hasEdge(jn, wthr));
       if (!po.hasEdge(wthr, jn))
@@ -819,6 +672,38 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
         po.addEdge(ev_last, ev_destroy);
     }
   }
+  end_err("ending trace-to-po");
+}
+
+
+void ZGraph::add_reads_from_edges(const ZAnnotation& annotation)
+{
+  // Reads
+  for (auto it = annotation.read_begin(); it != annotation.read_end(); ++it) {
+    assert(hasEvent(it->first));
+    const ZEvent * const read = getEvent(it->first);
+    assert(isRead(read) && !it->second.cpid().is_auxiliary());
+    if (it->second != ZEventID(true) && read->cpid() != it->second.cpid()) {
+      assert(hasEvent(it->second));
+      const ZEvent * const wM = getEvent(it->second)->write_other_ptr;
+      assert(isWriteM(wM) && sameMl(read, wM));
+      assert(!po.hasEdge(read, wM) && "Inconsistent annotation");
+      po.addEdge(wM, read);
+    }
+  }
+  // Locks
+  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
+    assert(hasEvent(it->first));
+    const ZEvent * const lock = getEvent(it->first);
+    assert(isLock(lock) && !it->second.cpid().is_auxiliary());
+    if (it->second != ZEventID(true) && lock->cpid() != it->second.cpid()) {
+      assert(hasEvent(it->second));
+      const ZEvent * const unlock = getEvent(it->second);
+      assert(isUnlock(unlock) && sameMl(lock, unlock));
+      assert(!po.hasEdge(lock, unlock) && "Inconsistent annotation");
+      po.addEdge(unlock, lock);
+    }
+  }
 }
 
 
@@ -826,9 +711,344 @@ void ZGraph::traceToPO(const std::vector<ZEvent>& trace,
 /* MAIN ALGORITHM              */
 /* *************************** */
 
+std::set<ZEventID> ZGraph::get_mutations
+(const ZEvent * const ev, const ZEventID base_obs,
+ int mutations_only_from_idx) const
+{
+  assert(isRead(ev) || isLock(ev));
+  assert(hasEvent(ev));
+  std::set<ZEventID> res;
+  const ZEvent * const ev_before = (ev->event_id() > 0)
+    ? getEvent(ev->thread_id(), ev->aux_id(), ev->event_id() - 1) : nullptr;
+
+  std::unordered_set<const ZEvent *> notCovered;
+  std::unordered_set<const ZEvent *> mayBeCovered;
+  // From the value (evid) and below, everything is covered
+  // from read/lock by some other write/unlock
+  std::unordered_map<std::pair<unsigned, int>, int> covered;
+  for (unsigned covthr : get_threads())
+    for (int covaux : auxes(covthr))
+      covered.emplace(std::pair<unsigned, int>(covthr, covaux), -1);
+
+  // Handle other threads
+  for (unsigned tid : get_threads()) {
+    int auxid = isLock(ev) ? -1 : auxForMl(ev->ml, tid);
+    if (ev->thread_id() == tid || (auxid < 0 && isRead(ev)))
+      continue;
+
+    if (isLock(ev)) {
+      if (!getCache().unl.count(ev->ml) ||
+          !getCache().unl.at(ev->ml).count(tid))
+        continue;
+      const ZEvent * last_unlock_before_lock = nullptr;
+      for (const ZEvent * unlock : getCache().unl.at(ev->ml).at(tid)) {
+        assert(isUnlock(unlock) && tid == unlock->thread_id() && sameMl(ev, unlock));
+        if (po.hasEdge(ev, unlock))
+          break;
+        else if (ev_before && po.hasEdge(unlock, ev_before))
+          last_unlock_before_lock = unlock;
+        else {
+          assert(!notCovered.count(unlock));
+          notCovered.emplace(unlock);
+        }
+      }
+      if (last_unlock_before_lock) {
+        assert(!mayBeCovered.count(last_unlock_before_lock));
+        mayBeCovered.emplace(last_unlock_before_lock);
+        // Update cover
+        for (unsigned covthr : get_threads()) {
+          if (covthr != last_unlock_before_lock->thread_id()) {
+            for (int covaux : auxes(covthr)) {
+              int newcov = po.pred(last_unlock_before_lock, covthr, covaux).second;
+              auto covta = std::pair<unsigned, int>(covthr, covaux);
+              assert(covered.count(covta));
+              if (newcov > covered[covta])
+                covered[covta] = newcov;
+            }
+          }
+        }
+      }
+    } else {
+      assert(isRead(ev) && auxid >= 0);
+      int su = po.succ(ev, tid, auxid).second;
+      if (su >= (int) (*this)(tid, auxid).size()) {
+        assert(su == INT_MAX);
+        su = (int) (*this)(tid, auxid).size();
+      }
+      // Dumb
+      /*
+      int curr = su - 1;
+      while (curr >= 0) {
+        const ZEvent *rem = (*this)(tid, auxid)[curr];
+        assert(isWriteM(rem) && !po.hasEdge(ev, rem));
+        if (po.hasEdge(rem, ev)) {
+          if (sameMl(ev, rem)) {
+            mayBeCovered.emplace(rem);
+            // Update cover
+            for (unsigned covthr : get_threads()) {
+              if (covthr != rem->thread_id()) {
+                for (int covaux : auxes(covthr)) {
+                  int newcov = po.pred(rem, covthr, covaux).second;
+                  auto covta = std::pair<unsigned, int>(covthr, covaux);
+                  assert(covered.count(covta));
+                  if (newcov > covered[covta])
+                    covered[covta] = newcov;
+                }
+              }
+            }
+            // Break
+            break;
+          }
+          curr--;
+        } else {
+          if (sameMl(ev, rem))
+            notCovered.emplace(rem);
+          curr--;
+        }
+      }
+      */
+      // TailW index to cache.wm
+      int wm_idx = getTailWindex(ev->ml, tid, su - 1);
+      assert(wm_idx == getLatestNotAfterIndex(ev, tid, po));
+      while (wm_idx > -1) {
+        const ZEvent *rem = cache.wm.at(ev->ml).at(tid).at(wm_idx);
+        assert(rem && isWriteM(rem) && sameMl(ev, rem));
+        assert(!po.hasEdge(ev, rem));
+        if (ev_before && po.hasEdge(rem, ev_before)) {
+          // Others in this thread are covered from ev by rem
+          assert((int) rem->event_id() <= po.pred(ev_before, tid, auxid).second);
+          mayBeCovered.emplace(rem);
+          // Update cover
+          for (unsigned covthr : get_threads()) {
+            if (covthr != rem->thread_id()) {
+              for (int covaux : auxes(covthr)) {
+                int newcov = po.pred(rem, covthr, covaux).second;
+                auto covta = std::pair<unsigned, int>(covthr, covaux);
+                assert(covered.count(covta));
+                if (newcov > covered[covta])
+                  covered[covta] = newcov;
+              }
+            }
+          }
+          // Break
+          break;
+        } else {
+          notCovered.emplace(rem);
+        }
+        --wm_idx;
+      }
+    }
+  }
+
+  // Handle thread of read/lock
+  if (isLock(ev)) {
+    const ZEvent * last_unlock_before_lock = nullptr;
+    if (getCache().unl.count(ev->ml) && getCache().unl.at(ev->ml).count(ev->thread_id())) {
+      for (const ZEvent * unlock : getCache().unl.at(ev->ml).at(ev->thread_id())) {
+        assert(isUnlock(unlock) && ev->thread_id() == unlock->thread_id() &&
+               sameMl(ev, unlock) && !unlock->cpid().is_auxiliary());
+        if (unlock->event_id() > ev->event_id())
+          break;
+        else {
+          assert(unlock->event_id() < ev->event_id());
+          assert(!last_unlock_before_lock ||
+                 last_unlock_before_lock->event_id() < unlock->event_id());
+          last_unlock_before_lock = unlock;
+        }
+      }
+    }
+    if (last_unlock_before_lock) {
+      // Update cover
+      for (unsigned covthr : get_threads()) {
+        if (covthr != last_unlock_before_lock->thread_id()) {
+          for (int covaux : auxes(covthr)) {
+            int newcov = po.pred(last_unlock_before_lock, covthr, covaux).second;
+            auto covta = std::pair<unsigned, int>(covthr, covaux);
+            assert(covered.count(covta));
+            if (newcov > covered[covta])
+              covered[covta] = newcov;
+          }
+        }
+      }
+
+      // Check if not covered by some remote
+      bool localCovered = false;
+      for (const auto& rem : mayBeCovered) {
+        assert(isUnlock(rem) && ev_before && po.hasEdge(rem, ev_before));
+        if (po.hasEdge(last_unlock_before_lock, rem)) {
+          localCovered = true;
+          break;
+        }
+      }
+      // Add obs if not covered, not base_obs, from_idx
+      if (!localCovered && base_obs != last_unlock_before_lock->id() &&
+          last_unlock_before_lock->trace_id() >= mutations_only_from_idx) {
+        assert(!res.count(last_unlock_before_lock->id()));
+        res.emplace(last_unlock_before_lock->id());
+      }
+    } else {
+       // No local unlock for lock
+      if (mayBeCovered.empty() && base_obs != ZEventID(true) &&
+          mutations_only_from_idx == -1) {
+        // Consider initial event
+        assert(!res.count(ZEventID(true)));
+        res.emplace(ZEventID(true)); // initial
+      }
+    }
+  } else {
+    assert(isRead(ev));
+    const ZEvent *localB = cache.readWB.at(ev);
+    if (localB) {
+      // There is a local write for read
+      assert(isWriteB(localB) && sameMl(localB, ev) &&
+             localB->thread_id() == ev->thread_id() &&
+             localB->aux_id() == -1 &&
+             localB->event_id() < ev->event_id());
+      const ZEvent *localM = localB->write_other_ptr;
+      // Update cover caused by localB
+      for (unsigned covthr : get_threads()) {
+        if (covthr != localB->thread_id()) {
+          for (int covaux : auxes(covthr)) {
+            int newcov = po.pred(localB, covthr, covaux).second;
+            auto covta = std::pair<unsigned, int>(covthr, covaux);
+            assert(covered.count(covta));
+            if (newcov > covered[covta])
+              covered[covta] = newcov;
+          }
+        }
+      }
+      // Delete remotes that happen *before* localM
+      // (no chance for them, those after localM are safe)
+      assert(isWriteM(localM) && sameMl(localB, localM) &&
+             po.hasEdge(localB, localM));
+      for (auto it = notCovered.begin(); it != notCovered.end(); ) {
+        const ZEvent *rem = *it;
+        assert(isWriteM(rem) && (!ev_before || !po.areOrdered(ev_before, rem)));
+        if (po.hasEdge(rem, localM))
+          it = notCovered.erase(it);
+        else
+          ++it;
+      }
+      for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
+        const ZEvent *rem = *it;
+        assert(isWriteM(rem) && ev_before && po.hasEdge(rem, ev_before));
+        if (po.hasEdge(rem, localM))
+          it = mayBeCovered.erase(it);
+        else
+          ++it;
+      }
+      // Check if not covered by some remote
+      bool localCovered = false;
+      for (const auto& rem : mayBeCovered) {
+        assert(isWriteM(rem) && ev_before && po.hasEdge(rem, ev_before));
+        if (po.hasEdge(localM, rem)) {
+          localCovered = true;
+          break;
+        }
+      }
+      // Add obs if not covered, not base_obs, from_idx
+      if (!localCovered && base_obs != localB->id() &&
+          localB->trace_id() >= mutations_only_from_idx) {
+        assert(!res.count(localB->id()));
+        res.emplace(localB->id());
+      }
+    } else {
+      // No local write for read
+      if (mayBeCovered.empty() && base_obs != ZEventID(true) &&
+          mutations_only_from_idx == -1) {
+        // Consider initial event
+        assert(!res.count(ZEventID(true)));
+        res.emplace(ZEventID(true)); // initial
+      }
+    }
+  }
+
+
+  // Take candidates unordered with read/lock
+  for (const auto& not_cov : notCovered) {
+    const ZEvent * obs_ev = not_cov;
+    assert(isWriteM(obs_ev) || isUnlock(obs_ev));
+    if (isWriteM(obs_ev)) {
+      obs_ev = obs_ev->write_other_ptr;
+      assert(isWriteB(obs_ev));
+    }
+    assert(sameMl(obs_ev, ev));
+    // Add if not base_obs, from_idx
+    if (base_obs != obs_ev->id() &&
+        obs_ev->trace_id() >= mutations_only_from_idx) {
+      assert(!res.count(obs_ev->id()));
+      res.emplace(obs_ev->id());
+    }
+  }
+
+  // Take candidates that happen before read/lock
+  for (const auto& may_be : mayBeCovered) {
+    const ZEvent * obs_ev = may_be;
+    assert(isWriteM(obs_ev) || isUnlock(obs_ev));
+    auto covta = std::pair<unsigned, int>
+      (obs_ev->thread_id(), obs_ev->aux_id());
+    assert(covered.count(covta));
+    if ((int) obs_ev->event_id() > covered[covta]) {
+      // Not covered
+      if (isWriteM(obs_ev)) {
+        obs_ev = obs_ev->write_other_ptr;
+        assert(isWriteB(obs_ev));
+      }
+      assert(sameMl(obs_ev, ev));
+      // Add if not base_obs, from_idx
+      if (base_obs != obs_ev->id() &&
+          obs_ev->trace_id() >= mutations_only_from_idx) {
+        assert(!res.count(obs_ev->id()));
+        res.emplace(obs_ev->id());
+      }
+    }
+  }
+  return res;
+}
+
+
+std::pair<std::set<int>, std::set<const ZEvent *>>
+ZGraph::get_causes_after
+(const ZEvent * const readlock, const ZEventID& mutation,
+ const std::vector<std::unique_ptr<ZEvent>>& tau) const
+{
+  assert(isRead(readlock) || isLock(readlock));
+  if (mutation == ZEventID(true))
+    return {std::set<int>(), std::set<const ZEvent *>()};
+
+  std::set<int> causes_all_idx;
+  std::set<const ZEvent *> causes_readslocks;
+
+  assert(hasEvent(mutation));
+
+  const ZEvent * obs = getEvent(mutation);
+  assert(isWriteB(obs) || isUnlock(obs));
+  if (isWriteB(obs)) {
+    obs = obs->write_other_ptr;
+    assert(isWriteM(obs));
+  }
+  assert(sameMl(obs, readlock));
+
+  for (int i = readlock->trace_id() + 1; i <= obs->trace_id(); ++i) {
+    assert(i >= 1 && i < tau.size());
+    const ZEvent * const ev = tau[i].get();
+    assert(hasEvent(ev));
+    if (*ev == *obs || getPo().hasEdge(ev, obs)) {
+      assert(!causes_all_idx.count(ev->trace_id()));
+      causes_all_idx.emplace(ev->trace_id());
+      if (isRead(ev) || isLock(ev)) {
+        assert(!causes_readslocks.count(ev));
+        causes_readslocks.emplace(ev);
+      }
+    }
+  }
+  return {causes_all_idx, causes_readslocks};
+}
+
+
 int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const
 {
-  assert(thr < number_of_threads());
+  assert(threads_auxes.count(thr));
   assert(cache.wm.count(ml));
   if (evX < 0)
     return -1;
@@ -881,7 +1101,7 @@ int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const
 }
 
 
-const ZEvent * ZGraph::getTailW
+const ZEvent * const ZGraph::getTailW
 (const SymAddrSize& ml, unsigned thr, int evX) const
 {
   int idx = getTailWindex(ml, thr, evX);
@@ -901,7 +1121,7 @@ int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPart
 {
   assert(isRead(read));
   assert(hasEvent(read));
-  assert(thr < number_of_threads());
+  assert(threads_auxes.count(thr));
   assert(thr != read->thread_id());
   assert(cache.wm.count(read->ml));
 
@@ -922,7 +1142,7 @@ int ZGraph::getLatestNotAfterIndex(const ZEvent *read, unsigned thr, const ZPart
 }
 
 
-const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
+const ZEvent * const ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const ZPartialOrder& partial) const
 {
   assert(isRead(read));
   assert(hasEvent(read));
@@ -939,7 +1159,7 @@ const ZEvent * ZGraph::getLatestNotAfter(const ZEvent *read, unsigned thr, const
 }
 
 
-const ZEvent * ZGraph::getLocalBufferW(const ZEvent *read) const
+const ZEvent * const ZGraph::getLocalBufferW(const ZEvent *read) const
 {
   assert(isRead(read));
   assert(hasEvent(read));
@@ -947,257 +1167,4 @@ const ZEvent * ZGraph::getLocalBufferW(const ZEvent *read) const
   const ZEvent *local = cache.readWB.at(read);
   assert(!local || isWriteB(local));
   return local;
-}
-
-
-std::list<const ZEvent *> ZGraph::getEventsToMutate(const ZAnnotation& annotation) const
-{
-  auto res = std::list<const ZEvent *>();
-  unsigned thr_id = 0;
-  while (hasThreadAux(thr_id, -1)) {
-    assert(!(*this)(thr_id, -1).empty());
-    auto lastEv = getEvent(thr_id, -1, (*this)(thr_id, -1).size() - 1);
-    if ((isRead(lastEv) && !annotation.defines(lastEv)) ||
-        (isLock(lastEv) && !annotation.lock_defines(lastEv)))
-      res.push_back(lastEv);
-    thr_id++;
-  }
-
-  // Sort the events based on a specified order
-  res.sort(ZEventPtrComp());
-
-  return res;
-}
-
-
-std::set<ZEventID> ZGraph::getObsCandidates
-(const ZEvent *read, const ZAnnotationNeg& negative) const
-{
-  assert(isRead(read));
-  assert(hasEvent(read));
-
-  std::set<ZEventID> res;
-
-  std::unordered_set<const ZEvent *> notCovered;
-  std::unordered_set<const ZEvent *> mayBeCovered;
-  // From the value (evid) and below, everything is covered from read by some other write
-  std::unordered_map
-    <std::pair<unsigned, int>, int> covered;
-  for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr)
-    for (int covaux : auxes(covthr))
-      covered.emplace(std::pair<unsigned, int>(covthr, covaux), -1);
-
-  // Handle other threads
-  for (unsigned tid = 0; tid < number_of_threads(); ++tid) {
-    int auxid = auxForMl(read->ml, tid);
-    if (read->thread_id() != tid && auxid >= 0) {
-      int su = po.succ(read, tid, auxid).second;
-      if (su >= (int) (*this)(tid, auxid).size()) {
-        assert(su == INT_MAX);
-        su = (int) (*this)(tid, auxid).size();
-      }
-      // Dumb
-      /*
-      int curr = su - 1;
-      while (curr >= 0) {
-        const ZEvent *rem = (*this)(tid, auxid)[curr];
-        assert(isWriteM(rem) && !po.hasEdge(read, rem));
-        if (po.hasEdge(rem, read)) {
-          if (sameMl(read, rem)) {
-            mayBeCovered.emplace(rem);
-            // Update cover
-            for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
-              if (covthr != rem->thread_id()) {
-                for (int covaux : auxes(covthr)) {
-                  int newcov = po.pred(rem, covthr, covaux).second;
-                  auto covta = std::pair<unsigned, int>(covthr, covaux);
-                  assert(covered.count(covta));
-                  if (newcov > covered[covta])
-                    covered[covta] = newcov;
-                }
-              }
-            }
-            // Break
-            break;
-          }
-          curr--;
-        } else {
-          if (sameMl(read, rem))
-            notCovered.emplace(rem);
-          curr--;
-        }
-      }
-      */
-      // TailW index to cache.wm
-      int wm_idx = getTailWindex(read->ml, tid, su - 1);
-      assert(wm_idx == getLatestNotAfterIndex(read, tid, po));
-      while (wm_idx > -1) {
-        const ZEvent *rem = cache.wm.at(read->ml).at(tid).at(wm_idx);
-        assert(rem && isWriteM(rem) && sameMl(read, rem));
-        assert(!po.hasEdge(read, rem));
-        if (po.hasEdge(rem, read)) {
-          // Others in this thread are covered from read by rem
-          assert((int) rem->event_id() <= po.pred(read, tid, auxid).second);
-          mayBeCovered.emplace(rem);
-          // Update cover
-          for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
-            if (covthr != rem->thread_id()) {
-              for (int covaux : auxes(covthr)) {
-                int newcov = po.pred(rem, covthr, covaux).second;
-                auto covta = std::pair<unsigned, int>(covthr, covaux);
-                assert(covered.count(covta));
-                if (newcov > covered[covta])
-                  covered[covta] = newcov;
-              }
-            }
-          }
-          // Break
-          break;
-        } else {
-          notCovered.emplace(rem);
-        }
-        --wm_idx;
-      }
-    }
-  }
-
-  // Handle thread of read
-  const ZEvent *localB = cache.readWB.at(read);
-  if (localB) {
-    // There is a local write for read
-    assert(isWriteB(localB) && sameMl(localB, read) &&
-           localB->thread_id() == read->thread_id() &&
-           localB->aux_id() == -1 &&
-           localB->event_id() < read->event_id());
-    const ZEvent *localM = localB->write_other_ptr;
-    // Update cover caused by localB
-    for (unsigned covthr = 0; covthr < number_of_threads(); ++covthr) {
-      if (covthr != localB->thread_id()) {
-        for (int covaux : auxes(covthr)) {
-          int newcov = po.pred(localB, covthr, covaux).second;
-          auto covta = std::pair<unsigned, int>(covthr, covaux);
-          assert(covered.count(covta));
-          if (newcov > covered[covta])
-            covered[covta] = newcov;
-        }
-      }
-    }
-    // Delete remotes that happen *before* localM
-    // (no chance for them, those after localM are safe)
-    assert(isWriteM(localM) && sameMl(localB, localM) &&
-           po.hasEdge(localB, localM));
-    for (auto it = notCovered.begin(); it != notCovered.end(); ) {
-      const ZEvent *rem = *it;
-      assert(isWriteM(rem) && !po.areOrdered(read, rem));
-      if (po.hasEdge(rem, localM))
-        it = notCovered.erase(it);
-      else
-        ++it;
-    }
-    for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
-      const ZEvent *rem = *it;
-      assert(isWriteM(rem) && po.hasEdge(rem, read));
-      if (po.hasEdge(rem, localM))
-        it = mayBeCovered.erase(it);
-      else
-        ++it;
-    }
-    // Check if not covered by some remote
-    bool localCovered = false;
-    for (const auto& rem : mayBeCovered) {
-      assert(isWriteM(rem) && po.hasEdge(rem, read));
-      if (po.hasEdge(localM, rem)) {
-        localCovered = true;
-        break;
-      }
-    }
-    // Add obs if not covered and not forbidden
-    if (!localCovered && !negative.forbids(read, localB)) {
-      assert(!res.count(localB->id()));
-      res.emplace(localB->id());
-    }
-  } else {
-    // No local write for read
-    if (mayBeCovered.empty()) {
-      // Consider initial event if not forbidden
-      if (!negative.forbidsInitialEvent(read)) {
-        assert(!res.count(ZEventID(true)));
-        res.emplace(ZEventID(true)); // initial
-      }
-    }
-  }
-
-  // Take candidates unordered with read
-  for (const auto& remM : notCovered) {
-    assert(isWriteM(remM));
-    const ZEvent *remB = remM->write_other_ptr;
-    assert(isWriteB(remB) && sameMl(remB, remM) &&
-           po.hasEdge(remB, remM));
-    // Add if not forbidden
-    if (!negative.forbids(read, remB)) {
-      assert(!res.count(remB->id()));
-      res.emplace(remB->id());
-    }
-  }
-
-  // Take candidates that happen before read
-  for (const auto& remM : mayBeCovered) {
-    assert(isWriteM(remM));
-    auto covta = std::pair<unsigned, int>
-      (remM->thread_id(), remM->aux_id());
-    assert(covered.count(covta));
-    if ((int) remM->event_id() > covered[covta]) {
-      // Not covered
-      const ZEvent *remB = remM->write_other_ptr;
-      assert(isWriteB(remB) && sameMl(remB, remM) &&
-             po.hasEdge(remB, remM));
-      // Add if not forbidden
-      if (!negative.forbids(read, remB)) {
-        assert(!res.count(remB->id()));
-        res.emplace(remB->id());
-      }
-    }
-  }
-
-  return res;
-}
-
-
-bool ZGraph::ml_has_some_lock(const ZEvent * lock, const ZAnnotation& annotation) const
-{
-  assert(isLock(lock));
-  const auto& lockml = lock->ml;
-  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
-    const ZEventID& anlockid = it->first;
-    const ZEvent * anlock = getEvent(anlockid);
-    assert(anlock && isLock(anlock));
-    if (anlock->ml == lockml) {
-      return true;
-    }
-  }
-  return false;
-}
-
-
-const ZEvent * ZGraph::get_last_lock_of_ml(const ZEvent * lock, const ZAnnotation& annotation) const
-{
-  assert(isLock(lock));
-  const ZEvent * res = nullptr;
-  const auto& lockml = lock->ml;
-  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
-    const ZEventID& anlockid = it->first;
-    const ZEvent * anlock = getEvent(anlockid);
-    assert(anlock && isLock(anlock));
-    if (anlock->ml == lockml) {
-      if (!res)
-        res = anlock;
-      else {
-        assert(po.areOrdered(res, anlock));
-        if (po.hasEdge(res, anlock))
-          res = anlock;
-      }
-    }
-  }
-  assert(res);
-  return res;
 }

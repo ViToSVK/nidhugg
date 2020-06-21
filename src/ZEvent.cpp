@@ -27,12 +27,12 @@ ZEvent::ZEvent
  int instruction_id, int event_id, int trace_id)
   : kind(Kind::DUMMY),
     _id(ZEventID(cpid, event_id)),
-    _thread_id(-1), /*set at PObuild time*/
+    _thread_id(-1), /*set at tracebuilder time*/
     _aux_id((cpid.is_auxiliary()) ? cpid.get_aux_index() : -1),
     _trace_id(trace_id),
     observed_trace_id(-1),
     write_other_trace_id(-1),
-    write_other_ptr(nullptr), /*set at PObuild time*/
+    write_other_ptr(nullptr), /*set at explorer.extend time*/
     childs_cpid(),
     fence(false),
     ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
@@ -108,7 +108,7 @@ std::string ZEvent::to_string(bool write_cpid) const
   res << trace_id() << "::";
   if (write_cpid)
     res << cpid() << "_";
-  res << "[t" << thread_id() << ",,a" << aux_id() << ",,e" << event_id() << "]";
+  res << "[t" << thread_id() << "_a" << aux_id() << "_e" << event_id() << "]";
   switch(kind) {
    case ZEvent::Kind::DUMMY :
      res << " <s:" << size << ">";
