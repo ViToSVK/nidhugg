@@ -83,7 +83,7 @@ class ZTrace {
             proc_seq_to_thread_id.empty());
   }
 
-  std::string to_string(unsigned depth) const;
+  std::string to_string(bool noexec) const;
   void dump() const;
 };
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZTrace& tr);

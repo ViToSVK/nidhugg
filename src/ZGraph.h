@@ -48,6 +48,7 @@ class ZGraph {
   const ZEvent * const initial() const { return &init; }
   const LineT& operator()(std::pair<unsigned, int> ids) const;
   const LineT& operator()(unsigned thread_id, int aux_id) const;
+  std::unordered_map<std::vector<int>, const ZEvent *> proc_seq_to_spawn; ////
   //
   const ZEvent * const getEvent(unsigned thread_id, int aux_id, unsigned event_id) const;
   const ZEvent * const getEvent(const ZEventID& id) const;
@@ -75,9 +76,8 @@ class ZGraph {
   int psoGetAux(const ZEvent* writeM);
 
   // PROCSEQ->THREAD_ID (retained accross recursion children)
- private:
-  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
  public:
+  std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id; ////
   std::unordered_map<int, unsigned> thr_to_lin_id; ////
   std::unordered_map<unsigned, int> lin_to_thr_id; ////
   // <threadID, added_with_this_call?>

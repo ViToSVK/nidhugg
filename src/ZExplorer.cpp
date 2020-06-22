@@ -95,7 +95,6 @@ bool ZExplorer::extend_and_explore
   std::unordered_map<
     std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
   // Extend ann_trace.tau/annotation/ext_reads_locks
-  if (INFO) dump_trace(ann_trace.exec);
   for (int i = ann_trace.ext_from_id; i < (int) ann_trace.exec.size(); ++i) {
     ann_trace.tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       ann_trace.exec[i], i, true)));
@@ -171,6 +170,7 @@ bool ZExplorer::extend_and_explore
     }
   }
   // Explore mutations with extended ann_trace
+  if (INFO) { ann_trace.dump(); }
   end_err("extend-done");
   return explore(ann_trace);
 }
@@ -201,6 +201,7 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
       // Add reads-from edges
       graph.add_reads_from_edges(ann_trace.annotation);
       time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
+      if (INFO) graph.dump();
     }
     assert(graph.constructed);
     // Find mutation candidates for read/lock
@@ -230,7 +231,7 @@ void ZExplorer::mutate
 (const ZTrace& ann_trace, const ZGraph& graph,
  const ZEvent * const readlock, const ZEventID& mutation)
 {
-  start_err(std::string("mutate") + readlock->to_string() +
+  start_err(std::string("mutate-") + readlock->to_string() +
             "   -to-see-   " + mutation.to_string() + "...");
   assert(isRead(readlock) || isLock(readlock));
   auto causes_after = graph.get_causes_after(
@@ -319,7 +320,7 @@ void ZExplorer::mutate
   closure_edges += closure.added_edges;
   closure_iter += closure.iterations;
   // Linearize
-  if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
+  // if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
   err_msg("attempt-linearization");
   init = std::clock();
   ZLinearization linearizer(
@@ -419,16 +420,38 @@ void ZExplorer::mutate
     assert(graph.hasEvent(causal));
     if (!remaining_proc.count(causal->cpid().get_proc_seq()))
       continue;
-    if (*causal == *readlock ||
-        (!graph.getPo().hasEdge(causal, readlock) &&
-         (!mut_ev || !graph.getPo().hasEdge(causal, mut_ev)))) {
+    if (*causal == *readlock) {
+      // In the thread of readlock, reached readlock, nothing else in causal past
       assert(remaining_proc.count(causal->cpid().get_proc_seq()));
       remaining_proc.erase(causal->cpid().get_proc_seq());
       if (remaining_proc.empty())
         break;
+      continue;
     }
-    if (!mutated_committed.count(causal->id()))
+    if (!mut_ev || !graph.getPo().hasEdge(causal, mut_ev)) {
+      // Not causal past of mutation, check causal past of readlock
+      const ZEvent * const ev_before = (readlock->event_id() > 0)
+        ? graph.getEvent(readlock->thread_id(), readlock->aux_id(), readlock->event_id() - 1) : nullptr;
+      assert(graph.proc_seq_to_spawn.count(readlock->cpid().get_proc_seq()));
+      const ZEvent * spawn = graph.proc_seq_to_spawn.at(readlock->cpid().get_proc_seq());
+      assert(graph.po.hasEdge(spawn, readlock));
+      bool causal_of_readlock = false;
+      if (ev_before && (*causal == *ev_before || graph.po.hasEdge(causal, ev_before)))
+        causal_of_readlock = true;
+      else if (graph.po.hasEdge(causal, spawn))
+        causal_of_readlock = true;
+      if (!causal_of_readlock) {
+        assert(remaining_proc.count(causal->cpid().get_proc_seq()));
+        remaining_proc.erase(causal->cpid().get_proc_seq());
+        if (remaining_proc.empty())
+          break;
+        continue;
+      }
+    }
+    assert(remaining_proc.count(causal->cpid().get_proc_seq()));
+    if (!mutated_committed.count(causal->id())) {
       mutated_committed.emplace(causal->id());
+    }
   }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
   // Add successful schedule
@@ -491,6 +514,7 @@ bool ZExplorer::get_extension(ZTrace& ann_trace)
   assert(original_tb);
   interpreter_used++;
   ZTraceExtension ext;
+  //if (INFO) dump_trace(ann_trace.exec);
   if (model == MemoryModel::SC) {
     clock_t init = std::clock();
     ZBuilderSC TB(*(original_tb->config), original_tb->M,
@@ -531,7 +555,7 @@ bool ZExplorer::get_extension(ZTrace& ann_trace)
   }
   // Extend with the extension and explore
   end_err("get_extension-done");
-  if (INFO) ext.dump();
+  //if (INFO) ext.dump();
   return extend_and_explore(ann_trace, std::move(ext));
 }
 

@@ -22,7 +22,7 @@
 #include "ZGraph.h"
 #include "ZBuilderTSO.h"
 
-static const bool DEBUG = true;
+static const bool DEBUG = false;
 #include "ZDebug.h"
 
 
@@ -31,6 +31,7 @@ ZGraph::ZGraph(MemoryModel model)
   : model(model),
     init(ZEvent(true)),
     lines(),
+    proc_seq_to_spawn(),
     thread_aux_to_line_id(),
     threads_auxes(),
     proc_seq_to_thread_id(),
@@ -49,6 +50,7 @@ ZGraph::ZGraph(ZGraph&& oth)
   : model(oth.model),
     init(std::move(oth.init)),
     lines(std::move(oth.lines)),
+    proc_seq_to_spawn(std::move(oth.proc_seq_to_spawn)),
     thread_aux_to_line_id(std::move(oth.thread_aux_to_line_id)),
     threads_auxes(std::move(oth.threads_auxes)),
     proc_seq_to_thread_id(std::move(oth.proc_seq_to_thread_id)),
@@ -491,9 +493,17 @@ void ZGraph::construct
         }
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+    if (isLock(ev) || isUnlock(ev)) {
+      llvm::errs() << "No support for locks atm";
+      abort();
+    }
+
     // Handle Spawn
     if (isSpawn(ev)) {
       spawns.push_back(ev);
+      assert(!proc_seq_to_spawn.count(ev->childs_cpid.get_proc_seq()));
+      proc_seq_to_spawn.emplace(ev->childs_cpid.get_proc_seq(), ev);
       assert(number_of_threads() > 0);
       assert(ev->fence);
     }
@@ -630,13 +640,11 @@ void ZGraph::construct
 
   // EDGES - spawns
   for (const ZEvent *spwn : spawns) {
-    unsigned child_thr = getThreadIDnoAdd(spwn->childs_cpid.get_proc_seq());
-    if (child_thr >= proc_seq_to_thread_id.size()) {
-      // When mutating with just part of the trace, spawns may
-      // be present where the actual spawned thread is not at all
+    if (!proc_seq_to_thread_id.count(spwn->childs_cpid.get_proc_seq()))
       continue;
-    }
+    unsigned child_thr = proc_seq_to_thread_id.at(spwn->childs_cpid.get_proc_seq());
     for (int aux : auxes(child_thr)) {
+      assert(hasThreadAux(child_thr, aux));
       assert(!(*this)(child_thr, aux).empty());
       const ZEvent *nthr = getEvent(child_thr, aux, 0);
 
@@ -648,9 +656,12 @@ void ZGraph::construct
 
   // EDGES - joins
   for (const ZEvent *jn : joins) {
-    unsigned child_thr = getThreadIDnoAdd(jn->childs_cpid.get_proc_seq());
+    if (!proc_seq_to_thread_id.count(jn->childs_cpid.get_proc_seq()))
+      continue;
+    unsigned child_thr = proc_seq_to_thread_id.at(jn->childs_cpid.get_proc_seq());
     assert(child_thr < proc_seq_to_thread_id.size());
     for (int aux : auxes(child_thr)) {
+      assert(hasThreadAux(child_thr, aux));
       assert(!(*this)(child_thr, aux).empty());
       unsigned lastev_idx = (*this)(child_thr, aux).size() - 1;
       const ZEvent *wthr = getEvent(child_thr, aux, lastev_idx);
@@ -733,11 +744,15 @@ std::set<ZEventID> ZGraph::get_mutations
 (const ZEvent * const ev, const ZEventID base_obs,
  int mutations_only_from_idx) const
 {
+  start_err("starting get-mutations");
   assert(isRead(ev) || isLock(ev));
   assert(hasEvent(ev));
   std::set<ZEventID> res;
   const ZEvent * const ev_before = (ev->event_id() > 0)
     ? getEvent(ev->thread_id(), ev->aux_id(), ev->event_id() - 1) : nullptr;
+  assert(proc_seq_to_spawn.count(ev->cpid().get_proc_seq()));
+  const ZEvent * spawn = proc_seq_to_spawn.at(ev->cpid().get_proc_seq());
+  assert(po.hasEdge(spawn, ev));
 
   std::unordered_set<const ZEvent *> notCovered;
   std::unordered_set<const ZEvent *> mayBeCovered;
@@ -832,9 +847,10 @@ std::set<ZEventID> ZGraph::get_mutations
         const ZEvent *rem = cache.wm.at(ev->ml).at(tid).at(wm_idx);
         assert(rem && isWriteM(rem) && sameMl(ev, rem));
         assert(!po.hasEdge(ev, rem));
-        if (ev_before && po.hasEdge(rem, ev_before)) {
+        if ((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn)) {
           // Others in this thread are covered from ev by rem
-          assert((int) rem->event_id() <= po.pred(ev_before, tid, auxid).second);
+          assert(po.hasEdge(rem, spawn) ||
+                 (ev_before && (int) rem->event_id() <= po.pred(ev_before, tid, auxid).second));
           mayBeCovered.emplace(rem);
           // Update cover
           for (unsigned covthr : get_threads()) {
@@ -941,7 +957,8 @@ std::set<ZEventID> ZGraph::get_mutations
              po.hasEdge(localB, localM));
       for (auto it = notCovered.begin(); it != notCovered.end(); ) {
         const ZEvent *rem = *it;
-        assert(isWriteM(rem) && (!ev_before || !po.areOrdered(ev_before, rem)));
+        assert(isWriteM(rem));
+        assert(!ev_before || !po.hasEdge(rem, ev_before));
         if (po.hasEdge(rem, localM))
           it = notCovered.erase(it);
         else
@@ -949,7 +966,8 @@ std::set<ZEventID> ZGraph::get_mutations
       }
       for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
         const ZEvent *rem = *it;
-        assert(isWriteM(rem) && ev_before && po.hasEdge(rem, ev_before));
+        assert(isWriteM(rem));
+        assert((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn));
         if (po.hasEdge(rem, localM))
           it = mayBeCovered.erase(it);
         else
@@ -958,7 +976,8 @@ std::set<ZEventID> ZGraph::get_mutations
       // Check if not covered by some remote
       bool localCovered = false;
       for (const auto& rem : mayBeCovered) {
-        assert(isWriteM(rem) && ev_before && po.hasEdge(rem, ev_before));
+        assert(isWriteM(rem));
+        assert((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn));
         if (po.hasEdge(localM, rem)) {
           localCovered = true;
           break;
@@ -1021,6 +1040,7 @@ std::set<ZEventID> ZGraph::get_mutations
       }
     }
   }
+  end_err("ending get-mutations");
   return res;
 }
 

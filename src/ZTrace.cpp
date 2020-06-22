@@ -90,10 +90,11 @@ ZTrace::ZTrace
 }
 
 
-std::string ZTrace::to_string(unsigned depth = 2) const
+std::string ZTrace::to_string(bool noexec = true) const
 {
   std::stringstream res;
 
+/*
   if (!parent) {
     res << "########################\n"
         << "#     INITIAL TRACE    #\n"
@@ -101,8 +102,10 @@ std::string ZTrace::to_string(unsigned depth = 2) const
   } else if (depth > 0) {
     res << parent->to_string(depth-1);
   }
-
-  res << "EXECTUTION\n" << trace_to_string(exec);
+*/
+  if (!noexec) {
+    res << "EXECUTION\n" << trace_to_string(exec);
+  }
   res << "TAU\n" << trace_to_string(tau);
   res << annotation.to_string();
   res << "COMMITTED\n";
@@ -112,8 +115,7 @@ std::string ZTrace::to_string(unsigned depth = 2) const
       << " ::: reads/locks in extension:";
   for (int id : ext_reads_locks)
     res << " " << id;
-  res << "\n\nvvvvvvvvvvvvvvvvvvvvvvvv\n\n";
-
+  res << "\n";
   return res.str();
 }
 

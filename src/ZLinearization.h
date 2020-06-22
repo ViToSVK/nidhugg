@@ -46,7 +46,7 @@ class ZObs {
 
   std::string to_string() const {
     std::stringstream res;
-    res << "[" << thr << ",-1," << ev << "]";
+    res << "[" << thr << "_-1_" << ev << "]";
     return res.str();
   }
 

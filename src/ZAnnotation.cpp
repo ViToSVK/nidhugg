@@ -50,8 +50,9 @@ bool ZAnnotation::defines(const ZEventID& ev_id) const
 
 bool ZAnnotation::defines(const ZEvent *ev) const
 {
-  assert(isRead(ev));
-  return defines(ev->id());
+  bool res = defines(ev->id());
+  assert(isRead(ev) || !res);
+  return res;
 }
 
 

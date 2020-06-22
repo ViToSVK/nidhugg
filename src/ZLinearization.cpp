@@ -176,7 +176,7 @@ void ZLinearization::calculateWrMapping() {
 
 
 const ZLinearization::WrSet& ZLinearization::initialGetObservers(SymAddrSize ml) const {
-  start_err("initialGetObservers...");
+  start_err(std::string("initialGetObservers_") + ml.to_string() + "...");
   auto it = wr_initial.find(ml);
   if (it == wr_initial.end()) {
     end_err("0");
@@ -188,7 +188,7 @@ const ZLinearization::WrSet& ZLinearization::initialGetObservers(SymAddrSize ml)
 
 
 const ZLinearization::WrSet& ZLinearization::getObservers(const ZObs& obs) const {
-  start_err("getObservers...");
+  start_err(std::string("getObservers_") + obs.to_string() + "...");
   auto it = wr_mapping.find(obs);
   if (it == wr_mapping.end()) {
     end_err("0");
@@ -203,7 +203,7 @@ const ZLinearization::WrSet& ZLinearization::getObservers(const ZEvent *ev) cons
 
 
 unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
-  start_err("numEventsInThread...");
+  start_err(std::string("numEventsInThread_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   assert(thr < gr.number_of_threads() && "Non-existent thread");
   if (!gr.hasThreadAux(gr.lin_to_thr_id.at(thr), aux)) {
     end_err("0");
@@ -223,7 +223,7 @@ unsigned ZLinearization::numEventsInThread(unsigned thr, int aux) const {
 
 
 const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
-  start_err("currEvent...");
+  start_err(std::string("currEvent_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   assert(thr < par.gr.number_of_threads() && "Non-existent main thread");
   unsigned pos = prefix.at(thr, aux);
   if (pos >= par.numEventsInThread(thr, aux)) {
@@ -237,7 +237,7 @@ const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
 
 
 bool ZLinearization::State::isClosedVar(SymAddrSize ml) const {
-  start_err("isClosedVar...");
+  start_err(std::string("isClosedVar_") + ml.to_string() + "...");
   auto it = curr_vals.find(ml);
   const std::set<ZObs>& observers = (it == curr_vals.end() ? par.initialGetObservers(ml) : par.getObservers(it->second)).toSet();
   for (auto& r : observers) {
@@ -252,7 +252,7 @@ bool ZLinearization::State::isClosedVar(SymAddrSize ml) const {
 
 
 bool ZLinearization::State::canAdvanceAux(unsigned thr, int aux) const {
-  start_err("canAdvanceAux...");
+  start_err(std::string("canAdvanceAux_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   assert(aux != -1 && "CanAdvanceAux can only be called on aux threads");
   assert(thr < par.gr.number_of_threads() && "Non-existent thread");
   const ZEvent *ev = currEvent(thr, aux);
@@ -275,7 +275,7 @@ bool ZLinearization::State::canAdvanceAux(unsigned thr, int aux) const {
 
 
 void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& res) {
-  start_err(std::string("advanceAux_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
+  start_err(std::string("advance_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   assert(aux == -1 || canAdvanceAux(thr, aux) && "Trying to advance non-advancable aux");
   const ZEvent *ev = currEvent(thr, aux);
   assert(ev && "Trying to advance with nullptr");
@@ -292,8 +292,15 @@ void ZLinearization::State::advance(unsigned thr, int aux, std::vector<ZEvent>& 
   // Update tr_pos
   while (tr_pos < par.tr.size()) {
     const ZEvent& evRef = par.tr.at(tr_pos);
-    if (evRef.event_id() >= prefix.at(gr.thr_to_lin_id.at(evRef.thread_id()), evRef.aux_id())) {
-      break;
+    if (gr.proc_seq_to_thread_id.count(evRef.cpid().get_proc_seq())) {
+      int thr_id = gr.proc_seq_to_thread_id.at(evRef.cpid().get_proc_seq());
+      assert(gr.thr_to_lin_id.count(thr_id));
+      if (gr.hasThreadAux(thr_id, evRef.aux_id())) {
+        unsigned lin_id = gr.thr_to_lin_id.at(thr_id);
+        if (evRef.event_id() >= prefix.at(lin_id, evRef.aux_id())) {
+          break;
+        }
+      }
     }
     tr_pos++;
   }
@@ -331,7 +338,7 @@ bool ZLinearization::State::isUseless(const ZEvent *ev) const {
 
 
 bool ZLinearization::State::canPushUp(unsigned thr, int aux) const {
-  start_err("canPushUp...");
+  start_err(std::string("canPushUp_thr") + std::to_string(thr) + "_aux" + std::to_string(aux) + "...");
   // if aux event
   if (aux != -1) {
     auto res = canAdvanceAux(thr, aux) && isUseless(currEvent(thr, aux));
@@ -447,7 +454,9 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
     end_err("0b");
     return 0;
   }
-  auto res = gr.thr_to_lin_id.at(evRef.thread_id());
+  assert(gr.proc_seq_to_thread_id.count(evRef.cpid().get_proc_seq()));
+  int thr_id = gr.proc_seq_to_thread_id.at(evRef.cpid().get_proc_seq());
+  auto res = gr.thr_to_lin_id.at(thr_id);
   end_err("1");
   return res;
 }
@@ -657,7 +666,7 @@ bool ZLinearization::MainReqsKeyPSO::operator< (const MainReqsKeyPSO& other) con
 
 
 bool ZLinearization::canForce(const State& state, unsigned thr) const {
-  start_err("canForce...");
+  start_err(std::string("canForce_thr") + std::to_string(thr) + "...");
   // assert(state.allPushedUp() && "Can force only on an all-pushed-up state");
   const ZEvent *ev = state.currEvent(thr);
   if (!ev) {
@@ -705,7 +714,7 @@ bool ZLinearization::canForce(const State& state, unsigned thr) const {
 
 
 void ZLinearization::force(State& state, unsigned thr, std::vector<ZEvent>& res) const {
-  start_err("force...");
+  start_err(std::string("force_thr") + std::to_string(thr) + "...");
   assert(canForce(state, thr) && "According to .canForce, cannot force");
   const ZEvent *ev = state.currEvent(thr);
   for (unsigned thr2 = 0; thr2 < gr.number_of_threads(); thr2++) {
@@ -743,8 +752,13 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
     end_err("0");
     return 0;
   }
+  assert(pos < tr.size());
+  const ZEvent& evRef = tr.at(pos);
+  assert(gr.proc_seq_to_thread_id.count(evRef.cpid().get_proc_seq()));
+  int thr_id = gr.proc_seq_to_thread_id.at(evRef.cpid().get_proc_seq());
+  auto res = gr.thr_to_lin_id.at(thr_id);
   end_err("?");
-  return gr.thr_to_lin_id.at(tr.at(pos).thread_id());
+  return res;
 }
 
 
