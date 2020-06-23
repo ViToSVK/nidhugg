@@ -28,6 +28,8 @@ static const bool DEBUG = true;
 static const bool INFO = true;
 #include "ZDebug.h"
 
+using BuffersT = std::unordered_map<std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>>;
+
 
 ZExplorer::ZExplorer(ZBuilderSC& tb)
   : original_tb(&tb), model(MemoryModel::SC) {}
@@ -72,6 +74,16 @@ void ZExplorer::print_stats() const
 }
 
 
+void ZExplorer::dump_schedules() const
+{
+  llvm::errs() << "SCHEDULES:";
+  for (const auto& tauidx_sch : schedules) {
+    llvm::errs() << " " << tauidx_sch.first;
+  }
+  llvm::errs() << "\n";
+}
+
+
 /* *************************** */
 /* EXTEND AND EXPLORE          */
 /* *************************** */
@@ -92,8 +104,49 @@ bool ZExplorer::extend_and_explore
   assert(ann_trace.ext_from_id <= (int) ann_trace.exec.size());
   assert(ann_trace.ext_reads_locks.empty());
   // Thread -> ML -> Pointers to WriteB's
-  std::unordered_map<
-    std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
+  BuffersT buffers;
+  readlock_ids.clear();
+  for (int i = 0; i < ann_trace.tau.size(); ++i) {
+    ZEvent * ev = ann_trace.tau.at(i).get();
+    assert(ev->trace_id() == i);
+    // Maintain buffers
+    if (!buffers.count(ev->cpid().get_proc_seq()))
+      buffers.emplace(ev->cpid().get_proc_seq(),
+                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
+    if (isWriteB(ev)) {
+      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
+        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
+    }
+    // Assert proper WriteB <-> WriteM pointers
+    if (isWriteM(ev)) {
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
+      assert(isWriteB(evB) && sameMl(ev, evB));
+      assert(ev->write_other_ptr == evB);
+      assert(ev->write_other_trace_id == evB->trace_id());
+      assert(evB->write_other_ptr == ev);
+      assert(evB->write_other_trace_id == ev->trace_id());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
+    }
+    // Assert annotation
+    assert(!isRead(ev) || ann_trace.annotation.defines(ev));
+    assert(!isLock(ev) || ann_trace.annotation.lock_defines(ev));
+    // All readlocks should have readlock_ids
+    // Noncommitted readlocks should have schedules
+    // Committed readlocks might still have schedules!!!
+    if ((isRead(ev) || isLock(ev))) {
+      assert(!readlock_ids.count(i));
+      readlock_ids.emplace(i);
+      if (!ann_trace.committed.count(ev->id())) {
+        assert(schedules.count(i));
+        assert(failed_schedules.count(i));
+      }
+    }
+  }
+  assert(ann_trace.ext_from_id == ann_trace.tau.size());
   // Extend ann_trace.tau/annotation/ext_reads_locks
   for (int i = ann_trace.ext_from_id; i < (int) ann_trace.exec.size(); ++i) {
     ann_trace.tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
@@ -109,7 +162,10 @@ bool ZExplorer::extend_and_explore
     }
     if (isRead(ev) || isLock(ev)) {
       ann_trace.ext_reads_locks.push_back(i);
+      assert(!readlock_ids.count(i));
+      readlock_ids.emplace(i);
       // Initialize schedules
+      assert(!ann_trace.committed.count(ev->id()));
       assert(!schedules.count(i));
       schedules.emplace(i, std::map<ZAnnotation, ZTrace>());
       assert(!failed_schedules.count(i));
@@ -170,7 +226,7 @@ bool ZExplorer::extend_and_explore
     }
   }
   // Explore mutations with extended ann_trace
-  if (INFO) { ann_trace.dump(); }
+  if (INFO) { ann_trace.dump(); dump_schedules(); }
   end_err("extend-done");
   return explore(ann_trace);
 }
@@ -201,7 +257,7 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
       // Add reads-from edges
       graph.add_reads_from_edges(ann_trace.annotation);
       time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
-      if (INFO) graph.dump();
+      //if (INFO) graph.dump();
     }
     assert(graph.constructed);
     // Find mutation candidates for read/lock
@@ -272,13 +328,13 @@ void ZExplorer::mutate
   ZAnnotation mutated_annotation(mutated_key);
   assert((isRead(readlock) && mutated_annotation.defines(readlock)) ||
          (isLock(readlock) && mutated_annotation.lock_defines(readlock)));
-  for (const auto& tauidx_sch : schedules) {
-    int tauidx = tauidx_sch.first;
+  for (const int tauidx : readlock_ids) {
     assert(tauidx <= readlock->trace_id());
     if (tauidx == readlock->trace_id())
       break;
     assert(tauidx >= 0 && tauidx < (int) ann_trace.tau.size());
     const ZEvent * pre_readlock = ann_trace.tau[tauidx].get();
+    assert(isRead(pre_readlock) || isLock(pre_readlock));
     assert(!mutated_annotation.defines(pre_readlock) &&
            !mutated_annotation.lock_defines(pre_readlock));
     if (isRead(pre_readlock)) {
@@ -336,14 +392,13 @@ void ZExplorer::mutate
     end_err("mutate-done-linearization-failed");
     return;
   }
-  // TODO  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));  TODO
+  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));
   // Construct tau
   init = std::clock();
   err_msg("attempt-tau");
   std::vector<std::unique_ptr<ZEvent>> mutated_tau;
   // Thread -> ML -> Pointers to WriteB's
-  std::unordered_map<
-    std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>> buffers;
+  BuffersT buffers;
   for (int i = 0; i <= readlock->trace_id(); ++i) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[i].get(), i, true)));
@@ -414,10 +469,12 @@ void ZExplorer::mutate
     nullptr : graph.getEvent(mutation);
   assert(!mut_ev || isWriteB(mut_ev) || isUnlock(mut_ev));
   auto remaining_proc = mutated_graph.all_proc_seq();
-  for (const auto& tauidx_sch : schedules) {
-    const ZEvent * causal = ann_trace.tau[tauidx_sch.first].get();
+  for (int tauidx : readlock_ids) {
+    const ZEvent * causal = ann_trace.tau[tauidx].get();
     assert(isRead(causal) || isLock(causal));
     assert(graph.hasEvent(causal));
+    if (mutated_committed.count(causal->id()))
+      continue;
     if (!remaining_proc.count(causal->cpid().get_proc_seq()))
       continue;
     bool is_causal = graph.is_causal_readlock_or_mutation(
@@ -442,7 +499,8 @@ void ZExplorer::mutate
          !failed_schedules.at(readlock->trace_id()).count(mutated_key));
   schedules[readlock->trace_id()].emplace(mutated_key,
     ZTrace(&ann_trace, std::move(linear), std::move(mutated_tau),
-           std::move(mutated_annotation), std::move(mutated_committed)));
+           std::move(mutated_annotation), std::move(mutated_committed),
+           readlock->id()));
   end_err("mutate-done-added");
 }
 
@@ -462,23 +520,21 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
     assert(schedules.count(idx));
     // Move the schedules out of the map
     std::map<ZAnnotation, ZTrace> sch = std::move(schedules.at(idx));
+    // We erase (failed_)schedules already now, we use
+    // readlock_ids as pointers to all reads/locks
     assert(schedules.at(idx).empty());
+    schedules.erase(idx);
+    assert(!schedules.count(idx));
     assert(failed_schedules.count(idx));
-    failed_schedules[idx].clear();
+    failed_schedules.erase(idx);
+    assert(!failed_schedules.count(idx));
     // Recur on each schedule
     for (auto& key_trace : sch) {
       if (get_extension(key_trace.second))
         return true;
     }
-    // We erase the key idx from (failed)_schedules only *after* the
-    // recursive calls, so that we keep the idx as a pointer to the
-    // specific read/lock for when iterating over all reads/locks
-    assert(schedules.at(idx).empty());
-    schedules.erase(idx);
-    assert(!schedules.count(idx));
-    assert(failed_schedules.at(idx).empty());
-    failed_schedules.erase(idx);
-    assert(!failed_schedules.count(idx));
+    err_msg(std::string("recur-on-") + std::to_string(i) +
+            "-(idx-is-" + std::to_string(idx) + ")-done");
   }
   end_err("recur-done");
   return false;
@@ -541,6 +597,147 @@ bool ZExplorer::get_extension(ZTrace& ann_trace)
 }
 
 
+/* *************************** */
+/* RESPECTS ANNOTATION         */
+/* *************************** */
+
+bool ZExplorer::linearization_respects_ann
+(const std::vector<ZEvent>& trace,
+ const ZAnnotation& annotation,
+ const ZGraph& graph,
+ const ZTrace& parent_trace) const
+{
+  assert(!trace.empty());
+  // Trace index of the last write happening in the given location
+  std::unordered_map<SymAddrSize, int> lastWrite;
+  // Trace index of the last lock + whether given ML is currently locked
+  std::unordered_map<SymAddrSize, int> lastUnlock;
+  std::unordered_set<SymAddrSize> locked;
+  // ThreadID -> ML -> Writes in store queue of thr for ml
+  std::unordered_map
+    <int, std::unordered_map
+     <SymAddrSize, std::list<int>>> storeQueue;
+  // Real observation in trace
+  std::unordered_map<int, int> realObs;
+  // BufferWrite -> pos
+  std::unordered_map<ZEventID, unsigned> bw_pos;
+  // BufferWrite -> MemoryWrite
+  std::unordered_map<int, int> buf_mem;
+
+  for (unsigned i=0; i<trace.size(); ++i) {
+    const ZEvent * ev = &(trace.at(i));
+    assert(graph.proc_seq_to_thread_id.count(ev->cpid().get_proc_seq()));
+    assert(ev->thread_id() == graph.proc_seq_to_thread_id.at(ev->cpid().get_proc_seq()));
+
+    if (isWriteB(ev)) {
+      bw_pos.emplace(ev->id(), i);
+      if (!storeQueue.count(ev->thread_id()))
+        storeQueue.emplace
+          (ev->thread_id(), std::unordered_map<SymAddrSize, std::list<int>>());
+      if (!storeQueue.at(ev->thread_id()).count(ev->ml))
+        storeQueue.at(ev->thread_id()).emplace
+          (ev->ml, std::list<int>());
+      storeQueue.at(ev->thread_id()).at(ev->ml).push_back(i);
+    }
+
+    if (isWriteM(ev)) {
+      lastWrite[ev->ml] = i;
+      assert(storeQueue.count(ev->thread_id()) && "Maybe writeM before writeB?");
+      assert(storeQueue.at(ev->thread_id()).count(ev->ml) && "Maybe writeM before writeB?");
+      assert(!storeQueue.at(ev->thread_id()).at(ev->ml).empty());
+      buf_mem.emplace(storeQueue.at(ev->thread_id()).at(ev->ml).front(), i);
+      ev->write_other_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).front(); ////////////////////
+      storeQueue.at(ev->thread_id()).at(ev->ml).pop_front();
+    }
+
+    if (isRead(ev)) {
+      if (storeQueue.count(ev->thread_id()) &&
+          storeQueue.at(ev->thread_id()).count(ev->ml) &&
+          !storeQueue.at(ev->thread_id()).at(ev->ml).empty())
+        realObs.emplace(i, storeQueue.at(ev->thread_id()).at(ev->ml).back());
+      else if (lastWrite.count(ev->ml)) {
+        realObs.emplace(i, lastWrite.at(ev->ml));
+        ev->observed_trace_id = lastWrite.at(ev->ml); ////////////////////
+        ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
+      }
+      else {
+        realObs.emplace(i, -1);
+        ev->observed_trace_id = -1; ////////////////////
+        ev->value = 0; ////////////////////
+      }
+    }
+
+    if (isLock(ev)) {
+      assert(!locked.count(ev->ml));
+      locked.insert(ev->ml);
+      // Check whether the lock is consistent with the annotation
+      assert(annotation.lock_defines(ev));
+      const auto& an = annotation.lock_obs(ev);
+      if (!lastUnlock.count(ev->ml)) {
+        assert(an == ZEventID(true)); // initial
+        ev->observed_trace_id = -1;
+      }
+      else {
+        assert(an == trace.at(lastUnlock.at(ev->ml)).id());
+        ev->observed_trace_id = lastUnlock.at(ev->ml); ////////////////////
+      }
+    }
+    if (isUnlock(ev)) {
+      assert(locked.count(ev->ml));
+      locked.erase(ev->ml);
+      lastUnlock[ev->ml] = i;
+    }
+  }
+
+  for (unsigned i=0; i<trace.size(); ++i) {
+    const ZEvent *ev = &(trace.at(i));
+    if (isRead(ev)) {
+      if (!annotation.defines(ev->id())) {
+        graph.dump();
+        dump_trace(trace);
+        annotation.dump();
+        ev->dump();
+      }
+      assert(annotation.defines(ev->id()));
+      const ZEventID& obs = annotation.obs(ev->id());
+      const ZEvent *obsB = graph.initial();
+      if (obs.event_id() >= 0) {
+        assert(bw_pos.count(obs));
+        obsB = &(trace.at(bw_pos.at(obs)));
+        assert(isWriteB(obsB));
+      }
+      const ZEvent *obsM = (isInitial(obsB))
+        ? graph.initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
+      assert(obsB->value == obsM->value);
+      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
+                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
+      const ZEvent *realObservation = (realObs.at(i) == -1)
+        ? graph.initial() : &(trace.at(realObs.at(i)));
+      if (*realObservation != *obsB && *realObservation != *obsM) {
+        llvm::errs() << "Partial order\n";
+        graph.dump();
+        llvm::errs() << "Linearization\n";
+        dump_trace(trace);
+        llvm::errs() << "Annotation that should be respected\n";
+        annotation.dump();
+        llvm::errs() << "This read         :::  ";
+        ev->dump();
+        llvm::errs() << "Should observeB   :::  ";
+        obsB->dump();
+        llvm::errs() << "Should observeM   :::  ";
+        obsM->dump();
+        llvm::errs() << "Actually observed :::  ";
+        realObservation->dump();
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+
+
+
 /*
 
 bool ZExplorer::respectsAnnotation
@@ -600,130 +797,6 @@ bool ZExplorer::respectsAnnotation
   // Unset thread-id, let Graph take care of it
   for (const ZEvent& evref : trace)
     evref._thread_id = 1337;
-  return true;
-}
-
-
-bool ZExplorer::linearizationRespectsAnn
-(const std::vector<ZEvent>& trace,
- const ZAnnotation& annotation,
- const ZPartialOrder& mutatedPO,
- const ZTrace& parentTrace) const
-{
-  assert(!trace.empty());
-  // Trace index of the last write happening in the given location
-  std::unordered_map<SymAddrSize, int> lastWrite;
-  // Trace index of the last lock + whether given ML is currently locked
-  std::unordered_map<SymAddrSize, int> lastUnlock;
-  std::unordered_set<SymAddrSize> locked;
-  // ThreadID -> ML -> Writes in store queue of thr for ml
-  std::unordered_map
-    <int, std::unordered_map
-     <SymAddrSize, std::list<int>>> storeQueue;
-  // Real observation in trace
-  std::unordered_map<int, int> realObs;
-  // BufferWrite -> pos
-  std::unordered_map<ZEventID, unsigned> bw_pos;
-  // BufferWrite -> MemoryWrite
-  std::unordered_map<int, int> buf_mem;
-
-  for (unsigned i=0; i<trace.size(); ++i) {
-    const ZEvent *ev = &(trace.at(i));
-    ev->_thread_id = parentTrace.graph.getThreadIDnoAdd(ev);
-    assert(ev->thread_id() < 1337);
-
-    if (isWriteB(ev)) {
-      bw_pos.emplace(ev->id(), i);
-      if (!storeQueue.count(ev->thread_id()))
-        storeQueue.emplace
-          (ev->thread_id(), std::unordered_map<SymAddrSize, std::list<int>>());
-      if (!storeQueue.at(ev->thread_id()).count(ev->ml))
-        storeQueue.at(ev->thread_id()).emplace
-          (ev->ml, std::list<int>());
-      storeQueue.at(ev->thread_id()).at(ev->ml).push_back(i);
-    }
-
-    if (isWriteM(ev)) {
-      lastWrite[ev->ml] = i;
-      assert(storeQueue.count(ev->thread_id()) && "Maybe writeM before writeB?");
-      assert(storeQueue.at(ev->thread_id()).count(ev->ml) && "Maybe writeM before writeB?");
-      assert(!storeQueue.at(ev->thread_id()).at(ev->ml).empty());
-      buf_mem.emplace(storeQueue.at(ev->thread_id()).at(ev->ml).front(), i);
-      storeQueue.at(ev->thread_id()).at(ev->ml).pop_front();
-    }
-
-    if (isRead(ev)) {
-      if (storeQueue.count(ev->thread_id()) &&
-          storeQueue.at(ev->thread_id()).count(ev->ml) &&
-          !storeQueue.at(ev->thread_id()).at(ev->ml).empty())
-        realObs.emplace(i, storeQueue.at(ev->thread_id()).at(ev->ml).back());
-      else if (lastWrite.count(ev->ml))
-        realObs.emplace(i, lastWrite.at(ev->ml));
-      else
-        realObs.emplace(i, -1);
-    }
-
-    if (isLock(ev)) {
-      assert(!locked.count(ev->ml));
-      locked.insert(ev->ml);
-      // Check whether the lock is consistent with the annotation
-      assert(annotation.lock_defines(ev));
-      const auto& an = annotation.lock_obs(ev);
-      if (!lastUnlock.count(ev->ml))
-        assert(an == ZEventID(true)); // initial
-      else
-        assert(an == trace.at(lastUnlock.at(ev->ml)).id());
-    }
-    if (isUnlock(ev)) {
-      assert(locked.count(ev->ml));
-      locked.erase(ev->ml);
-      lastUnlock[ev->ml] = i;
-    }
-  }
-
-  for (unsigned i=0; i<trace.size(); ++i) {
-    const ZEvent *ev = &(trace.at(i));
-    if (isRead(ev)) {
-      assert(annotation.defines(ev->id()));
-      const ZEventID& obs = annotation.obs(ev->id());
-      const ZEvent *obsB = parentTrace.graph.initial();
-      if (obs.event_id() >= 0) {
-        assert(bw_pos.count(obs));
-        obsB = &(trace.at(bw_pos.at(obs)));
-        assert(isWriteB(obsB));
-      }
-      const ZEvent *obsM = (isInitial(obsB))
-        ? parentTrace.graph.initial() : &(trace.at(buf_mem.at(bw_pos.at(obs))));;
-      assert(obsB->value == obsM->value);
-      assert(isInitial(obsB) || (isWriteB(obsB) && isWriteM(obsM) &&
-                                 sameMl(obsB, obsM) && sameMl(ev, obsB)));
-      const ZEvent *realObservation = (realObs.at(i) == -1)
-        ? parentTrace.graph.initial() : &(trace.at(realObs.at(i)));
-      if (realObservation != obsB && realObservation != obsM) {
-        parentTrace.dump();
-        llvm::errs() << "Closed annotated partial order\n";
-        mutatedPO.dump();
-        llvm::errs() << "Linearization\n";
-        dump_trace(trace);
-        llvm::errs() << "Full annotation that should be respected\n";
-        annotation.dump();
-        llvm::errs() << "This read         :::  ";
-        ev->dump();
-        llvm::errs() << "Should observeB   :::  ";
-        obsB->dump();
-        llvm::errs() << "Should observeM   :::  ";
-        obsM->dump();
-        llvm::errs() << "Actually observed :::  ";
-        realObservation->dump();
-        return false;
-      }
-    }
-  }
-
-  // Unset thread-id, let Graph take care of it
-  for (const ZEvent& evref : trace)
-    evref._thread_id = 1337;
-
   return true;
 }
 

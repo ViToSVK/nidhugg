@@ -72,7 +72,8 @@ ZTrace::ZTrace
  std::vector<ZEvent>&& new_exec,
  std::vector<std::unique_ptr<ZEvent>>&& new_tau,
  ZAnnotation&& new_annotation,
- std::set<ZEventID>&& new_committed)
+ std::set<ZEventID>&& new_committed,
+ const ZEventID& now_mutated)
  : parent(parent_trace),
    exec(std::move(new_exec)),
    tau(std::move(new_tau)),
@@ -80,7 +81,8 @@ ZTrace::ZTrace
    committed(std::move(new_committed)),
    ext_from_id(-1),
    ext_reads_locks(),
-   proc_seq_to_thread_id()
+   proc_seq_to_thread_id(),
+   previously_mutated(now_mutated)
 {
   if (parent_trace)
     proc_seq_to_thread_id = std::unordered_map<

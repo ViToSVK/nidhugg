@@ -85,7 +85,7 @@ class ZEvent {
   int trace_id() const { return _trace_id; }
   /* Trace ID of the observed event (lock observes unlock)
    * -1 means the initial event was observed */
-  int observed_trace_id;
+  mutable int observed_trace_id;
   /* Trace ID of its memory-write if this is a buffer-write
    * Trace ID of its buffer-write if this is a memory-write */
   mutable int write_other_trace_id;
@@ -101,7 +101,7 @@ class ZEvent {
   /* Memory location (if any) modified/read by this event */
   SymAddrSize ml;
   /* The value read/written by this event */
-  int value;
+  mutable int value;
 
   /* Below for trace-builder */
 

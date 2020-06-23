@@ -64,13 +64,15 @@ class ZTrace {
   int ext_from_id;
   std::vector<int> ext_reads_locks;
   std::unordered_map<std::vector<int>, unsigned> proc_seq_to_thread_id;
+  const ZEventID previously_mutated;
 
   ZTrace() = delete;
   ZTrace(const ZTrace *parent_trace,
          std::vector<ZEvent>&& new_exec,
          std::vector<std::unique_ptr<ZEvent>>&& new_tau,
          ZAnnotation&& new_annotation,
-         std::set<ZEventID>&& new_commited);
+         std::set<ZEventID>&& new_commited,
+         const ZEventID& now_mutated);
 
   ZTrace(const ZTrace&) = delete;
   ZTrace(ZTrace&&) = default;

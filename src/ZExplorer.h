@@ -41,6 +41,7 @@ class ZExplorer {
  private:
   std::map<int, std::map<ZAnnotation, ZTrace>> schedules;
   std::map<int, std::set<ZAnnotation>> failed_schedules;
+  std::set<int> readlock_ids;
 
   /* *************************** */
   /* CONSTRUCTOR                 */
@@ -97,6 +98,7 @@ class ZExplorer {
   //
  public:
   void print_stats() const;
+  void dump_schedules() const;
 
   /* *************************** */
   /* ALGORITHM                   */
@@ -115,6 +117,10 @@ class ZExplorer {
   bool recur(const ZTrace& ann_trace);
 
   bool get_extension(ZTrace& ann_trace);
+
+  bool linearization_respects_ann(
+    const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
+    const ZGraph& graph, const ZTrace& parent_trace) const;
 };
 
 #endif // __Z_EXPLORER_H__

@@ -60,7 +60,7 @@ ZEvent::ZEvent(bool initial)
     childs_cpid(),
     fence(false),
     ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
-    value(-1),
+    value(0),
     //
     iid(),
     size(-1),
