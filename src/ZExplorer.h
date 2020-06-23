@@ -34,6 +34,7 @@
 
 
 class ZExplorer {
+ using BuffersT = std::unordered_map<std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>>;
  public:
   TSOPSOTraceBuilder * original_tb = nullptr;
   const MemoryModel model;
@@ -98,7 +99,13 @@ class ZExplorer {
   //
  public:
   void print_stats() const;
+
+  /* *************************** */
+  /* HELPERS                     */
+  /* *************************** */
+
   void dump_schedules() const;
+  void maintain_buffers(BuffersT& buffers, ZEvent * const ev, bool set_up_pointers) const;
 
   /* *************************** */
   /* ALGORITHM                   */

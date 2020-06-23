@@ -25,10 +25,8 @@
 #include "ZHelpers.h"
 
 static const bool DEBUG = true;
-static const bool INFO = true;
+static const bool INFO = false;
 #include "ZDebug.h"
-
-using BuffersT = std::unordered_map<std::vector<int>, std::unordered_map<SymAddrSize, std::list<ZEvent *>>>;
 
 
 ZExplorer::ZExplorer(ZBuilderSC& tb)
@@ -84,6 +82,48 @@ void ZExplorer::dump_schedules() const
 }
 
 
+void ZExplorer::maintain_buffers
+(BuffersT& buffers, ZEvent * const ev, bool set_up_pointers) const
+{
+  // Maintain buffers
+  if (!buffers.count(ev->cpid().get_proc_seq()))
+    buffers.emplace(ev->cpid().get_proc_seq(),
+                    std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
+  if (isWriteB(ev)) {
+    if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
+      buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
+    buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
+  }
+  if (isWriteM(ev)) {
+    if (set_up_pointers) {
+      // Set up proper WriteB <-> WriteM pointers
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
+      assert(isWriteB(evB) && sameMl(ev, evB));
+      ev->write_other_ptr = evB;
+      ev->write_other_trace_id = evB->trace_id();
+      evB->write_other_ptr = ev;
+      evB->write_other_trace_id = ev->trace_id();
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
+    } else {
+      // Assert proper WriteB <-> WriteM pointers
+      assert(buffers.count(ev->cpid().get_proc_seq()) &&
+             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
+      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
+      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
+      assert(isWriteB(evB) && sameMl(ev, evB));
+      assert(ev->write_other_ptr == evB);
+      assert(ev->write_other_trace_id == evB->trace_id());
+      assert(evB->write_other_ptr == ev);
+      assert(evB->write_other_trace_id == ev->trace_id());
+      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
+    }
+  }
+}
+
+
 /* *************************** */
 /* EXTEND AND EXPLORE          */
 /* *************************** */
@@ -103,34 +143,13 @@ bool ZExplorer::extend_and_explore
   assert(ext.extension.empty());
   assert(ann_trace.ext_from_id <= (int) ann_trace.exec.size());
   assert(ann_trace.ext_reads_locks.empty());
-  // Thread -> ML -> Pointers to WriteB's
-  BuffersT buffers;
+  BuffersT buffers; // Thread -> ML -> Pointers to WriteB's
   readlock_ids.clear();
   for (int i = 0; i < ann_trace.tau.size(); ++i) {
     ZEvent * ev = ann_trace.tau.at(i).get();
     assert(ev->trace_id() == i);
-    // Maintain buffers
-    if (!buffers.count(ev->cpid().get_proc_seq()))
-      buffers.emplace(ev->cpid().get_proc_seq(),
-                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
-    if (isWriteB(ev)) {
-      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
-        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
-      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
-    }
-    // Assert proper WriteB <-> WriteM pointers
-    if (isWriteM(ev)) {
-      assert(buffers.count(ev->cpid().get_proc_seq()) &&
-             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
-      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
-      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
-      assert(isWriteB(evB) && sameMl(ev, evB));
-      assert(ev->write_other_ptr == evB);
-      assert(ev->write_other_trace_id == evB->trace_id());
-      assert(evB->write_other_ptr == ev);
-      assert(evB->write_other_trace_id == ev->trace_id());
-      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
-    }
+    // Maintain buffers, Assert proper WriteB <-> WriteM pointers
+    maintain_buffers(buffers, ev, false);
     // Assert annotation
     assert(!isRead(ev) || ann_trace.annotation.defines(ev));
     assert(!isLock(ev) || ann_trace.annotation.lock_defines(ev));
@@ -160,6 +179,8 @@ bool ZExplorer::extend_and_explore
       ann_trace.proc_seq_to_thread_id.emplace(
         ev->cpid().get_proc_seq(), ev->thread_id());
     }
+    // Maintain buffers, Set up proper WriteB <-> WriteM pointers
+    maintain_buffers(buffers, ev, true);
     if (isRead(ev) || isLock(ev)) {
       ann_trace.ext_reads_locks.push_back(i);
       assert(!readlock_ids.count(i));
@@ -201,28 +222,6 @@ bool ZExplorer::extend_and_explore
           ann_trace.annotation.lock_add(ev->id(), obs_ev.id());
         }
       }
-    }
-    // Maintain buffers
-    if (!buffers.count(ev->cpid().get_proc_seq()))
-      buffers.emplace(ev->cpid().get_proc_seq(),
-                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
-    if (isWriteB(ev)) {
-      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
-        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
-      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
-    }
-    // Set up proper WriteB <-> WriteM pointers
-    if (isWriteM(ev)) {
-      assert(buffers.count(ev->cpid().get_proc_seq()) &&
-             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
-      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
-      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
-      assert(isWriteB(evB) && sameMl(ev, evB));
-      ev->write_other_ptr = evB;
-      ev->write_other_trace_id = evB->trace_id();
-      evB->write_other_ptr = ev;
-      evB->write_other_trace_id = ev->trace_id();
-      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
     }
   }
   // Explore mutations with extended ann_trace
@@ -397,61 +396,20 @@ void ZExplorer::mutate
   init = std::clock();
   err_msg("attempt-tau");
   std::vector<std::unique_ptr<ZEvent>> mutated_tau;
-  // Thread -> ML -> Pointers to WriteB's
-  BuffersT buffers;
+  BuffersT buffers; // Thread -> ML -> Pointers to WriteB's
   for (int i = 0; i <= readlock->trace_id(); ++i) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[i].get(), i, true)));
     ZEvent * const ev = mutated_tau.back().get();
-    // Maintain buffers
-    if (!buffers.count(ev->cpid().get_proc_seq()))
-      buffers.emplace(ev->cpid().get_proc_seq(),
-                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
-    if (isWriteB(ev)) {
-      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
-        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
-      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
-    }
-    // Set up proper WriteB <-> WriteM pointers
-    if (isWriteM(ev)) {
-      assert(buffers.count(ev->cpid().get_proc_seq()) &&
-             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
-      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
-      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
-      assert(isWriteB(evB) && sameMl(ev, evB));
-      ev->write_other_ptr = evB;
-      ev->write_other_trace_id = evB->trace_id();
-      evB->write_other_ptr = ev;
-      evB->write_other_trace_id = ev->trace_id();
-      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
-    }
+    // Maintain buffers, Set up proper WriteB <-> WriteM pointers
+    maintain_buffers(buffers, ev, true);
   }
   for (int cause_idx : causes_all_idx) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[cause_idx].get(), mutated_tau.size(), true)));
     ZEvent * const ev = mutated_tau.back().get();
-    // Maintain buffers
-    if (!buffers.count(ev->cpid().get_proc_seq()))
-      buffers.emplace(ev->cpid().get_proc_seq(),
-                      std::unordered_map<SymAddrSize, std::list<ZEvent *>>());
-    if (isWriteB(ev)) {
-      if (!buffers[ev->cpid().get_proc_seq()].count(ev->ml))
-        buffers[ev->cpid().get_proc_seq()].emplace(ev->ml, std::list<ZEvent *>());
-      buffers[ev->cpid().get_proc_seq()][ev->ml].push_back(ev);
-    }
-    // Set up proper WriteB <-> WriteM pointers
-    if (isWriteM(ev)) {
-      assert(buffers.count(ev->cpid().get_proc_seq()) &&
-             buffers.at(ev->cpid().get_proc_seq()).count(ev->ml));
-      assert(!buffers.at(ev->cpid().get_proc_seq()).at(ev->ml).empty());
-      ZEvent * evB = buffers[ev->cpid().get_proc_seq()][ev->ml].front();
-      assert(isWriteB(evB) && sameMl(ev, evB));
-      ev->write_other_ptr = evB;
-      ev->write_other_trace_id = evB->trace_id();
-      evB->write_other_ptr = ev;
-      evB->write_other_trace_id = ev->trace_id();
-      buffers[ev->cpid().get_proc_seq()][ev->ml].pop_front();
-    }
+    // Maintain buffers, Set up proper WriteB <-> WriteM pointers
+    maintain_buffers(buffers, ev, true);
   }
   // Construct committed reads
   err_msg("attempt-committed");
@@ -653,8 +611,11 @@ bool ZExplorer::linearization_respects_ann
     if (isRead(ev)) {
       if (storeQueue.count(ev->thread_id()) &&
           storeQueue.at(ev->thread_id()).count(ev->ml) &&
-          !storeQueue.at(ev->thread_id()).at(ev->ml).empty())
+          !storeQueue.at(ev->thread_id()).at(ev->ml).empty()) {
         realObs.emplace(i, storeQueue.at(ev->thread_id()).at(ev->ml).back());
+        ev->observed_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).back(); ////////////////////
+        ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
+      }
       else if (lastWrite.count(ev->ml)) {
         realObs.emplace(i, lastWrite.at(ev->ml));
         ev->observed_trace_id = lastWrite.at(ev->ml); ////////////////////
@@ -692,12 +653,6 @@ bool ZExplorer::linearization_respects_ann
   for (unsigned i=0; i<trace.size(); ++i) {
     const ZEvent *ev = &(trace.at(i));
     if (isRead(ev)) {
-      if (!annotation.defines(ev->id())) {
-        graph.dump();
-        dump_trace(trace);
-        annotation.dump();
-        ev->dump();
-      }
       assert(annotation.defines(ev->id()));
       const ZEventID& obs = annotation.obs(ev->id());
       const ZEvent *obsB = graph.initial();
