@@ -47,6 +47,7 @@ std::pair<const ZEvent *, const ZEvent *> ZClosure::getObs(const ZEventID& id) {
 
 // true iff impossible
 bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
+  assert(gr.hasEvent(ev));
   if (obs.event_id() == -1) {
     // Handle initial-event observation separately
     // Nothing to do in rule1
@@ -57,6 +58,7 @@ bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
   assert(obsEv && sameMl(ev, obsEv));
   assert((isRead(ev) && isWriteB(obsEv)) ||
          (isLock(ev) && isUnlock(obsEv)));
+  assert(gr.hasEvent(obsEv));
 
   if (isLock(ev)) {
     // Handle lock annotation
@@ -72,6 +74,7 @@ bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
   if (ev->thread_id() != obsEv->thread_id()) {
     auto obsMem = obsEv->write_other_ptr;
     assert(isWriteM(obsMem));
+    assert(gr.hasEvent(obsMem));
     if (po.hasEdge(ev, obsMem))
       return true;
     if (!po.hasEdge(obsMem, ev))
@@ -81,8 +84,10 @@ bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
     auto lastBuf = gr.getLocalBufferW(ev);
     if(lastBuf) {
       assert(isWriteB(lastBuf));
+      assert(gr.hasEvent(lastBuf));
       auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
       assert(isWriteM(mem_counterpart));
+      assert(gr.hasEvent(mem_counterpart));
       if (po.hasEdge(obsMem, mem_counterpart))
         return true;
       if(!po.hasEdge(mem_counterpart, obsMem)) {
@@ -108,6 +113,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZEventID& obs)
   auto write = getObs(obs);
   auto write_memory = write.second;
   assert(!write_memory || isWriteM(write_memory));
+  assert(!write_memory || gr.hasEvent(write_memory));
   // Idea: Iterate on all (but self) threads, in each thread i:
   // get 'memory_pred' - conflicting memory-write predecessor of read in thread i
   // add edge if not already present, that 'memory_pred' -> 'write_memory'
@@ -125,6 +131,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZEventID& obs)
         auto memory_pred = gr.getTailW(location,i,lastEvid); // last write of thread i on same location as read
         if(memory_pred) { // not nullptr
           assert(isWriteM(memory_pred));
+          assert(gr.hasEvent(memory_pred));
           if(!write_memory || po.hasEdge(write_memory,memory_pred))
             return {true,false}; // Impossible - reverse edge already present
           if(!po.hasEdge(memory_pred,write_memory)) {
@@ -144,6 +151,7 @@ std::pair<bool, bool> ZClosure::ruleTwo(const ZEvent *read, const ZEventID& obs)
         auto memory_pred = gr.getTailW(location,writeThread,lastEvid);  // last write of thread i on same location as read
         if(memory_pred) { // not nullptr
           assert(isWriteM(memory_pred));
+          assert(gr.hasEvent(memory_pred));
           if(memory_pred->event_id() > write_memory->event_id())
             return {true,false}; // Impossible - reverse edge already present
         }
@@ -266,6 +274,7 @@ std::pair<bool, bool> ZClosure::ruleThree(const ZEvent *read, const ZEventID& ob
 std::pair<bool, bool> ZClosure::rulesTwoThree
 (const ZEvent *read, const ZEventID& obs) {
   assert(read && isRead(read));
+  assert(gr.hasEvent(read));
   bool change = false;
   // Rule1 is done only the first time
   // Rule2

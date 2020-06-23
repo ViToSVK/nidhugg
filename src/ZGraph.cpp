@@ -358,7 +358,9 @@ bool ZGraph::hasEvent(const ZEventID& id) const
 /* GRAPH CONSTRUCTION          */
 /* *************************** */
 
-void ZGraph::construct
+// Returns indexes of memory-writes such that their buffer-writes
+// are within pre_tau_limit/causes_after but they themselves are not
+std::set<int> ZGraph::construct
 (const std::vector<std::unique_ptr<ZEvent>>& trace,
  int pre_tau_limit, std::set<int> causes_after)
 {
@@ -366,6 +368,7 @@ void ZGraph::construct
   assert(!trace.empty());
   assert(!constructed);
   constructed = true;
+  std::set<int> res;
 
   std::unordered_map<std::pair<unsigned, int>, unsigned>
     cur_evidx;
@@ -405,10 +408,14 @@ void ZGraph::construct
 
   for (int i = 0; i < trace.size(); ++i) {
     // Limit to events until including pre_tau, and causes_after
-    if (i > pre_tau_limit && !causes_after.count(i))
-      continue;
+    if (i > pre_tau_limit && !causes_after.count(i)) {
+      // Add the memory-write if its buffer-write is included
+      if (!res.count(i))
+        continue;
+    }
     const ZEvent * const ev = trace[i].get();
     assert(i != pre_tau_limit || isRead(ev) || isLock(ev));
+    assert(!res.count(i) || isWriteM(ev));
 
     /*
     unsigned thr_idx = INT_MAX;
@@ -451,6 +458,16 @@ void ZGraph::construct
 
     auto thraux = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
 
+    // If buffer-write is added, make sure its memory-write is also added
+    if (isWriteB(ev)) {
+      assert(isWriteM(trace.at(ev->write_other_trace_id).get()));
+      assert(*(ev->write_other_ptr) == *(trace.at(ev->write_other_trace_id).get()));
+      if (ev->write_other_trace_id > pre_tau_limit &&
+          !causes_after.count(ev->write_other_trace_id)) {
+        assert(!res.count(ev->write_other_trace_id));
+        res.emplace(ev->write_other_trace_id);
+      }
+    }
     // Memory-writes cannot be added if their buffer-write was not added
     if (isWriteM(ev)) {
       assert(ev->aux_id() != -1 && "Only auxiliary threads");
@@ -700,6 +717,7 @@ void ZGraph::construct
     }
   }
   end_err("ending trace-to-po");
+  return res;
 }
 
 

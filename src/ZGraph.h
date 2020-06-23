@@ -149,8 +149,11 @@ class ZGraph {
 
   bool constructed = false;
 
-  void construct(const std::vector<std::unique_ptr<ZEvent>>& trace,
-                 int pre_tau_limit, std::set<int> causes_after);
+  // Returns indexes of memory-writes such that their buffer-writes
+  // are within pre_tau_limit/causes_after but they themselves are not
+  std::set<int> construct(
+    const std::vector<std::unique_ptr<ZEvent>>& trace,
+    int pre_tau_limit, std::set<int> causes_after);
 
   void add_reads_from_edges(const ZAnnotation& annotation);
 

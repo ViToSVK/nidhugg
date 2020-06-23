@@ -350,8 +350,12 @@ void ZExplorer::mutate
   // Construct the mutation graph
   err_msg("attempt-graph");
   ZGraph mutated_graph(model);
-  mutated_graph.construct(
+  auto missing_memory_writes = mutated_graph.construct(
     ann_trace.tau, readlock->trace_id(), causes_all_idx);
+  for (int idx : missing_memory_writes) {
+    assert(!causes_all_idx.count(idx));
+    causes_all_idx.emplace(idx);
+  }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
   // Close
   err_msg("attempt-closure");
