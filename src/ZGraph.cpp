@@ -750,9 +750,10 @@ std::set<ZEventID> ZGraph::get_mutations
   std::set<ZEventID> res;
   const ZEvent * const ev_before = (ev->event_id() > 0)
     ? getEvent(ev->thread_id(), ev->aux_id(), ev->event_id() - 1) : nullptr;
-  assert(proc_seq_to_spawn.count(ev->cpid().get_proc_seq()));
-  const ZEvent * spawn = proc_seq_to_spawn.at(ev->cpid().get_proc_seq());
-  assert(po.hasEdge(spawn, ev));
+  const ZEvent * spawn = proc_seq_to_spawn.count(ev->cpid().get_proc_seq()) ?
+  proc_seq_to_spawn.at(ev->cpid().get_proc_seq()) : nullptr;
+  assert(spawn || ev->cpid().get_proc_seq() == CPid().get_proc_seq());
+  assert(!spawn || po.hasEdge(spawn, ev));
 
   std::unordered_set<const ZEvent *> notCovered;
   std::unordered_set<const ZEvent *> mayBeCovered;
@@ -847,9 +848,10 @@ std::set<ZEventID> ZGraph::get_mutations
         const ZEvent *rem = cache.wm.at(ev->ml).at(tid).at(wm_idx);
         assert(rem && isWriteM(rem) && sameMl(ev, rem));
         assert(!po.hasEdge(ev, rem));
-        if ((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn)) {
+        if ((ev_before && po.hasEdge(rem, ev_before)) ||
+            (spawn && po.hasEdge(rem, spawn))) {
           // Others in this thread are covered from ev by rem
-          assert(po.hasEdge(rem, spawn) ||
+          assert((spawn && po.hasEdge(rem, spawn)) ||
                  (ev_before && (int) rem->event_id() <= po.pred(ev_before, tid, auxid).second));
           mayBeCovered.emplace(rem);
           // Update cover
@@ -967,7 +969,8 @@ std::set<ZEventID> ZGraph::get_mutations
       for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
         const ZEvent *rem = *it;
         assert(isWriteM(rem));
-        assert((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn));
+        assert((ev_before && po.hasEdge(rem, ev_before)) ||
+               (spawn && po.hasEdge(rem, spawn)));
         if (po.hasEdge(rem, localM))
           it = mayBeCovered.erase(it);
         else
@@ -977,7 +980,8 @@ std::set<ZEventID> ZGraph::get_mutations
       bool localCovered = false;
       for (const auto& rem : mayBeCovered) {
         assert(isWriteM(rem));
-        assert((ev_before && po.hasEdge(rem, ev_before)) || po.hasEdge(rem, spawn));
+        assert((ev_before && po.hasEdge(rem, ev_before)) ||
+               (spawn && po.hasEdge(rem, spawn)));
         if (po.hasEdge(localM, rem)) {
           localCovered = true;
           break;
@@ -1081,6 +1085,37 @@ ZGraph::get_causes_after
     }
   }
   return {causes_all_idx, causes_readslocks};
+}
+
+
+bool ZGraph::is_causal_readlock_or_mutation
+(const ZEvent * const causal, const ZEvent * const readlock,
+ const ZEvent * const mut_ev) const
+{
+  assert(isRead(causal) || isLock(causal));
+  assert(isRead(readlock) || isLock(readlock));
+  assert(hasEvent(causal) && hasEvent(readlock));
+  assert(!mut_ev || isWriteB(mut_ev) || isUnlock(mut_ev));
+  assert(!mut_ev || hasEvent(mut_ev));
+  if (*causal == *readlock) {
+    // We return false for readlock itself
+    // (it is added separately in explorer)
+    return false;
+  }
+  if (mut_ev && po.hasEdge(causal, mut_ev))
+    return true; // Causal past of mutation
+  // Check causal past of readlock
+  const ZEvent * const ev_before = (readlock->event_id() > 0)
+    ? getEvent(readlock->thread_id(), readlock->aux_id(), readlock->event_id() - 1) : nullptr;
+  const ZEvent * spawn = proc_seq_to_spawn.count(readlock->cpid().get_proc_seq()) ?
+  proc_seq_to_spawn.at(readlock->cpid().get_proc_seq()) : nullptr;
+  assert(spawn || readlock->cpid().get_proc_seq() == CPid().get_proc_seq());
+  assert(!spawn || po.hasEdge(spawn, readlock));
+  if (ev_before && (*causal == *ev_before || po.hasEdge(causal, ev_before)))
+    return true;
+  if (spawn && po.hasEdge(causal, spawn))
+    return true;
+  return false;
 }
 
 

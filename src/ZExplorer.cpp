@@ -420,37 +420,18 @@ void ZExplorer::mutate
     assert(graph.hasEvent(causal));
     if (!remaining_proc.count(causal->cpid().get_proc_seq()))
       continue;
-    if (*causal == *readlock) {
-      // In the thread of readlock, reached readlock, nothing else in causal past
+    bool is_causal = graph.is_causal_readlock_or_mutation(
+      causal, readlock, mut_ev);
+    if (is_causal) {
+      assert(remaining_proc.count(causal->cpid().get_proc_seq()));
+      if (!mutated_committed.count(causal->id())) {
+        mutated_committed.emplace(causal->id());
+      }
+    } else {
       assert(remaining_proc.count(causal->cpid().get_proc_seq()));
       remaining_proc.erase(causal->cpid().get_proc_seq());
       if (remaining_proc.empty())
         break;
-      continue;
-    }
-    if (!mut_ev || !graph.getPo().hasEdge(causal, mut_ev)) {
-      // Not causal past of mutation, check causal past of readlock
-      const ZEvent * const ev_before = (readlock->event_id() > 0)
-        ? graph.getEvent(readlock->thread_id(), readlock->aux_id(), readlock->event_id() - 1) : nullptr;
-      assert(graph.proc_seq_to_spawn.count(readlock->cpid().get_proc_seq()));
-      const ZEvent * spawn = graph.proc_seq_to_spawn.at(readlock->cpid().get_proc_seq());
-      assert(graph.po.hasEdge(spawn, readlock));
-      bool causal_of_readlock = false;
-      if (ev_before && (*causal == *ev_before || graph.po.hasEdge(causal, ev_before)))
-        causal_of_readlock = true;
-      else if (graph.po.hasEdge(causal, spawn))
-        causal_of_readlock = true;
-      if (!causal_of_readlock) {
-        assert(remaining_proc.count(causal->cpid().get_proc_seq()));
-        remaining_proc.erase(causal->cpid().get_proc_seq());
-        if (remaining_proc.empty())
-          break;
-        continue;
-      }
-    }
-    assert(remaining_proc.count(causal->cpid().get_proc_seq()));
-    if (!mutated_committed.count(causal->id())) {
-      mutated_committed.emplace(causal->id());
     }
   }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
