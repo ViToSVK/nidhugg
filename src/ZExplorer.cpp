@@ -24,7 +24,7 @@
 #include "ZExplorer.h"
 #include "ZHelpers.h"
 
-static const bool DEBUG = true;
+static const bool DEBUG = false;
 static const bool INFO = false;
 #include "ZDebug.h"
 
@@ -162,6 +162,7 @@ bool ZExplorer::extend_and_explore
       if (!ann_trace.committed.count(ev->id())) {
         assert(schedules.count(i));
         assert(failed_schedules.count(i));
+        assert(done_schedules.count(i));
       }
     }
   }
@@ -191,6 +192,8 @@ bool ZExplorer::extend_and_explore
       schedules.emplace(i, std::map<ZAnnotation, ZTrace>());
       assert(!failed_schedules.count(i));
       failed_schedules.emplace(i, std::set<ZAnnotation>());
+      assert(!done_schedules.count(i));
+      done_schedules.emplace(i, std::set<ZAnnotation>());
       // Add observation to annotation
       assert(!ann_trace.annotation.defines(ev) &&
              !ann_trace.annotation.lock_defines(ev));
@@ -310,13 +313,18 @@ void ZExplorer::mutate
   }
   // Stop if such a mutation has already been attempted
   assert(schedules.count(readlock->trace_id()) &&
-         failed_schedules.count(readlock->trace_id()));
+         failed_schedules.count(readlock->trace_id()) &&
+         done_schedules.count(readlock->trace_id()));
   if (failed_schedules[readlock->trace_id()].count(mutated_key)) {
-    end_err("mutate-done-not-added-already-failed");
+    end_err("mutate-done-schedule-already-failed");
+    return;
+  }
+  if (done_schedules[readlock->trace_id()].count(mutated_key)) {
+    end_err("mutate-done-schedule-already-done");
     return;
   }
   if (schedules[readlock->trace_id()].count(mutated_key)) {
-    end_err("mutate-done-not-added-already-succeeded");
+    end_err("mutate-done-schedule-already-succeeded");
     return;
   }
   // We attempt the mutation now
@@ -424,7 +432,8 @@ void ZExplorer::mutate
       mutated_committed.emplace(ev_id);
   }
   assert(!ann_trace.committed.count(readlock->id()));
-  mutated_committed.emplace(readlock->id());
+  // Careful: readlock itself does not become
+  // committed! That would violate completeness
   assert((mutation == ZEventID(true) || graph.hasEvent(mutation)) &&
          graph.hasEvent(readlock));
   const ZEvent * mut_ev = mutation == ZEventID(true) ?
@@ -456,9 +465,11 @@ void ZExplorer::mutate
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
   // Add successful schedule
   assert(schedules.count(readlock->trace_id()) &&
-         failed_schedules.count(readlock->trace_id()));
+         failed_schedules.count(readlock->trace_id()) &&
+         done_schedules.count(readlock->trace_id()));
   assert(!schedules.at(readlock->trace_id()).count(mutated_key) &&
-         !failed_schedules.at(readlock->trace_id()).count(mutated_key));
+         !failed_schedules.at(readlock->trace_id()).count(mutated_key) &&
+         !done_schedules.at(readlock->trace_id()).count(mutated_key));
   schedules[readlock->trace_id()].emplace(mutated_key,
     ZTrace(&ann_trace, std::move(linear), std::move(mutated_tau),
            std::move(mutated_annotation), std::move(mutated_committed),
@@ -477,25 +488,42 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
   // Iterate through reads/locks of extension in reverse order
   for (int i = ann_trace.ext_reads_locks.size() - 1; i >= 0; --i) {
     int idx = ann_trace.ext_reads_locks[i];
-    err_msg(std::string("recur-on-") + std::to_string(i) +
+    start_err(std::string("recur-on-") + std::to_string(i) +
             "-(idx-is-" + std::to_string(idx) + ")...");
-    assert(schedules.count(idx));
-    // Move the schedules out of the map
-    std::map<ZAnnotation, ZTrace> sch = std::move(schedules.at(idx));
-    // We erase (failed_)schedules already now, we use
-    // readlock_ids as pointers to all reads/locks
-    assert(schedules.at(idx).empty());
+    assert(schedules.count(idx) && failed_schedules.count(idx) &&
+           done_schedules.count(idx));
+    while (!schedules.at(idx).empty()) {
+      // Move the schedules out of the map
+      std::map<ZAnnotation, ZTrace> sch = std::move(schedules.at(idx));
+      assert(schedules.at(idx).empty());
+      for (const auto& key_trace : sch) {
+        assert(!done_schedules.at(idx).count(key_trace.first));
+        done_schedules.at(idx).emplace(key_trace.first);
+      }
+      // Recur on each schedule
+      for (auto& key_trace : sch) {
+        start_err(std::string("schedule-on-") + std::to_string(i) +
+                "-(idx-is-" + std::to_string(idx) + ")...");
+        if (get_extension(key_trace.second))
+          return true;
+        end_err(std::string("schedule-on-") + std::to_string(i) +
+                "-(idx-is-" + std::to_string(idx) + ")-done");
+      }
+      // While exploring above schedules, additional novel schedules
+      // for this same readlock may get introduced. Therefore we
+      // check the schedules set again for these novel schedules.
+    }
+    // We erase all schedules only now
+    assert(schedules.count(idx) && schedules.at(idx).empty());
     schedules.erase(idx);
     assert(!schedules.count(idx));
     assert(failed_schedules.count(idx));
     failed_schedules.erase(idx);
     assert(!failed_schedules.count(idx));
-    // Recur on each schedule
-    for (auto& key_trace : sch) {
-      if (get_extension(key_trace.second))
-        return true;
-    }
-    err_msg(std::string("recur-on-") + std::to_string(i) +
+    assert(done_schedules.count(idx));
+    done_schedules.erase(idx);
+    assert(!done_schedules.count(idx));
+    end_err(std::string("recur-on-") + std::to_string(i) +
             "-(idx-is-" + std::to_string(idx) + ")-done");
   }
   end_err("recur-done");
@@ -617,18 +645,18 @@ bool ZExplorer::linearization_respects_ann
           storeQueue.at(ev->thread_id()).count(ev->ml) &&
           !storeQueue.at(ev->thread_id()).at(ev->ml).empty()) {
         realObs.emplace(i, storeQueue.at(ev->thread_id()).at(ev->ml).back());
-        ev->observed_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).back(); ////////////////////
-        ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
+        //ev->observed_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).back(); ////////////////////
+        //ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
       }
       else if (lastWrite.count(ev->ml)) {
         realObs.emplace(i, lastWrite.at(ev->ml));
-        ev->observed_trace_id = lastWrite.at(ev->ml); ////////////////////
-        ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
+        //ev->observed_trace_id = lastWrite.at(ev->ml); ////////////////////
+        //ev->value = trace.at(ev->observed_trace_id).value; ////////////////////
       }
       else {
         realObs.emplace(i, -1);
-        ev->observed_trace_id = -1; ////////////////////
-        ev->value = 0; ////////////////////
+        //ev->observed_trace_id = -1; ////////////////////
+        //ev->value = 0; ////////////////////
       }
     }
 
@@ -640,11 +668,11 @@ bool ZExplorer::linearization_respects_ann
       const auto& an = annotation.lock_obs(ev);
       if (!lastUnlock.count(ev->ml)) {
         assert(an == ZEventID(true)); // initial
-        ev->observed_trace_id = -1;
+        //ev->observed_trace_id = -1; ////////////////////
       }
       else {
         assert(an == trace.at(lastUnlock.at(ev->ml)).id());
-        ev->observed_trace_id = lastUnlock.at(ev->ml); ////////////////////
+        //ev->observed_trace_id = lastUnlock.at(ev->ml); ////////////////////
       }
     }
     if (isUnlock(ev)) {

@@ -1117,7 +1117,7 @@ bool ZGraph::is_causal_readlock_or_mutation
   assert(!mut_ev || hasEvent(mut_ev));
   if (*causal == *readlock) {
     // We return false for readlock itself
-    // (it is added separately in explorer)
+    // (because it should not get committed)
     return false;
   }
   if (mut_ev && po.hasEdge(causal, mut_ev))

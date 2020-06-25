@@ -42,6 +42,7 @@ class ZExplorer {
  private:
   std::map<int, std::map<ZAnnotation, ZTrace>> schedules;
   std::map<int, std::set<ZAnnotation>> failed_schedules;
+  std::map<int, std::set<ZAnnotation>> done_schedules;
   std::set<int> readlock_ids;
 
   /* *************************** */
