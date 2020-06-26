@@ -1106,37 +1106,6 @@ ZGraph::get_causes_after
 }
 
 
-bool ZGraph::is_causal_readlock_or_mutation
-(const ZEvent * const causal, const ZEvent * const readlock,
- const ZEvent * const mut_ev) const
-{
-  assert(isRead(causal) || isLock(causal));
-  assert(isRead(readlock) || isLock(readlock));
-  assert(hasEvent(causal) && hasEvent(readlock));
-  assert(!mut_ev || isWriteB(mut_ev) || isUnlock(mut_ev));
-  assert(!mut_ev || hasEvent(mut_ev));
-  if (*causal == *readlock) {
-    // We return false for readlock itself
-    // (because it should not get committed)
-    return false;
-  }
-  if (mut_ev && po.hasEdge(causal, mut_ev))
-    return true; // Causal past of mutation
-  // Check causal past of readlock
-  const ZEvent * const ev_before = (readlock->event_id() > 0)
-    ? getEvent(readlock->thread_id(), readlock->aux_id(), readlock->event_id() - 1) : nullptr;
-  const ZEvent * spawn = proc_seq_to_spawn.count(readlock->cpid().get_proc_seq()) ?
-  proc_seq_to_spawn.at(readlock->cpid().get_proc_seq()) : nullptr;
-  assert(spawn || readlock->cpid().get_proc_seq() == CPid().get_proc_seq());
-  assert(!spawn || po.hasEdge(spawn, readlock));
-  if (ev_before && (*causal == *ev_before || po.hasEdge(causal, ev_before)))
-    return true;
-  if (spawn && po.hasEdge(causal, spawn))
-    return true;
-  return false;
-}
-
-
 int ZGraph::getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const
 {
   assert(threads_auxes.count(thr));

@@ -169,10 +169,6 @@ class ZGraph {
     const ZEvent * const readlock, const ZEventID& mutation,
     const std::vector<std::unique_ptr<ZEvent>>& tau) const;
 
-  bool is_causal_readlock_or_mutation(
-    const ZEvent * const causal, const ZEvent * const readlock,
-    const ZEvent * const mut_ev) const;
-
   // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),
   // return first memory-write to ml (resp. return its index in cache.wm)
   int getTailWindex(const SymAddrSize& ml, unsigned thr, int evX) const;

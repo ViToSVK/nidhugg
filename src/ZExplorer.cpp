@@ -434,33 +434,9 @@ void ZExplorer::mutate
   assert(!ann_trace.committed.count(readlock->id()));
   // Careful: readlock itself does not become
   // committed! That would violate completeness
-  assert((mutation == ZEventID(true) || graph.hasEvent(mutation)) &&
-         graph.hasEvent(readlock));
-  const ZEvent * mut_ev = mutation == ZEventID(true) ?
-    nullptr : graph.getEvent(mutation);
-  assert(!mut_ev || isWriteB(mut_ev) || isUnlock(mut_ev));
-  auto remaining_proc = mutated_graph.all_proc_seq();
-  for (int tauidx : readlock_ids) {
-    const ZEvent * causal = ann_trace.tau[tauidx].get();
-    assert(isRead(causal) || isLock(causal));
-    assert(graph.hasEvent(causal));
-    if (mutated_committed.count(causal->id()))
-      continue;
-    if (!remaining_proc.count(causal->cpid().get_proc_seq()))
-      continue;
-    bool is_causal = graph.is_causal_readlock_or_mutation(
-      causal, readlock, mut_ev);
-    if (is_causal) {
-      assert(remaining_proc.count(causal->cpid().get_proc_seq()));
-      if (!mutated_committed.count(causal->id())) {
-        mutated_committed.emplace(causal->id());
-      }
-    } else {
-      assert(remaining_proc.count(causal->cpid().get_proc_seq()));
-      remaining_proc.erase(causal->cpid().get_proc_seq());
-      if (remaining_proc.empty())
-        break;
-    }
+  for (const auto& cause : causes_readslocks) {
+    if (!mutated_committed.count(cause->id()))
+      mutated_committed.emplace(cause->id());
   }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
   // Add successful schedule
