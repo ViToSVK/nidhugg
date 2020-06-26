@@ -739,7 +739,10 @@ void ZLinearization::calculateTrNextMain() {
   tr_next_main.clear();
   tr_next_main.resize(n+1, UINT_MAX);
   for (int i = n-1; i >= 0; i--) {
-    tr_next_main.at(i) = (tr.at(i).aux_id() == -1 ? i : tr_next_main.at(i+1));
+    tr_next_main.at(i) = (
+      (tr.at(i).aux_id() == -1 &&
+       gr.proc_seq_to_thread_id.count(tr.at(i).cpid().get_proc_seq()))
+       ? i : tr_next_main.at(i+1));
   }
   end_err();
 }

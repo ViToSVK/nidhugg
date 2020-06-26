@@ -767,6 +767,11 @@ ZTraceExtension ZBuilderTSO::extendGivenTrace() {
   // Do not add in the maximum-trace exploration
   // add_failed_lock_attempts();
 
+  if (has_error()) {
+    end_err("found-error");
+    return ZTraceExtension();
+  }
+
   ZTraceExtension res(
     std::move(prefix), ext_from_id,
     someThreadAssumeBlocked, !endsWithLockFail.empty());
