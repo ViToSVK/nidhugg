@@ -102,6 +102,8 @@ class ZEvent {
   SymAddrSize ml;
   /* The value read/written by this event */
   mutable int value;
+  /* Mark that this is an artificially added failed lock attempt */
+  bool failed_lock;
 
   /* Below for trace-builder */
 

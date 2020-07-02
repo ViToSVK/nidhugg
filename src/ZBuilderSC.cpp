@@ -70,8 +70,7 @@ bool ZBuilderSC::reset()
   }
 
   // Lock event for every thread ending with a failed mutex lock attempt
-  // Do not add in the maximum-trace exploration
-  // add_failed_lock_attempts();
+  add_failed_lock_attempts();
 
   // Construct the explorer with the original ZBuilder pointer
   ZExplorer explorer(*this);
@@ -811,8 +810,7 @@ ZTraceExtension ZBuilderSC::extendGivenTrace() {
   EE->runStaticConstructorsDestructors(true);
 
   // Lock event for every thread ending with a failed mutex lock attempt
-  // Do not add in the maximum-trace exploration
-  // add_failed_lock_attempts();
+  add_failed_lock_attempts();
 
   if (has_error()) {
     end_err("found-error");
@@ -849,6 +847,7 @@ void ZBuilderSC::add_failed_lock_attempts() {
     assert(curnode().size == 1);
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::M_LOCK;
+    curnode().failed_lock = true;
 
     fence(); // Each event in SC has fence
     mayConflict(&(p_ml.second));

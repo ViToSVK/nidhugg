@@ -110,9 +110,10 @@ std::string ZTrace::to_string(bool noexec = true) const
   }
   res << "TAU\n" << trace_to_string(tau);
   res << annotation.to_string();
-  res << "COMMITTED\n";
+  res << "COMMITTED: ";
   for (const auto& id : committed)
-    res << id.to_string() << "  ";
+    res << " " << id.to_string();
+  res << "\n";
   res << "Extension from: " << ext_from_id
       << " ::: reads/locks in extension:";
   for (int id : ext_reads_locks)

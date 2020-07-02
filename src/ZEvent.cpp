@@ -37,6 +37,7 @@ ZEvent::ZEvent
     fence(false),
     ml(SymAddr(SymMBlock::Stack(cpid.get_hash() % INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
     value(-1),
+    failed_lock(false),
     //
     iid(iid),
     size(1),
@@ -61,6 +62,7 @@ ZEvent::ZEvent(bool initial)
     fence(false),
     ml(SymAddr(SymMBlock::Stack(INT16_MAX, INT16_MAX), INT16_MAX), INT16_MAX),
     value(0),
+    failed_lock(false),
     //
     iid(),
     size(-1),
@@ -86,6 +88,7 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id, bool keepvalue)
     fence(oth.fence),
     ml(oth.ml),
     value(keepvalue ? oth.value : -1), /*not set for replay_trace events*/
+    failed_lock(oth.failed_lock),
     //
     iid(oth.iid), /*guide interpreter*/
     size(oth.size), /*guide interpreter*/
@@ -148,6 +151,8 @@ std::string ZEvent::to_string(bool write_cpid) const
   }
   if (fence)
     res << " fence";
+  if (failed_lock)
+    res << " failed_lock_attempt";
 
   return res.str();
 }

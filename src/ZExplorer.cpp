@@ -144,12 +144,26 @@ bool ZExplorer::extend_and_explore
   assert(ann_trace.ext_from_id <= (int) ann_trace.exec.size());
   assert(ann_trace.ext_reads_locks.empty());
   BuffersT buffers; // Thread -> ML -> Pointers to WriteB's
+  std::unordered_map<SymAddrSize, int> last_lock; // ML -> ID of last lock to that ML
   readlock_ids.clear();
+  previous_lock_id.clear();
   for (int i = 0; i < ann_trace.tau.size(); ++i) {
     ZEvent * ev = ann_trace.tau.at(i).get();
     assert(ev->trace_id() == i);
     // Maintain buffers, Assert proper WriteB <-> WriteM pointers
     maintain_buffers(buffers, ev, false);
+    if (isLock(ev)) {
+      // Add previous_lock_id
+      if (!last_lock.count(ev->ml))
+        previous_lock_id.emplace(ev->trace_id(), -1);
+      else
+        previous_lock_id.emplace(ev->trace_id(), last_lock.at(ev->ml));
+      // Maintain last_lock
+      assert(!ev->failed_lock);
+      if (last_lock.count(ev->ml))
+        last_lock.erase(ev->ml);
+      last_lock.emplace(ev->ml, ev->trace_id());
+    }
     // Assert annotation
     assert(!isRead(ev) || ann_trace.annotation.defines(ev));
     assert(!isLock(ev) || ann_trace.annotation.lock_defines(ev));
@@ -182,6 +196,22 @@ bool ZExplorer::extend_and_explore
     }
     // Maintain buffers, Set up proper WriteB <-> WriteM pointers
     maintain_buffers(buffers, ev, true);
+    if (isLock(ev)) {
+      // Add previous_lock_id
+      if (!last_lock.count(ev->ml))
+        previous_lock_id.emplace(ev->trace_id(), -1);
+      else
+        previous_lock_id.emplace(ev->trace_id(), last_lock.at(ev->ml));
+      // Maintain last_lock
+      if (!ev->failed_lock) {
+        if (last_lock.count(ev->ml))
+          last_lock.erase(ev->ml);
+        last_lock.emplace(ev->ml, ev->trace_id());
+      }
+      // Record original_lock
+      assert(!original_lock.count(ev->trace_id()));
+      original_lock.emplace(ev->trace_id(), ev->id());
+    }
     if (isRead(ev) || isLock(ev)) {
       ann_trace.ext_reads_locks.push_back(i);
       assert(!readlock_ids.count(i));
@@ -215,6 +245,7 @@ bool ZExplorer::extend_and_explore
           }
         }
       } else {
+        assert(isLock(ev));
         if (ann_trace.exec[i].observed_trace_id == -1)
           ann_trace.annotation.lock_add(ev->id(), ZEventID(true));
         else {
@@ -250,12 +281,26 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
     assert(isRead(ev) || isLock(ev));
     if (ann_trace.committed.count(ev->id()))
       continue;
+    if (isLock(ev) && previous_lock_id.at(ev->trace_id()) < 0)
+      continue;
+    if (isLock(ev)) {
+      assert(previous_lock_id.at(ev->trace_id()) >= 0);
+      if (!original_lock.count(previous_lock_id.at(ev->trace_id()))) {
+        assert(ann_trace.committed.count(
+               ann_trace.tau.at(previous_lock_id.at(ev->trace_id())).get()->id()));
+        continue;
+      }
+      assert(original_lock.count(previous_lock_id.at(ev->trace_id())));
+      if (ev->id() == original_lock.at(previous_lock_id.at(ev->trace_id())))
+        continue;
+    }
     err_msg(std::string("explore-") + ev->to_string() + "...");
     if (!graph.constructed) {
       clock_t init = std::clock();
       // Construct thread order
       graph.construct(
-        ann_trace.tau, ann_trace.tau.size(), std::set<int>());
+        ann_trace.tau, ann_trace.tau.size(),
+        std::set<int>(), -1);
       // Add reads-from edges
       graph.add_reads_from_edges(ann_trace.annotation);
       time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -263,13 +308,12 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
     }
     assert(graph.constructed);
     // Find mutation candidates for read/lock
-    const ZEventID& base_obs = isRead(ev) ?
-      ann_trace.annotation.obs(ev): ann_trace.annotation.lock_obs(ev);
     bool is_from_extension = ev->trace_id() >= ann_trace.ext_from_id;
     int mutations_only_from_idx = is_from_extension ?
       -1 : ann_trace.ext_from_id;
-    std::set<ZEventID> mutations = graph.get_mutations(
-      ev, base_obs, mutations_only_from_idx);
+    std::set<ZEventID> mutations = isRead(ev) ?
+      graph.get_read_mutations(ev, ann_trace.annotation.obs(ev), mutations_only_from_idx) :
+      graph.get_lock_mutation(ev, previous_lock_id, ann_trace.tau);
     // Perform the mutations
     for (const ZEventID& mutation : mutations)
       mutate(ann_trace, graph, ev, mutation);
@@ -292,14 +336,29 @@ void ZExplorer::mutate
   start_err(std::string("mutate-") + readlock->to_string() +
             "   -to-see-   " + mutation.to_string() + "...");
   assert(isRead(readlock) || isLock(readlock));
-  auto causes_after = graph.get_causes_after(
-    readlock, mutation, ann_trace.tau);
+  assert(!isLock(readlock) ||
+         (previous_lock_id.count(readlock->trace_id()) &&
+          previous_lock_id.at(readlock->trace_id()) < readlock->trace_id() &&
+          previous_lock_id.at(readlock->trace_id()) >= 0));
+  int pre_tau_limit = isRead(readlock) ? readlock->trace_id()
+                      : previous_lock_id.at(readlock->trace_id());
+  assert(pre_tau_limit >= 0);
+  auto causes_after = graph.get_causes_after(pre_tau_limit,
+    (isRead(readlock) ? mutation : readlock->id()), ann_trace.tau);
   std::set<int>& causes_all_idx = causes_after.first;
   std::set<const ZEvent *>& causes_readslocks = causes_after.second;
   // Key - annotation only for readlock and causes_readslocks
   ZAnnotation mutated_key;
-  if (isRead(readlock)) mutated_key.add(readlock->id(), mutation);
-  else mutated_key.lock_add(readlock->id(), mutation);
+  if (isRead(readlock))
+    mutated_key.add(readlock->id(), mutation);
+  else {
+    assert(isLock(readlock));
+    // mutation points to the previous lock, but we need to add to
+    // mutated_key the unlock that this previous lock observed
+    assert(ann_trace.annotation.lock_defines(mutation));
+    const ZEventID& unlock = ann_trace.annotation.lock_obs(mutation);
+    mutated_key.lock_add(readlock->id(), unlock);
+  }
   for (const auto& cause : causes_readslocks) {
     assert(isRead(cause) || isLock(cause));
     assert(!mutated_key.defines(cause) && !mutated_key.lock_defines(cause));
@@ -308,22 +367,25 @@ void ZExplorer::mutate
       mutated_key.add(cause->id(), ann_trace.annotation.obs(cause));
     } else {
       assert(ann_trace.annotation.lock_defines(cause));
-      mutated_key.lock_add(cause->id(), ann_trace.annotation.obs(cause));
+      mutated_key.lock_add(cause->id(), ann_trace.annotation.lock_obs(cause));
     }
   }
   // Stop if such a mutation has already been attempted
-  assert(schedules.count(readlock->trace_id()) &&
-         failed_schedules.count(readlock->trace_id()) &&
-         done_schedules.count(readlock->trace_id()));
-  if (failed_schedules[readlock->trace_id()].count(mutated_key)) {
+  // pre_tau_limit serves as an index to schedules
+  assert((isRead(readlock) && pre_tau_limit == readlock->trace_id()) ||
+         (isLock(readlock) && pre_tau_limit == previous_lock_id.at(readlock->trace_id())));
+  assert(schedules.count(pre_tau_limit) &&
+         failed_schedules.count(pre_tau_limit) &&
+         done_schedules.count(pre_tau_limit));
+  if (failed_schedules[pre_tau_limit].count(mutated_key)) {
     end_err("mutate-done-schedule-already-failed");
     return;
   }
-  if (done_schedules[readlock->trace_id()].count(mutated_key)) {
+  if (done_schedules[pre_tau_limit].count(mutated_key)) {
     end_err("mutate-done-schedule-already-done");
     return;
   }
-  if (schedules[readlock->trace_id()].count(mutated_key)) {
+  if (schedules[pre_tau_limit].count(mutated_key)) {
     end_err("mutate-done-schedule-already-succeeded");
     return;
   }
@@ -335,10 +397,14 @@ void ZExplorer::mutate
   ZAnnotation mutated_annotation(mutated_key);
   assert((isRead(readlock) && mutated_annotation.defines(readlock)) ||
          (isLock(readlock) && mutated_annotation.lock_defines(readlock)));
+  assert((isRead(readlock) && pre_tau_limit == readlock->trace_id()) ||
+         (isLock(readlock) && pre_tau_limit == previous_lock_id.at(readlock->trace_id())));
   for (const int tauidx : readlock_ids) {
-    assert(tauidx <= readlock->trace_id());
-    if (tauidx == readlock->trace_id())
+    assert(tauidx <= pre_tau_limit);
+    if (tauidx >= pre_tau_limit) {
+      assert(tauidx == pre_tau_limit);
       break;
+    }
     assert(tauidx >= 0 && tauidx < (int) ann_trace.tau.size());
     const ZEvent * pre_readlock = ann_trace.tau[tauidx].get();
     assert(isRead(pre_readlock) || isLock(pre_readlock));
@@ -358,8 +424,8 @@ void ZExplorer::mutate
   // Construct the mutation graph
   err_msg("attempt-graph");
   ZGraph mutated_graph(model);
-  auto missing_memory_writes = mutated_graph.construct(
-    ann_trace.tau, readlock->trace_id(), causes_all_idx);
+  auto missing_memory_writes = mutated_graph.construct(ann_trace.tau,
+    pre_tau_limit, causes_all_idx, readlock->trace_id());
   for (int idx : missing_memory_writes) {
     assert(!causes_all_idx.count(idx));
     causes_all_idx.emplace(idx);
@@ -374,8 +440,8 @@ void ZExplorer::mutate
   time_closure += time;
   if (!closed) {
     ++closure_failed;
-    assert(!failed_schedules.at(readlock->trace_id()).count(mutated_key));
-    failed_schedules[readlock->trace_id()].emplace(mutated_key);
+    assert(!failed_schedules.at(pre_tau_limit).count(mutated_key));
+    failed_schedules[pre_tau_limit].emplace(mutated_key);
     end_err("mutate-done-closure-failed");
     return;
   }
@@ -398,8 +464,8 @@ void ZExplorer::mutate
   total_parents += linearizer.num_parents;
   total_children += linearizer.num_children;
   if (linear.empty()) {
-    assert(!failed_schedules.at(readlock->trace_id()).count(mutated_key));
-    failed_schedules[readlock->trace_id()].emplace(mutated_key);
+    assert(!failed_schedules.at(pre_tau_limit).count(mutated_key));
+    failed_schedules[pre_tau_limit].emplace(mutated_key);
     end_err("mutate-done-linearization-failed");
     return;
   }
@@ -409,17 +475,33 @@ void ZExplorer::mutate
   err_msg("attempt-tau");
   std::vector<std::unique_ptr<ZEvent>> mutated_tau;
   BuffersT buffers; // Thread -> ML -> Pointers to WriteB's
-  for (int i = 0; i <= readlock->trace_id(); ++i) {
+  // Add events until pre_tau_limit
+  assert((isRead(readlock) && pre_tau_limit == readlock->trace_id()) ||
+         (isLock(readlock) && pre_tau_limit == previous_lock_id.at(readlock->trace_id())));
+  for (int i = 0; i < pre_tau_limit; ++i) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[i].get(), i, true)));
     ZEvent * const ev = mutated_tau.back().get();
+    if (isLock(ev)) ev->failed_lock = false;
+    else assert(!ev->failed_lock);
     // Maintain buffers, Set up proper WriteB <-> WriteM pointers
     maintain_buffers(buffers, ev, true);
   }
+  // Now add the readlock itself
+  mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
+    *ann_trace.tau[readlock->trace_id()].get(), mutated_tau.size(), true)));
+  ZEvent * const ev = mutated_tau.back().get();
+  if (isLock(ev)) ev->failed_lock = false;
+  else assert(!ev->failed_lock);
+  // Maintain buffers, Set up proper WriteB <-> WriteM pointers
+  maintain_buffers(buffers, ev, true);
+  // Now add causes after pre_tau_limit
   for (int cause_idx : causes_all_idx) {
     mutated_tau.push_back(std::unique_ptr<ZEvent>(new ZEvent(
       *ann_trace.tau[cause_idx].get(), mutated_tau.size(), true)));
     ZEvent * const ev = mutated_tau.back().get();
+    if (isLock(ev)) ev->failed_lock = false;
+    else assert(!ev->failed_lock);
     // Maintain buffers, Set up proper WriteB <-> WriteM pointers
     maintain_buffers(buffers, ev, true);
   }
@@ -440,17 +522,19 @@ void ZExplorer::mutate
   }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
   // Add successful schedule
-  assert(schedules.count(readlock->trace_id()) &&
-         failed_schedules.count(readlock->trace_id()) &&
-         done_schedules.count(readlock->trace_id()));
-  assert(!schedules.at(readlock->trace_id()).count(mutated_key) &&
-         !failed_schedules.at(readlock->trace_id()).count(mutated_key) &&
-         !done_schedules.at(readlock->trace_id()).count(mutated_key));
-  schedules[readlock->trace_id()].emplace(mutated_key,
+  assert((isRead(readlock) && pre_tau_limit == readlock->trace_id()) ||
+         (isLock(readlock) && pre_tau_limit == previous_lock_id.at(readlock->trace_id())));
+  assert(schedules.count(pre_tau_limit) &&
+         failed_schedules.count(pre_tau_limit) &&
+         done_schedules.count(pre_tau_limit));
+  assert(!schedules.at(pre_tau_limit).count(mutated_key) &&
+         !failed_schedules.at(pre_tau_limit).count(mutated_key) &&
+         !done_schedules.at(pre_tau_limit).count(mutated_key));
+  schedules[pre_tau_limit].emplace(mutated_key,
     ZTrace(&ann_trace, std::move(linear), std::move(mutated_tau),
            std::move(mutated_annotation), std::move(mutated_committed),
            readlock->id()));
-  end_err("mutate-done-added");
+  end_err(std::string("mutate-done-added-to-") + std::to_string(pre_tau_limit));
 }
 
 
@@ -464,6 +548,9 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
   // Iterate through reads/locks of extension in reverse order
   for (int i = ann_trace.ext_reads_locks.size() - 1; i >= 0; --i) {
     int idx = ann_trace.ext_reads_locks[i];
+    assert(idx < ann_trace.tau.size());
+    assert(isRead(ann_trace.tau.at(idx).get()) ||
+           isLock(ann_trace.tau.at(idx).get()));
     start_err(std::string("recur-on-") + std::to_string(i) +
             "-(idx-is-" + std::to_string(idx) + ")...");
     assert(schedules.count(idx) && failed_schedules.count(idx) &&
@@ -499,6 +586,12 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
     assert(done_schedules.count(idx));
     done_schedules.erase(idx);
     assert(!done_schedules.count(idx));
+    // Erase original_lock
+    if (isLock(ann_trace.tau.at(idx).get())) {
+      assert(original_lock.count(idx));
+      original_lock.erase(idx);
+    } else
+      assert(!original_lock.count(idx));
     end_err(std::string("recur-on-") + std::to_string(i) +
             "-(idx-is-" + std::to_string(idx) + ")-done");
   }
@@ -637,6 +730,17 @@ bool ZExplorer::linearization_respects_ann
     }
 
     if (isLock(ev)) {
+      if (locked.count(ev->ml)) {
+        llvm::errs() << "Partial order\n";
+        graph.dump();
+        llvm::errs() << "Linearization\n";
+        dump_trace(trace);
+        llvm::errs() << "Annotation that should be respected\n";
+        annotation.dump();
+        llvm::errs() << "Lock trying to acquire already locked mutex\n";
+        ev->dump();
+        return false;
+      }
       assert(!locked.count(ev->ml));
       locked.insert(ev->ml);
       // Check whether the lock is consistent with the annotation

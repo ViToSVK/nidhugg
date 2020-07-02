@@ -107,17 +107,12 @@ class ZGraph {
       <SymAddrSize, std::unordered_map
       <unsigned, std::vector<const ZEvent *>>> wm;
 
-    // ML -> thr -> thread-ordered unlocks
-    std::unordered_map
-      <SymAddrSize, std::unordered_map
-      <unsigned, std::vector<const ZEvent *>>> unl;
-
     // Read -> its local buffer-write
     std::unordered_map
       <const ZEvent *, const ZEvent *> readWB;
 
     bool empty() const {
-      return (wm.empty() && unl.empty() && readWB.empty());
+      return (wm.empty() && readWB.empty());
     }
   };
  private:
@@ -153,7 +148,7 @@ class ZGraph {
   // are within pre_tau_limit/causes_after but they themselves are not
   std::set<int> construct(
     const std::vector<std::unique_ptr<ZEvent>>& trace,
-    int pre_tau_limit, std::set<int> causes_after);
+    int pre_tau_limit, std::set<int> causes_after, int readlock_idx);
 
   void add_reads_from_edges(const ZAnnotation& annotation);
 
@@ -161,12 +156,16 @@ class ZGraph {
   /* MAIN ALGORITHM              */
   /* *************************** */
 
-  std::set<ZEventID> get_mutations(
+  std::set<ZEventID> get_read_mutations(
     const ZEvent * const ev, const ZEventID base_obs,
     int mutations_only_from_idx) const;
 
+  std::set<ZEventID> get_lock_mutation(
+    const ZEvent * const ev, const std::map<int, int>& previous_lock_id,
+    const std::vector<std::unique_ptr<ZEvent>>& tau) const;
+
   std::pair<std::set<int>, std::set<const ZEvent *>> get_causes_after(
-    const ZEvent * const readlock, const ZEventID& mutation,
+    int pre_tau_limit, const ZEventID& mutation,
     const std::vector<std::unique_ptr<ZEvent>>& tau) const;
 
   // In thread thr (and specific aux), starting from ev and going back (ev,ev-1,...,1,0),

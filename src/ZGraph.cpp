@@ -362,13 +362,21 @@ bool ZGraph::hasEvent(const ZEventID& id) const
 // are within pre_tau_limit/causes_after but they themselves are not
 std::set<int> ZGraph::construct
 (const std::vector<std::unique_ptr<ZEvent>>& trace,
- int pre_tau_limit, std::set<int> causes_after)
+ int pre_tau_limit, std::set<int> causes_after, int readlock_idx)
 {
   start_err("starting trace-to-po");
   assert(!trace.empty());
   assert(!constructed);
   constructed = true;
   std::set<int> res;
+
+#ifndef NDEBUG
+  assert(readlock_idx < 0 || pre_tau_limit <= readlock_idx);
+  assert(!causes_after.count(readlock_idx));
+  for (int cause : causes_after) {
+    assert(cause > pre_tau_limit);
+  }
+#endif
 
   std::unordered_map<std::pair<unsigned, int>, unsigned>
     cur_evidx;
@@ -406,248 +414,222 @@ std::set<int> ZGraph::construct
     <SymAddrSize, std::unordered_map<unsigned, const ZEvent *>> mutex_last;
   mutex_first.reserve(8);
 
+  std::map<CPid, std::map<int, const ZEvent *>> waitlist;
+
   for (int i = 0; i < trace.size(); ++i) {
-    // Limit to events until including pre_tau, and causes_after
-    if (i > pre_tau_limit && !causes_after.count(i)) {
-      // Add the memory-write if its buffer-write is included
-      if (!res.count(i))
-        continue;
+    // Limit to events:
+    // until and EXCLUDING pre_tau_limit, all causes_after,
+    // readlock_idx, and memory-writes whose buffer-write is included
+    if (i >= pre_tau_limit && i != readlock_idx &&
+        !causes_after.count(i) && !res.count(i)) {
+      continue;
     }
-    const ZEvent * const ev = trace[i].get();
-    assert(i != pre_tau_limit || isRead(ev) || isLock(ev));
+    const ZEvent * ev = trace[i].get();
+    assert(i != readlock_idx || isRead(ev) || isLock(ev));
     assert(!res.count(i) || isWriteM(ev));
 
-    /*
-    unsigned thr_idx = INT_MAX;
-
-    // Check if this process is already known
-    auto ipidit = ipid_to_thraux.find(ev->iid.get_pid());
-    if (model != MemoryModel::PSO && ipidit != ipid_to_thraux.end()) {
-      thr_idx = ipidit->second.first;
-      assert(ev->aux_id() == ipidit->second.second);
-    } else {
-      thr_idx = getThreadID(ev).first;
-      // add to ipid cache for faster lookup next time
-      ipid_to_thraux.emplace(ev->iid.get_pid(),
-                             std::pair<unsigned, int>(thr_idx,
-                                                      ev->aux_id()));
-    }
-
-    ev->_thread_id = thr_idx;
-    */
-    addThreadID(ev);
-
-    // Set linearization_thr_id
-    assert(ev->thread_id() < 100);
-    assert(thr_to_lin_id.size() == lin_to_thr_id.size());
-    if (!thr_to_lin_id.count(ev->thread_id())) {
-      unsigned lin_id = lin_to_thr_id.size();
-      assert(!lin_to_thr_id.count(lin_id));
-      thr_to_lin_id.emplace(ev->thread_id(), lin_id);
-      lin_to_thr_id.emplace(lin_id, ev->thread_id());
-    }
-
-    // THIS MIGHT NOT BE NEEDED FOR MAXIMAL TRACES
-    /*
-    if (model == MemoryModel::PSO && isWriteM(ev)) {
-      // Handle aux for pso
-      int aux_idx = psoGetAux(ev);
-      ev->_aux_id = aux_idx;
-    }
-    */
-
-    auto thraux = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
-
-    // If buffer-write is added, make sure its memory-write is also added
-    if (isWriteB(ev)) {
-      assert(isWriteM(trace.at(ev->write_other_trace_id).get()));
-      assert(*(ev->write_other_ptr) == *(trace.at(ev->write_other_trace_id).get()));
-      if (ev->write_other_trace_id > pre_tau_limit &&
-          !causes_after.count(ev->write_other_trace_id)) {
-        assert(!res.count(ev->write_other_trace_id));
-        res.emplace(ev->write_other_trace_id);
+    while (ev) {
+      auto thraux = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
+      if ((!hasThreadAux(thraux) && ev->event_id() > 0) ||
+          (cur_evidx.count(thraux) && cur_evidx.at(thraux) < ev->event_id())) {
+        // Add to waitlist and move to the next event
+        if (!waitlist.count(ev->cpid()))
+          waitlist.emplace(ev->cpid(), std::map<int, const ZEvent *>());
+        assert(!waitlist.at(ev->cpid()).count(ev->event_id()));
+        waitlist.at(ev->cpid()).emplace(ev->event_id(), ev);
+        break;
       }
-    }
-    // Memory-writes cannot be added if their buffer-write was not added
-    if (isWriteM(ev)) {
-      assert(ev->aux_id() != -1 && "Only auxiliary threads");
-      assert(hasEvent(ev->write_other_ptr));
-    }
 
-    // We will add the event
-    // First, add line if not already present
-    if (!hasThreadAux(thraux)) {
-      // A new thread/aux appeared
-      assert(!cur_evidx.count(thraux));
-      cur_evidx.emplace(thraux, 0);
-      assert(ev->event_id() == 0);
+      addThreadID(ev);
 
-      addLine(ev);
-      po.addLine(ev);
-    }
-    if (!cur_evidx.count(thraux)) {
-      assert(ev->event_id() == 0);
-      cur_evidx.emplace(thraux, 0);
-    }
+      // Set linearization_thr_id
+      assert(ev->thread_id() < 100);
+      assert(thr_to_lin_id.size() == lin_to_thr_id.size());
+      if (!thr_to_lin_id.count(ev->thread_id())) {
+        unsigned lin_id = lin_to_thr_id.size();
+        assert(!lin_to_thr_id.count(lin_id));
+        thr_to_lin_id.emplace(ev->thread_id(), lin_id);
+        lin_to_thr_id.emplace(lin_id, ev->thread_id());
+      }
 
-    unsigned ev_idx = cur_evidx[thraux];
-    assert(ev->event_id() == ev_idx);
-    assert(ev_idx == (*this)(thraux).size());
-    // New event
-    addEvent(ev);
-    po.addEvent(ev);
-    ++cur_evidx[thraux];
 
-    // Handle Fence
-    if (ev->fence) {
-      if (store_buffer.count(ev->thread_id()))
-        for (const auto& ml_last : last_mwrite[ev->thread_id()]) {
-          auto last = ml_last.second;
-          assert(isWriteM(last));
-          assert(!po.hasEdge(ev, last));
-          if (!po.hasEdge(last, ev))
-            po.addEdge(last, ev);
+      // If buffer-write is added, make sure its memory-write is also added
+      if (isWriteB(ev)) {
+        assert(isWriteM(trace.at(ev->write_other_trace_id).get()));
+        assert(*(ev->write_other_ptr) == *(trace.at(ev->write_other_trace_id).get()));
+        if (ev->write_other_trace_id > pre_tau_limit &&
+            !causes_after.count(ev->write_other_trace_id)) {
+          assert(!res.count(ev->write_other_trace_id));
+          res.emplace(ev->write_other_trace_id);
         }
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-    if (isLock(ev) || isUnlock(ev)) {
-      llvm::errs() << "No support for locks atm";
-      abort();
-    }
-
-    // Handle Spawn
-    if (isSpawn(ev)) {
-      spawns.push_back(ev);
-      assert(!proc_seq_to_spawn.count(ev->childs_cpid.get_proc_seq()));
-      proc_seq_to_spawn.emplace(ev->childs_cpid.get_proc_seq(), ev);
-      assert(number_of_threads() > 0);
-      assert(ev->fence);
-    }
-    // Handle Join
-    if (isJoin(ev))
-      joins.push_back(ev);
-
-    // Handle Buffer-Write
-    if (isWriteB(ev)) {
-      assert(ev->aux_id() == -1 && "Only real threads");
-      // Store buffer
-      if (!store_buffer.count(ev->thread_id()))
-        store_buffer.emplace
-          (ev->thread_id(),
-           std::unordered_map
-           <SymAddrSize, std::list<const ZEvent *>>());
-      if (!store_buffer[ev->thread_id()].count(ev->ml))
-        store_buffer[ev->thread_id()].emplace(ev->ml,
-                                             std::list<const ZEvent *>());
-      store_buffer[ev->thread_id()][ev->ml].push_back(ev);
-      // Last Bwrite
-      if (!last_bwrite.count(ev->thread_id()))
-        last_bwrite.emplace
-          (ev->thread_id(), std::unordered_map<SymAddrSize, const ZEvent *>());
-      auto it = last_bwrite[ev->thread_id()].find(ev->ml);
-      if (it != last_bwrite[ev->thread_id()].end())
-        it = last_bwrite[ev->thread_id()].erase(it);
-      last_bwrite[ev->thread_id()].emplace_hint
-        (it, ev->ml, ev);
-    }
-
-    // Handle Memory-Write
-    if (isWriteM(ev)) {
-      assert(ev->aux_id() != -1 && "Only auxiliary threads");
-      // Store buffer
-      assert(store_buffer.count(ev->thread_id()) &&
-             store_buffer[ev->thread_id()].count(ev->ml));
-      // Done already during extend
-      /*
-      assert(!ev->write_other_ptr);
-      ev->write_other_ptr = store_buffer[ev->thread_id()][ev->ml].front();
-      assert(isWriteB(ev->write_other_ptr) && sameMl(ev, ev->write_other_ptr));
-      assert(!ev->write_other_ptr->write_other_ptr);
-      ev->write_other_ptr->write_other_ptr = ev;
-      assert(ev->write_other_ptr->trace_id() == ev->write_other_trace_id);
-      assert(ev->write_other_ptr->write_other_trace_id == ev->trace_id());
-      */
-      store_buffer[ev->thread_id()][ev->ml].pop_front();
-      // WB -> WM thread order
-      assert(!po.hasEdge(ev, ev->write_other_ptr));
-      if (!po.hasEdge(ev->write_other_ptr, ev))
-        po.addEdge(ev->write_other_ptr, ev);
-      // Last Mwrite
-      if (!last_mwrite.count(ev->thread_id()))
-        last_mwrite.emplace
-          (ev->thread_id(), std::unordered_map<SymAddrSize, const ZEvent *>());
-      auto it = last_mwrite[ev->thread_id()].find(ev->ml);
-      if (it != last_mwrite[ev->thread_id()].end())
-        it = last_mwrite[ev->thread_id()].erase(it);
-      last_mwrite[ev->thread_id()].emplace_hint
-        (it, ev->ml, ev);
-      // Cache - wm
-      if (!cache.wm.count(ev->ml))
-        cache.wm.emplace
-          (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
-      if (!cache.wm[ev->ml].count(ev->thread_id()))
-        cache.wm[ev->ml].emplace(ev->thread_id(), std::vector<const ZEvent *>());
-      cache.wm[ev->ml][ev->thread_id()].push_back(ev);
-    }
-
-    // Handle Read
-    if (isRead(ev)) {
-      // Cache - wm
-      if (!cache.wm.count(ev->ml))
-        cache.wm.emplace
-          (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
-      // Cache - readWB
-      assert(!cache.readWB.count(ev));
-      if (last_bwrite.count(ev->thread_id()) &&
-          last_bwrite[ev->thread_id()].count(ev->ml)) {
-        assert(isWriteB(last_bwrite[ev->thread_id()][ev->ml]));
-        cache.readWB.emplace(ev, last_bwrite[ev->thread_id()][ev->ml]);
       }
-      else
-        cache.readWB.emplace(ev, nullptr);
-    }
-
-    // Handle Mutex events
-    if (isMutexInit(ev)) {
-      assert(!mutex_inits.count(ev->ml));
-      mutex_inits.emplace(ev->ml, ev);
-    }
-    if (isMutexDestroy(ev)) {
-      assert(!mutex_destroys.count(ev->ml));
-      mutex_destroys.emplace(ev->ml, ev);
-    }
-    if (isLock(ev) || isUnlock(ev)) {
-      // For each ml, for each thread, remember first access
-      if (!mutex_first.count(ev->ml)) {
-        mutex_first.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
-        mutex_first[ev->ml].reserve(8);
+      // Memory-writes cannot be added if their buffer-write was not added
+      if (isWriteM(ev)) {
+        assert(ev->aux_id() != -1 && "Only auxiliary threads");
+        assert(hasEvent(ev->write_other_ptr));
       }
-      if (!mutex_first[ev->ml].count(ev->thread_id()))
-        mutex_first[ev->ml].emplace(ev->thread_id(), ev);
-      // For each ml, for each thread, remember last access
-      if (!mutex_last.count(ev->ml)) {
-        mutex_last.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
-        mutex_last[ev->ml].reserve(8);
-      }
-      mutex_last[ev->ml][ev->thread_id()] = ev;
-    }
-    if (isUnlock(ev)) {
-      // Cache - unl
-      if (!cache.unl.count(ev->ml))
-        cache.unl.emplace
-          (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
-      if (!cache.unl[ev->ml].count(ev->thread_id()))
-        cache.unl[ev->ml].emplace(ev->thread_id(), std::vector<const ZEvent *>());
-      cache.unl[ev->ml][ev->thread_id()].push_back(ev);
-    }
 
+      // We will add the event
+      // First, add line if not already present
+      if (!hasThreadAux(thraux)) {
+        // A new thread/aux appeared
+        assert(!cur_evidx.count(thraux));
+        cur_evidx.emplace(thraux, 0);
+        assert(ev->event_id() == 0);
+
+        addLine(ev);
+        po.addLine(ev);
+      }
+
+      assert(cur_evidx.count(thraux));
+      unsigned ev_idx = cur_evidx[thraux];
+      assert(ev->event_id() == ev_idx);
+      assert(ev_idx == (*this)(thraux).size());
+
+      // New event
+      addEvent(ev);
+      po.addEvent(ev);
+      ++cur_evidx[thraux];
+
+      // Handle Fence
+      if (ev->fence) {
+        if (store_buffer.count(ev->thread_id()))
+          for (const auto& ml_last : last_mwrite[ev->thread_id()]) {
+            auto last = ml_last.second;
+            assert(isWriteM(last));
+            assert(!po.hasEdge(ev, last));
+            if (!po.hasEdge(last, ev))
+              po.addEdge(last, ev);
+          }
+      }
+
+      // Handle Spawn
+      if (isSpawn(ev)) {
+        spawns.push_back(ev);
+        assert(!proc_seq_to_spawn.count(ev->childs_cpid.get_proc_seq()));
+        proc_seq_to_spawn.emplace(ev->childs_cpid.get_proc_seq(), ev);
+        assert(number_of_threads() > 0);
+        assert(ev->fence);
+      }
+
+      // Handle Join
+      if (isJoin(ev))
+        joins.push_back(ev);
+
+      // Handle Buffer-Write
+      if (isWriteB(ev)) {
+        assert(ev->aux_id() == -1 && "Only real threads");
+        // Store buffer
+        if (!store_buffer.count(ev->thread_id()))
+          store_buffer.emplace
+            (ev->thread_id(),
+             std::unordered_map
+             <SymAddrSize, std::list<const ZEvent *>>());
+        if (!store_buffer[ev->thread_id()].count(ev->ml))
+          store_buffer[ev->thread_id()].emplace(ev->ml,
+                                               std::list<const ZEvent *>());
+        store_buffer[ev->thread_id()][ev->ml].push_back(ev);
+        // Last Bwrite
+        if (!last_bwrite.count(ev->thread_id()))
+          last_bwrite.emplace
+            (ev->thread_id(), std::unordered_map<SymAddrSize, const ZEvent *>());
+        auto it = last_bwrite[ev->thread_id()].find(ev->ml);
+        if (it != last_bwrite[ev->thread_id()].end())
+          it = last_bwrite[ev->thread_id()].erase(it);
+        last_bwrite[ev->thread_id()].emplace_hint
+          (it, ev->ml, ev);
+      }
+
+      // Handle Memory-Write
+      if (isWriteM(ev)) {
+        assert(ev->aux_id() != -1 && "Only auxiliary threads");
+        // Store buffer
+        assert(store_buffer.count(ev->thread_id()) &&
+               store_buffer[ev->thread_id()].count(ev->ml));
+        store_buffer[ev->thread_id()][ev->ml].pop_front();
+        // WB -> WM thread order
+        assert(!po.hasEdge(ev, ev->write_other_ptr));
+        if (!po.hasEdge(ev->write_other_ptr, ev))
+          po.addEdge(ev->write_other_ptr, ev);
+        // Last Mwrite
+        if (!last_mwrite.count(ev->thread_id()))
+          last_mwrite.emplace
+            (ev->thread_id(), std::unordered_map<SymAddrSize, const ZEvent *>());
+        auto it = last_mwrite[ev->thread_id()].find(ev->ml);
+        if (it != last_mwrite[ev->thread_id()].end())
+          it = last_mwrite[ev->thread_id()].erase(it);
+        last_mwrite[ev->thread_id()].emplace_hint
+          (it, ev->ml, ev);
+        // Cache - wm
+        if (!cache.wm.count(ev->ml))
+          cache.wm.emplace
+            (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
+        if (!cache.wm[ev->ml].count(ev->thread_id()))
+          cache.wm[ev->ml].emplace(ev->thread_id(), std::vector<const ZEvent *>());
+        cache.wm[ev->ml][ev->thread_id()].push_back(ev);
+      }
+
+      // Handle Read
+      if (isRead(ev)) {
+        // Cache - wm
+        if (!cache.wm.count(ev->ml))
+          cache.wm.emplace
+            (ev->ml, std::unordered_map<unsigned, std::vector<const ZEvent *>>());
+        // Cache - readWB
+        assert(!cache.readWB.count(ev));
+        if (last_bwrite.count(ev->thread_id()) &&
+            last_bwrite[ev->thread_id()].count(ev->ml)) {
+          assert(isWriteB(last_bwrite[ev->thread_id()][ev->ml]));
+          cache.readWB.emplace(ev, last_bwrite[ev->thread_id()][ev->ml]);
+        }
+        else
+          cache.readWB.emplace(ev, nullptr);
+      }
+
+      // Handle Mutex events
+      if (isMutexInit(ev)) {
+        assert(!mutex_inits.count(ev->ml));
+        mutex_inits.emplace(ev->ml, ev);
+      }
+      if (isMutexDestroy(ev)) {
+        assert(!mutex_destroys.count(ev->ml));
+        mutex_destroys.emplace(ev->ml, ev);
+      }
+      if (isLock(ev) || isUnlock(ev)) {
+        // For each ml, for each thread, remember first access
+        if (!mutex_first.count(ev->ml)) {
+          mutex_first.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
+          mutex_first[ev->ml].reserve(8);
+        }
+        if (!mutex_first[ev->ml].count(ev->thread_id()))
+          mutex_first[ev->ml].emplace(ev->thread_id(), ev);
+        // For each ml, for each thread, remember last access
+        if (!mutex_last.count(ev->ml)) {
+          mutex_last.emplace(ev->ml, std::unordered_map<unsigned, const ZEvent *>());
+          mutex_last[ev->ml].reserve(8);
+        }
+        mutex_last[ev->ml][ev->thread_id()] = ev;
+      }
+
+      // If your thread-successor is in the waitlist,
+      // move on to that one, otherwise get next ev from trace
+      if (waitlist.count(ev->cpid()) &&
+          waitlist.at(ev->cpid()).count(ev->event_id() + 1)) {
+        ev = waitlist.at(ev->cpid()).at(ev->event_id() + 1);
+        waitlist.at(ev->cpid()).erase(ev->event_id());
+      } else
+        ev = nullptr;
+    } // end of loop for adding trace-ev and its waitlist-followers
   } // end of loop for traversing trace and creating nodes
 
   shrink();
   po.shrink();
 
   #ifndef NDEBUG
+  // Waitlist is empty
+  for (const auto& cpid_wait : waitlist)
+    assert(cpid_wait.second.empty());
+
   assert(size() == cur_evidx.size());
   for (auto& thraux_numevents : cur_evidx) {
     assert(thraux_numevents.second == (*this)(thraux_numevents.first).size()
@@ -758,18 +740,18 @@ void ZGraph::add_reads_from_edges(const ZAnnotation& annotation)
 /* MAIN ALGORITHM              */
 /* *************************** */
 
-std::set<ZEventID> ZGraph::get_mutations
+std::set<ZEventID> ZGraph::get_read_mutations
 (const ZEvent * const ev, const ZEventID base_obs,
  int mutations_only_from_idx) const
 {
-  start_err("starting get-mutations");
-  assert(isRead(ev) || isLock(ev));
+  start_err("starting get-read-mutations");
+  assert(isRead(ev));
   assert(hasEvent(ev));
   std::set<ZEventID> res;
   const ZEvent * const ev_before = (ev->event_id() > 0)
     ? getEvent(ev->thread_id(), ev->aux_id(), ev->event_id() - 1) : nullptr;
-  const ZEvent * spawn = proc_seq_to_spawn.count(ev->cpid().get_proc_seq()) ?
-  proc_seq_to_spawn.at(ev->cpid().get_proc_seq()) : nullptr;
+  const ZEvent * spawn = proc_seq_to_spawn.count(ev->cpid().get_proc_seq())
+    ? proc_seq_to_spawn.at(ev->cpid().get_proc_seq()) : nullptr;
   assert(spawn || ev->cpid().get_proc_seq() == CPid().get_proc_seq());
   assert(!spawn || po.hasEdge(spawn, ev));
 
@@ -784,93 +766,24 @@ std::set<ZEventID> ZGraph::get_mutations
 
   // Handle other threads
   for (unsigned tid : get_threads()) {
-    int auxid = isLock(ev) ? -1 : auxForMl(ev->ml, tid);
-    if (ev->thread_id() == tid || (auxid < 0 && isRead(ev)))
+    int auxid = auxForMl(ev->ml, tid);
+    if (ev->thread_id() == tid || auxid < 0)
       continue;
 
-    if (isLock(ev)) {
-      if (!getCache().unl.count(ev->ml) ||
-          !getCache().unl.at(ev->ml).count(tid))
-        continue;
-      const ZEvent * last_unlock_before_lock = nullptr;
-      for (const ZEvent * unlock : getCache().unl.at(ev->ml).at(tid)) {
-        assert(isUnlock(unlock) && tid == unlock->thread_id() && sameMl(ev, unlock));
-        if (po.hasEdge(ev, unlock))
-          break;
-        else if (ev_before && po.hasEdge(unlock, ev_before))
-          last_unlock_before_lock = unlock;
-        else {
-          assert(!notCovered.count(unlock));
-          notCovered.emplace(unlock);
-        }
-      }
-      if (last_unlock_before_lock) {
-        assert(!mayBeCovered.count(last_unlock_before_lock));
-        mayBeCovered.emplace(last_unlock_before_lock);
-        // Update cover
-        for (unsigned covthr : get_threads()) {
-          if (covthr != last_unlock_before_lock->thread_id()) {
-            for (int covaux : auxes(covthr)) {
-              int newcov = po.pred(last_unlock_before_lock, covthr, covaux).second;
-              auto covta = std::pair<unsigned, int>(covthr, covaux);
-              assert(covered.count(covta));
-              if (newcov > covered[covta])
-                covered[covta] = newcov;
-            }
-          }
-        }
-      }
-    } else {
-      assert(isRead(ev) && auxid >= 0);
-      int su = po.succ(ev, tid, auxid).second;
-      if (su >= (int) (*this)(tid, auxid).size()) {
-        assert(su == INT_MAX);
-        su = (int) (*this)(tid, auxid).size();
-      }
-      // Dumb
-      /*
-      int curr = su - 1;
-      while (curr >= 0) {
-        const ZEvent *rem = (*this)(tid, auxid)[curr];
-        assert(isWriteM(rem) && !po.hasEdge(ev, rem));
-        if (po.hasEdge(rem, ev)) {
-          if (sameMl(ev, rem)) {
-            mayBeCovered.emplace(rem);
-            // Update cover
-            for (unsigned covthr : get_threads()) {
-              if (covthr != rem->thread_id()) {
-                for (int covaux : auxes(covthr)) {
-                  int newcov = po.pred(rem, covthr, covaux).second;
-                  auto covta = std::pair<unsigned, int>(covthr, covaux);
-                  assert(covered.count(covta));
-                  if (newcov > covered[covta])
-                    covered[covta] = newcov;
-                }
-              }
-            }
-            // Break
-            break;
-          }
-          curr--;
-        } else {
-          if (sameMl(ev, rem))
-            notCovered.emplace(rem);
-          curr--;
-        }
-      }
-      */
-      // TailW index to cache.wm
-      int wm_idx = getTailWindex(ev->ml, tid, su - 1);
-      assert(wm_idx == getLatestNotAfterIndex(ev, tid, po));
-      while (wm_idx > -1) {
-        const ZEvent *rem = cache.wm.at(ev->ml).at(tid).at(wm_idx);
-        assert(rem && isWriteM(rem) && sameMl(ev, rem));
-        assert(!po.hasEdge(ev, rem));
-        if ((ev_before && po.hasEdge(rem, ev_before)) ||
-            (spawn && po.hasEdge(rem, spawn))) {
-          // Others in this thread are covered from ev by rem
-          assert((spawn && po.hasEdge(rem, spawn)) ||
-                 (ev_before && (int) rem->event_id() <= po.pred(ev_before, tid, auxid).second));
+    assert(isRead(ev) && auxid >= 0);
+    int su = po.succ(ev, tid, auxid).second;
+    if (su >= (int) (*this)(tid, auxid).size()) {
+      assert(su == INT_MAX);
+      su = (int) (*this)(tid, auxid).size();
+    }
+    // Dumb
+    /*
+    int curr = su - 1;
+    while (curr >= 0) {
+      const ZEvent *rem = (*this)(tid, auxid)[curr];
+      assert(isWriteM(rem) && !po.hasEdge(ev, rem));
+      if (po.hasEdge(rem, ev)) {
+        if (sameMl(ev, rem)) {
           mayBeCovered.emplace(rem);
           // Update cover
           for (unsigned covthr : get_threads()) {
@@ -886,139 +799,118 @@ std::set<ZEventID> ZGraph::get_mutations
           }
           // Break
           break;
-        } else {
-          notCovered.emplace(rem);
         }
-        --wm_idx;
+        curr--;
+      } else {
+        if (sameMl(ev, rem))
+          notCovered.emplace(rem);
+        curr--;
       }
+    }
+    */
+    // TailW index to cache.wm
+    int wm_idx = getTailWindex(ev->ml, tid, su - 1);
+    assert(wm_idx == getLatestNotAfterIndex(ev, tid, po));
+    while (wm_idx > -1) {
+      const ZEvent *rem = cache.wm.at(ev->ml).at(tid).at(wm_idx);
+      assert(rem && isWriteM(rem) && sameMl(ev, rem));
+      assert(!po.hasEdge(ev, rem));
+      if ((ev_before && po.hasEdge(rem, ev_before)) ||
+          (spawn && po.hasEdge(rem, spawn))) {
+        // Others in this thread are covered from ev by rem
+        assert((spawn && po.hasEdge(rem, spawn)) ||
+               (ev_before && (int) rem->event_id() <= po.pred(ev_before, tid, auxid).second));
+        mayBeCovered.emplace(rem);
+        // Update cover
+        for (unsigned covthr : get_threads()) {
+          if (covthr != rem->thread_id()) {
+            for (int covaux : auxes(covthr)) {
+              int newcov = po.pred(rem, covthr, covaux).second;
+              auto covta = std::pair<unsigned, int>(covthr, covaux);
+              assert(covered.count(covta));
+              if (newcov > covered[covta])
+                covered[covta] = newcov;
+            }
+          }
+        }
+        // Break
+        break;
+      } else {
+        notCovered.emplace(rem);
+      }
+      --wm_idx;
     }
   }
 
   // Handle thread of read/lock
-  if (isLock(ev)) {
-    const ZEvent * last_unlock_before_lock = nullptr;
-    if (getCache().unl.count(ev->ml) && getCache().unl.at(ev->ml).count(ev->thread_id())) {
-      for (const ZEvent * unlock : getCache().unl.at(ev->ml).at(ev->thread_id())) {
-        assert(isUnlock(unlock) && ev->thread_id() == unlock->thread_id() &&
-               sameMl(ev, unlock) && !unlock->cpid().is_auxiliary());
-        if (unlock->event_id() > ev->event_id())
-          break;
-        else {
-          assert(unlock->event_id() < ev->event_id());
-          assert(!last_unlock_before_lock ||
-                 last_unlock_before_lock->event_id() < unlock->event_id());
-          last_unlock_before_lock = unlock;
+  assert(isRead(ev));
+  const ZEvent *localB = cache.readWB.at(ev);
+  if (localB) {
+    // There is a local write for read
+    assert(isWriteB(localB) && sameMl(localB, ev) &&
+           localB->thread_id() == ev->thread_id() &&
+           localB->aux_id() == -1 &&
+           localB->event_id() < ev->event_id());
+    const ZEvent *localM = localB->write_other_ptr;
+    // Update cover caused by localB
+    for (unsigned covthr : get_threads()) {
+      if (covthr != localB->thread_id()) {
+        for (int covaux : auxes(covthr)) {
+          int newcov = po.pred(localB, covthr, covaux).second;
+          auto covta = std::pair<unsigned, int>(covthr, covaux);
+          assert(covered.count(covta));
+          if (newcov > covered[covta])
+            covered[covta] = newcov;
         }
       }
     }
-    if (last_unlock_before_lock) {
-      // Update cover
-      for (unsigned covthr : get_threads()) {
-        if (covthr != last_unlock_before_lock->thread_id()) {
-          for (int covaux : auxes(covthr)) {
-            int newcov = po.pred(last_unlock_before_lock, covthr, covaux).second;
-            auto covta = std::pair<unsigned, int>(covthr, covaux);
-            assert(covered.count(covta));
-            if (newcov > covered[covta])
-              covered[covta] = newcov;
-          }
-        }
+    // Delete remotes that happen *before* localM
+    // (no chance for them, those after localM are safe)
+    assert(isWriteM(localM) && sameMl(localB, localM) &&
+           po.hasEdge(localB, localM));
+    for (auto it = notCovered.begin(); it != notCovered.end(); ) {
+      const ZEvent *rem = *it;
+      assert(isWriteM(rem));
+      assert(!ev_before || !po.hasEdge(rem, ev_before));
+      if (po.hasEdge(rem, localM))
+        it = notCovered.erase(it);
+      else
+        ++it;
+    }
+    for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
+      const ZEvent *rem = *it;
+      assert(isWriteM(rem));
+      assert((ev_before && po.hasEdge(rem, ev_before)) ||
+             (spawn && po.hasEdge(rem, spawn)));
+      if (po.hasEdge(rem, localM))
+        it = mayBeCovered.erase(it);
+      else
+        ++it;
+    }
+    // Check if not covered by some remote
+    bool localCovered = false;
+    for (const auto& rem : mayBeCovered) {
+      assert(isWriteM(rem));
+      assert((ev_before && po.hasEdge(rem, ev_before)) ||
+             (spawn && po.hasEdge(rem, spawn)));
+      if (po.hasEdge(localM, rem)) {
+        localCovered = true;
+        break;
       }
-
-      // Check if not covered by some remote
-      bool localCovered = false;
-      for (const auto& rem : mayBeCovered) {
-        assert(isUnlock(rem) && ev_before && po.hasEdge(rem, ev_before));
-        if (po.hasEdge(last_unlock_before_lock, rem)) {
-          localCovered = true;
-          break;
-        }
-      }
-      // Add obs if not covered, not base_obs, from_idx
-      if (!localCovered && base_obs != last_unlock_before_lock->id() &&
-          last_unlock_before_lock->trace_id() >= mutations_only_from_idx) {
-        assert(!res.count(last_unlock_before_lock->id()));
-        res.emplace(last_unlock_before_lock->id());
-      }
-    } else {
-       // No local unlock for lock
-      if (mayBeCovered.empty() && base_obs != ZEventID(true) &&
-          mutations_only_from_idx == -1) {
-        // Consider initial event
-        assert(!res.count(ZEventID(true)));
-        res.emplace(ZEventID(true)); // initial
-      }
+    }
+    // Add obs if not covered, not base_obs, from_idx
+    if (!localCovered && base_obs != localB->id() &&
+        localB->trace_id() >= mutations_only_from_idx) {
+      assert(!res.count(localB->id()));
+      res.emplace(localB->id());
     }
   } else {
-    assert(isRead(ev));
-    const ZEvent *localB = cache.readWB.at(ev);
-    if (localB) {
-      // There is a local write for read
-      assert(isWriteB(localB) && sameMl(localB, ev) &&
-             localB->thread_id() == ev->thread_id() &&
-             localB->aux_id() == -1 &&
-             localB->event_id() < ev->event_id());
-      const ZEvent *localM = localB->write_other_ptr;
-      // Update cover caused by localB
-      for (unsigned covthr : get_threads()) {
-        if (covthr != localB->thread_id()) {
-          for (int covaux : auxes(covthr)) {
-            int newcov = po.pred(localB, covthr, covaux).second;
-            auto covta = std::pair<unsigned, int>(covthr, covaux);
-            assert(covered.count(covta));
-            if (newcov > covered[covta])
-              covered[covta] = newcov;
-          }
-        }
-      }
-      // Delete remotes that happen *before* localM
-      // (no chance for them, those after localM are safe)
-      assert(isWriteM(localM) && sameMl(localB, localM) &&
-             po.hasEdge(localB, localM));
-      for (auto it = notCovered.begin(); it != notCovered.end(); ) {
-        const ZEvent *rem = *it;
-        assert(isWriteM(rem));
-        assert(!ev_before || !po.hasEdge(rem, ev_before));
-        if (po.hasEdge(rem, localM))
-          it = notCovered.erase(it);
-        else
-          ++it;
-      }
-      for (auto it = mayBeCovered.begin(); it != mayBeCovered.end(); ) {
-        const ZEvent *rem = *it;
-        assert(isWriteM(rem));
-        assert((ev_before && po.hasEdge(rem, ev_before)) ||
-               (spawn && po.hasEdge(rem, spawn)));
-        if (po.hasEdge(rem, localM))
-          it = mayBeCovered.erase(it);
-        else
-          ++it;
-      }
-      // Check if not covered by some remote
-      bool localCovered = false;
-      for (const auto& rem : mayBeCovered) {
-        assert(isWriteM(rem));
-        assert((ev_before && po.hasEdge(rem, ev_before)) ||
-               (spawn && po.hasEdge(rem, spawn)));
-        if (po.hasEdge(localM, rem)) {
-          localCovered = true;
-          break;
-        }
-      }
-      // Add obs if not covered, not base_obs, from_idx
-      if (!localCovered && base_obs != localB->id() &&
-          localB->trace_id() >= mutations_only_from_idx) {
-        assert(!res.count(localB->id()));
-        res.emplace(localB->id());
-      }
-    } else {
-      // No local write for read
-      if (mayBeCovered.empty() && base_obs != ZEventID(true) &&
-          mutations_only_from_idx == -1) {
-        // Consider initial event
-        assert(!res.count(ZEventID(true)));
-        res.emplace(ZEventID(true)); // initial
-      }
+    // No local write for read
+    if (mayBeCovered.empty() && base_obs != ZEventID(true) &&
+        mutations_only_from_idx == -1) {
+      // Consider initial event
+      assert(!res.count(ZEventID(true)));
+      res.emplace(ZEventID(true)); // initial
     }
   }
 
@@ -1026,11 +918,9 @@ std::set<ZEventID> ZGraph::get_mutations
   // Take candidates unordered with read/lock
   for (const auto& not_cov : notCovered) {
     const ZEvent * obs_ev = not_cov;
-    assert(isWriteM(obs_ev) || isUnlock(obs_ev));
-    if (isWriteM(obs_ev)) {
-      obs_ev = obs_ev->write_other_ptr;
-      assert(isWriteB(obs_ev));
-    }
+    assert(isWriteM(obs_ev));
+    obs_ev = obs_ev->write_other_ptr;
+    assert(isWriteB(obs_ev));
     assert(sameMl(obs_ev, ev));
     // Add if not base_obs, from_idx
     if (base_obs != obs_ev->id() &&
@@ -1043,16 +933,14 @@ std::set<ZEventID> ZGraph::get_mutations
   // Take candidates that happen before read/lock
   for (const auto& may_be : mayBeCovered) {
     const ZEvent * obs_ev = may_be;
-    assert(isWriteM(obs_ev) || isUnlock(obs_ev));
+    assert(isWriteM(obs_ev));
     auto covta = std::pair<unsigned, int>
       (obs_ev->thread_id(), obs_ev->aux_id());
     assert(covered.count(covta));
     if ((int) obs_ev->event_id() > covered[covta]) {
       // Not covered
-      if (isWriteM(obs_ev)) {
-        obs_ev = obs_ev->write_other_ptr;
-        assert(isWriteB(obs_ev));
-      }
+      obs_ev = obs_ev->write_other_ptr;
+      assert(isWriteB(obs_ev));
       assert(sameMl(obs_ev, ev));
       // Add if not base_obs, from_idx
       if (base_obs != obs_ev->id() &&
@@ -1067,12 +955,45 @@ std::set<ZEventID> ZGraph::get_mutations
 }
 
 
-std::pair<std::set<int>, std::set<const ZEvent *>>
-ZGraph::get_causes_after
-(const ZEvent * const readlock, const ZEventID& mutation,
+std::set<ZEventID> ZGraph::get_lock_mutation
+(const ZEvent * const ev, const std::map<int, int>& previous_lock_id,
  const std::vector<std::unique_ptr<ZEvent>>& tau) const
 {
-  assert(isRead(readlock) || isLock(readlock));
+  start_err("starting get-lock-mutation");
+  assert(isLock(ev));
+  assert(previous_lock_id.count(ev->trace_id()));
+  assert(previous_lock_id.at(ev->trace_id()) >= 0);
+  assert(previous_lock_id.at(ev->trace_id()) < tau.size());
+  const ZEvent * const prev_lock = tau.at(previous_lock_id.at(ev->trace_id())).get();
+  assert(isLock(prev_lock) && sameMl(ev, prev_lock));
+
+  const ZEvent * const ev_before = (ev->event_id() > 0)
+    ? getEvent(ev->thread_id(), ev->aux_id(), ev->event_id() - 1) : nullptr;
+  const ZEvent * spawn = proc_seq_to_spawn.count(ev->cpid().get_proc_seq())
+    ? proc_seq_to_spawn.at(ev->cpid().get_proc_seq()) : nullptr;
+  assert(spawn || ev->cpid().get_proc_seq() == CPid().get_proc_seq());
+  assert(!spawn || po.hasEdge(spawn, ev));
+
+  std::set<ZEventID> res;
+  // Add prev_lock as the mutation in case
+  // it is not in the causal past of ev
+  if ((!ev_before || !po.hasEdge(prev_lock, ev_before)) &&
+      (!spawn || !po.hasEdge(prev_lock, spawn))) {
+    res.emplace(prev_lock->id());
+  }
+
+  end_err("ending get-lock-mutation");
+  return res;
+}
+
+
+std::pair<std::set<int>, std::set<const ZEvent *>>
+ZGraph::get_causes_after
+(int pre_tau_limit, const ZEventID& mutation,
+ const std::vector<std::unique_ptr<ZEvent>>& tau) const
+{
+  start_err("starting get-causes-after");
+  assert(pre_tau_limit >= 0);
   if (mutation == ZEventID(true))
     return {std::set<int>(), std::set<const ZEvent *>()};
 
@@ -1082,26 +1003,77 @@ ZGraph::get_causes_after
   assert(hasEvent(mutation));
 
   const ZEvent * obs = getEvent(mutation);
-  assert(isWriteB(obs) || isUnlock(obs));
+  assert(isWriteB(obs) || isLock(obs));
   if (isWriteB(obs)) {
     obs = obs->write_other_ptr;
     assert(isWriteM(obs));
-  }
-  assert(sameMl(obs, readlock));
+    assert(!getPo().hasEdge(tau[pre_tau_limit].get(), obs));
+    for (int i = pre_tau_limit + 1; i <= obs->trace_id(); ++i) {
+      assert(i >= 0 && i < tau.size());
+      const ZEvent * const ev = tau[i].get();
+      assert(hasEvent(ev));
+      if (*ev == *obs || getPo().hasEdge(ev, obs)) {
+        assert(!causes_all_idx.count(ev->trace_id()));
+        causes_all_idx.emplace(ev->trace_id());
+        if (isRead(ev) || isLock(ev)) {
+          assert(!causes_readslocks.count(ev));
+          causes_readslocks.emplace(ev);
+        }
+      }
+    }
+  } else {
+    assert(isLock(obs));
 
-  for (int i = readlock->trace_id() + 1; i <= obs->trace_id(); ++i) {
-    assert(i >= 1 && i < tau.size());
-    const ZEvent * const ev = tau[i].get();
-    assert(hasEvent(ev));
-    if (*ev == *obs || getPo().hasEdge(ev, obs)) {
-      assert(!causes_all_idx.count(ev->trace_id()));
-      causes_all_idx.emplace(ev->trace_id());
-      if (isRead(ev) || isLock(ev)) {
-        assert(!causes_readslocks.count(ev));
-        causes_readslocks.emplace(ev);
+    const ZEvent * const obs_before = (obs->event_id() > 0)
+      ? getEvent(obs->thread_id(), obs->aux_id(), obs->event_id() - 1) : nullptr;
+    const ZEvent * spawn = proc_seq_to_spawn.count(obs->cpid().get_proc_seq())
+      ? proc_seq_to_spawn.at(obs->cpid().get_proc_seq()) : nullptr;
+    assert(spawn || obs->cpid().get_proc_seq() == CPid().get_proc_seq());
+    assert(!spawn || po.hasEdge(spawn, obs));
+
+    assert(!obs_before || !getPo().hasEdge(tau[pre_tau_limit].get(), obs_before));
+    assert(!spawn || !getPo().hasEdge(tau[pre_tau_limit].get(), spawn));
+    for (int i = pre_tau_limit + 1; i < obs->trace_id(); ++i) {
+      assert(i >= 0 && i < tau.size());
+      const ZEvent * const ev = tau[i].get();
+      assert(hasEvent(ev));
+      assert(!spawn || *spawn != *ev);
+      if ((obs_before && *ev == *obs_before) ||
+          (obs_before && po.hasEdge(ev, obs_before)) ||
+          (spawn && po.hasEdge(ev, spawn))) {
+        assert(!causes_all_idx.count(ev->trace_id()));
+        causes_all_idx.emplace(ev->trace_id());
+        if (isRead(ev) || isLock(ev)) {
+          assert(!causes_readslocks.count(ev));
+          causes_readslocks.emplace(ev);
+        }
+      }
+    }
+    // Right after obs might be events in the causal past of obs
+    // That's due to previous mutation of obs that brought its
+    // causal past after obs into tau. Collect those too
+    for (int i = obs->trace_id() + 1; i < tau.size(); ++i) {
+      const ZEvent * const ev = tau[i].get();
+      assert(hasEvent(ev));
+      assert(!spawn || *spawn != *ev);
+      if ((obs_before && *ev == *obs_before) ||
+          (obs_before && po.hasEdge(ev, obs_before)) ||
+          (spawn && po.hasEdge(ev, spawn))) {
+        assert(!causes_all_idx.count(ev->trace_id()));
+        causes_all_idx.emplace(ev->trace_id());
+        if (isRead(ev) || isLock(ev)) {
+          assert(!causes_readslocks.count(ev));
+          causes_readslocks.emplace(ev);
+        }
+      } else {
+        // At this point (after obs in tau), as soon as
+        // one event is not causal past of obs, no other will be
+        break;
       }
     }
   }
+
+  end_err("ending get-causes-after");
   return {causes_all_idx, causes_readslocks};
 }
 
