@@ -107,13 +107,18 @@ void ZExplorer::print_stats() const
   std::cout << "Closure succ -- no added edge:     " << closure_no_edge << "\n";
   std::cout << "Closure succ -- total added edges: " << closure_edges << "\n";
   std::cout << "Closure succ -- total iterations:  " << closure_iter << "\n";
+  std::cout << "Linearization failed:              " << linearization_failed << "\n";
+  std::cout << "Linearization succeeded:           " << linearization_succeeded << "\n";
   std::cout << std::setprecision(2) << std::fixed;
+  double avg1_branch = (total_parents==0) ? 1.0 : ((double)total_children/total_parents);
+  std::cout << "Linearization branching Avg1:      " << avg1_branch << "\n";
+  std::cout << "Linearization branching Avg2:      " << avg2_branch << "\n";
+  std::cout << "Linearization branching Max:       " << max_branch << "\n";
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
-  std::cout << "Linearization branching factor:    " << (double)total_children/total_parents << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
@@ -419,12 +424,22 @@ bool ZExplorer::extendAndRecur
     ZLinearization linearizer(mutatedAnnotation, mutatedPO, parentTrace.trace);
     auto linear = tso ? linearizer.linearizeTSO() : linearizer.linearizePSO();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+    ++total_lin;
     total_parents += linearizer.num_parents;
     total_children += linearizer.num_children;
+    double cur_br = (linearizer.num_parents==0) ? 1.0 :
+      ((double)linearizer.num_children/linearizer.num_parents);
+    avg2_branch += ((double)(cur_br - avg2_branch)/total_lin);
+    if(cur_br>max_branch) {
+      max_branch = cur_br;
+    }
     if (linear.empty()) {
+      ++linearization_failed;
       end_err("0a");
       return false;
     }
+    ++linearization_succeeded;
+    assert(total_lin==linearization_succeeded+linearization_failed);
     assert(linearizationRespectsAnn(linear, mutatedAnnotation, mutatedPO, parentTrace));
     // if (info) dumpTrace(linear);
     mutatedTrace = extendTrace(std::move(linear));

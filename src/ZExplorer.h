@@ -158,9 +158,19 @@ class ZExplorer {
   double time_closure = 0;
   // Total time spent on closure succ no edge
   double time_closure_no_edge = 0;
+  // Linearization failed
+  unsigned linearization_failed = 0;
+  // Linearization succeeded
+  unsigned linearization_succeeded = 0;
   // Linearization: num of parents and children, to estimate branching factor
   unsigned total_parents = 0;
   unsigned total_children = 0;
+  // total linearization
+  unsigned total_lin = 0;
+  //avg2 branching factor
+  double avg2_branch = 1.0;
+  // max branching factor
+  double max_branch = 1.0;
 
 };
 
