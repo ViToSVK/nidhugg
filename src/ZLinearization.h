@@ -35,7 +35,7 @@ class ZLinearization {
   const ZAnnotation& an;
   const ZGraph& gr;
   const ZPartialOrder& po;
-  const std::vector<ZEvent>& tr;  // reference-trace for heuristics
+  // const std::vector<ZEvent>& tr;  // reference-trace is used indirectly via ev->trace_id()
 
 
 
@@ -302,7 +302,7 @@ class ZLinearization {
                  ZPartialOrder& partialOrder,
                  const std::vector<ZEvent>& trace)
   : an(annotation), gr(partialOrder.graph),
-    po(partialOrder), tr(trace)
+    po(partialOrder)//, tr(trace)
   {
     //calculateWrMapping();
     //calculateTrNextMain();

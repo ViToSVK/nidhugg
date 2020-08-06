@@ -81,9 +81,10 @@ void ZExplorer::print_stats() const
   std::cout << "Linearization failed:              " << linearization_failed << "\n";
   std::cout << "Linearization succeeded:           " << linearization_succeeded << "\n";
   std::cout << std::setprecision(2) << std::fixed;
-  std::cout << "Linearization branching factor:    " << (double)total_children/total_parents << "\n";
-  std::cout << "Avg Linearization branching factor:" << avg_branch << "\n";
-  std::cout << "Max Linearization branching factor:" << max_branch << "\n";
+  double avg1_branch = (total_parents==0) ? 1.0 : ((double)total_children/total_parents);
+  std::cout << "Linearization branching Avg1:      " << avg1_branch << "\n";
+  std::cout << "Linearization branching Avg2:      " << avg2_branch << "\n";
+  std::cout << "Linearization branching Max:       " << max_branch << "\n";
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
@@ -393,18 +394,13 @@ bool ZExplorer::extend_and_recur
     end_err("finished linearisation1");
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     end_err("finished linearisation2");
-    //return false;
     ++total_lin;
     total_parents += linearizer.num_parents;
     total_children += linearizer.num_children;
-    // std::cout <<"children parents "<< linearizer.num_children<<" "<<linearizer.num_parents<<"\n";
-    double cur_br = ((double)linearizer.num_children/linearizer.num_parents);
-    if(linearizer.num_parents==0)
-      cur_br=1;
-    avg_branch += ((double)(cur_br- avg_branch)/total_lin);
-     // std::cout <<cur_br<<" "<<max_branch<<"\n";
-    if(cur_br>max_branch){
-      // std::cout <<cur_br<<" gone in if "<<max_branch<<"\n";
+    double cur_br = (linearizer.num_parents==0) ? 1.0 :
+      ((double)linearizer.num_children/linearizer.num_parents);
+    avg2_branch += ((double)(cur_br - avg2_branch)/total_lin);
+    if(cur_br>max_branch) {
       max_branch = cur_br;
     }
     end_err("finished linearisation3");
@@ -413,8 +409,6 @@ bool ZExplorer::extend_and_recur
       end_err("0a");
       return false;
     }
-
-     
     ++linearization_succeeded;
     assert(total_lin==linearization_succeeded+linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,

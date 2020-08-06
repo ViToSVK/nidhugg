@@ -160,10 +160,10 @@ class ZExplorer {
   unsigned total_children = 0;
   // total linearization
   unsigned total_lin = 0;
-  //avg branching factor
-  double avg_branch = 0;
+  //avg2 branching factor
+  double avg2_branch = 1.0;
   // max branching factor
-  double max_branch = 0;
+  double max_branch = 1.0;
 
 };
 
