@@ -115,7 +115,7 @@ void ZGraph::addLine(const ZEvent *ev)
 {
   assert(ev);
   assert(!hasEvent(ev));
-  assert(ev->thread_id() < 20 && "Thread ID not set up yet");
+  assert(ev->thread_id() < 2000 && "Thread ID not set up yet");
   assert(!hasThreadAux(ev->thread_id(), ev->aux_id()));
 
   auto key = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
@@ -133,7 +133,7 @@ void ZGraph::addEvent(const ZEvent *ev)
 {
   assert(ev);
   assert(!hasEvent(ev));
-  assert(ev->thread_id() < 20 && "Thread ID not set up yet");
+  assert(ev->thread_id() < 2000 && "Thread ID not set up yet");
   assert(hasThreadAux(ev->thread_id(), ev->aux_id()));
 
   auto key = std::pair<unsigned, int>(ev->thread_id(), ev->aux_id());
