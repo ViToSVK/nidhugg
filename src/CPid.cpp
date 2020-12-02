@@ -114,25 +114,23 @@ std::size_t CPid::get_hash() const{
 }
 
 std::size_t CPid::compute_hash() const{
-  std::size_t res = proc_seq.size() * 2 + 1;
-  if (proc_seq.size() > 0)
-    res += (std::size_t) (proc_seq[0] / 10);
-  res %= 10;
-  assert(res < 10);
-  res *= 10000;
-  if (proc_seq.size() > 0)
-    res += (1000 * (proc_seq[0] % 10));
+  if (proc_seq.empty())
+    return (std::size_t) (aux_idx + 1);
+  std::size_t res = (proc_seq.size() % 5) * 10000;
+  // aux_idx can be -1 or 0 in SC.
+  if (aux_idx == 0) {
+    res += 50000;
+  }
+  res += ((proc_seq[0] % 100) * 100);
+  assert(res <= 99900);
   std::size_t max = 0;
   for (unsigned i = 1; i < proc_seq.size(); ++i)
     if (proc_seq[i] > 0 && (std::size_t) proc_seq[i] > max)
       max = (std::size_t) proc_seq[i];
-  res += (100 * (max % 100));
-  if (aux_idx < 0) {
-    assert(aux_idx == -1);
-    res += 99;
-  } else
-    res += (aux_idx % 100);
-  assert(res >= 10000 && res < 100000);
+  res += (max % 100);
+  assert(res <= 99999);
+  res += ((aux_idx + 1) % 2);
+  assert(res <= 99999);
   return res;
 }
 
