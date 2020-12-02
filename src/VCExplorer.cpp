@@ -42,10 +42,11 @@ void VCExplorer::print_stats()
   std::cout << "Closure after ordering succeeded: " << cl_ordering_succeeded << "\n";
   std::cout << "Closure after mutation failed:    " << cl_mutation_failed << "\n";
   std::cout << "Closure after mutation succeeded: " << cl_mutation_succeeded << "\n";
-  std::cout << "Total time spent on copying:      " << time_graphcopy << "\n";
-  std::cout << "Total time spent on replaying:    " << time_replaying << "\n";
-  std::cout << "Total time spent on mazurkiewicz: " << time_maz << "\n";
-  std::cout << "Total time spent on closure:      " << time_closure << "\n";
+  std::cout << std::setprecision(2) << std::fixed;
+  std::cout << "Time spent on copying:            " << time_graphcopy << "\n";
+  std::cout << "Time spent on interpreting:       " << time_replaying << "\n";
+  std::cout << "Time spent on mazurkiewicz:       " << time_maz << "\n";
+  std::cout << "Time spent on closure:            " << time_closure << "\n";
   std::cout << "\n";
 
   // Change to false to test if assertions are on
