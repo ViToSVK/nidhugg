@@ -128,7 +128,7 @@ const ZEvent * ZBasis::getUnlockOfThisLock(const ZObs& obs) const
 void ZBasis::addLine(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
-  assert(ev->threadID() < 20 && "Thread ID not set up yet");
+  assert(ev->threadID() < 2000 && "Thread ID not set up yet");
   assert(!hasThreadAux(ev->threadID(), ev->auxID()));
 
   auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
@@ -146,7 +146,7 @@ void ZBasis::addLine(const ZEvent *ev)
 void ZBasis::addEvent(const ZEvent *ev)
 {
   assert(!hasEvent(ev));
-  assert(ev->threadID() < 20 && "Thread ID not set up yet");
+  assert(ev->threadID() < 2000 && "Thread ID not set up yet");
   assert(hasThreadAux(ev->threadID(), ev->auxID()));
 
   auto key = std::pair<unsigned, int>(ev->threadID(), ev->auxID());
