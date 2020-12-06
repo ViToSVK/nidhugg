@@ -476,6 +476,27 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
 }
 
 
+void ZBuilderSC::compare_exchange
+(const SymAddrSize &ml, int old_val, int compare_val, int exchange_val, bool success)
+{
+  llvm::errs() << "Builder: No support for compare_exchange\n";
+  llvm::errs() << ml.to_string() << " old_val: " << old_val << " compare: "
+               << compare_val << " exchange: " << exchange_val << "\n";
+  llvm::errs() << (success ? "SUCCESS\n" : "FAILED\n");
+  abort();
+}
+
+
+void ZBuilderSC::read_modify_write
+(const SymAddrSize &ml, int old_val, int new_val)
+{
+  llvm::errs() << "Builder: No support for read_modify_write\n";
+  llvm::errs() << ml.to_string() << " old_val: " << old_val
+               << " new_val: " << new_val << "\n";
+  abort();
+}
+
+
 void ZBuilderSC::fence()
 {
   //start_err("fence");

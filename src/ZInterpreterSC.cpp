@@ -185,6 +185,126 @@ void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
 }
 
 
+void ZInterpreterSC::visitAtomicCmpXchgInst(llvm::AtomicCmpXchgInst &I){
+  llvm::ExecutionContext &SF = ECStack()->back();
+  llvm::GenericValue CmpVal = getOperandValue(I.getCompareOperand(),SF);
+  llvm::GenericValue NewVal = getOperandValue(I.getNewValOperand(),SF);
+  llvm::GenericValue SRC = getOperandValue(I.getPointerOperand(), SF);
+  llvm::GenericValue *Ptr = (llvm::GenericValue*)GVTOP(SRC);
+  llvm::Type *Ty = I.getCompareOperand()->getType();
+  llvm::GenericValue Result;
+
+  SymAddrSize Ptr_sas = GetSymAddrSize(Ptr,Ty);
+  SymData::block_type expected = SymData::alloc_block(Ptr_sas.size);
+  StoreValueToMemory(CmpVal,static_cast<llvm::GenericValue*>((void*)expected.get()),Ty);
+
+#if defined(LLVM_CMPXCHG_SEPARATE_SUCCESS_FAILURE_ORDERING)
+  // Return a tuple (oldval,success)
+  Result.AggregateVal.resize(2);
+  assert(!DryRun);
+  if(!CheckedLoadValueFromMemory(Result.AggregateVal[0], Ptr, Ty)) {
+    llvm::errs() << "Interpreter: CheckedLoadValueFromMemory failed during visitAtomicCmpXchgInst\n";
+    abort();
+  }
+  llvm::GenericValue CmpRes = executeICMP_EQ(Result.AggregateVal[0],CmpVal,Ty);
+#else
+  // Return only the old value oldval
+  assert(!DryRun);
+  if(!CheckedLoadValueFromMemory(Result, Ptr, Ty)) {
+    llvm::errs() << "Interpreter: CheckedLoadValueFromMemory failed during visitAtomicCmpXchgInst\n";
+    abort();
+  }
+  llvm::GenericValue CmpRes = executeICMP_EQ(Result,CmpVal,Ty);
+#endif
+  SymData sd = GetSymData(Ptr_sas,Ty,NewVal);
+  if(CmpRes.IntVal.getBoolValue()){
+#if defined(LLVM_CMPXCHG_SEPARATE_SUCCESS_FAILURE_ORDERING)
+    Result.AggregateVal[1].IntVal = 1;
+#endif
+    SetValue(&I, Result, SF);
+    assert(!DryRun);
+    CheckedStoreValueToMemory(NewVal,Ptr,Ty);
+  }else{
+#if defined(LLVM_CMPXCHG_SEPARATE_SUCCESS_FAILURE_ORDERING)
+    Result.AggregateVal[1].IntVal = 0;
+#endif
+    SetValue(&I,Result,SF);
+  }
+
+  TB.compare_exchange(sd.get_ref(),
+#if defined(LLVM_CMPXCHG_SEPARATE_SUCCESS_FAILURE_ORDERING)
+                      Result.AggregateVal[0].IntVal.getSExtValue(),
+#else
+                      Result.IntVal.getSExtValue(),
+#endif
+                      CmpVal.IntVal.getSExtValue(),
+                      NewVal.IntVal.getSExtValue(),
+                      CmpRes.IntVal.getBoolValue());
+}
+
+
+void ZInterpreterSC::visitAtomicRMWInst(llvm::AtomicRMWInst &I){
+  llvm::ExecutionContext &SF = ECStack()->back();
+  llvm::GenericValue *Ptr = (llvm::GenericValue*)GVTOP(getOperandValue(I.getPointerOperand(), SF));
+  llvm::GenericValue Val = getOperandValue(I.getValOperand(), SF);
+  llvm::GenericValue OldVal, NewVal;
+
+  assert(I.getType()->isIntegerTy());
+  assert(I.getOrdering() != llvm::AtomicOrdering::NotAtomic);
+
+  SymAddrSize Ptr_sas = GetSymAddrSize(Ptr,I.getType());
+  //TB.load(Ptr_sas);
+
+  /* Load old value at *Ptr */
+  assert(!DryRun);
+  if(!CheckedLoadValueFromMemory(OldVal, Ptr, I.getType())) {
+    llvm::errs() << "Interpreter: CheckedLoadValueFromMemory failed during visitAtomicRMWInst\n";
+    abort();
+  }
+
+  SetValue(&I, OldVal, SF);
+
+  /* Compute NewVal */
+  switch(I.getOperation()){
+  case llvm::AtomicRMWInst::Xchg:
+    NewVal = Val; break;
+  case llvm::AtomicRMWInst::Add:
+    NewVal.IntVal = OldVal.IntVal + Val.IntVal; break;
+  case llvm::AtomicRMWInst::Sub:
+    NewVal.IntVal = OldVal.IntVal - Val.IntVal; break;
+  case llvm::AtomicRMWInst::And:
+    NewVal.IntVal = OldVal.IntVal & Val.IntVal; break;
+  case llvm::AtomicRMWInst::Nand:
+    NewVal.IntVal = ~(OldVal.IntVal & Val.IntVal); break;
+  case llvm::AtomicRMWInst::Or:
+    NewVal.IntVal = OldVal.IntVal | Val.IntVal; break;
+  case llvm::AtomicRMWInst::Xor:
+    NewVal.IntVal = OldVal.IntVal ^ Val.IntVal; break;
+  case llvm::AtomicRMWInst::Max:
+    NewVal.IntVal = llvm::APIntOps::smax(OldVal.IntVal,Val.IntVal); break;
+  case llvm::AtomicRMWInst::Min:
+    NewVal.IntVal = llvm::APIntOps::smin(OldVal.IntVal,Val.IntVal); break;
+  case llvm::AtomicRMWInst::UMax:
+    NewVal.IntVal = llvm::APIntOps::umax(OldVal.IntVal,Val.IntVal); break;
+  case llvm::AtomicRMWInst::UMin:
+    NewVal.IntVal = llvm::APIntOps::umin(OldVal.IntVal,Val.IntVal); break;
+  default:
+    throw std::logic_error("Unsupported operation in RMW instruction.");
+  }
+
+  SymData sd = GetSymData(Ptr_sas,I.getType(),NewVal);
+  //TB.atomic_store(sd);
+
+  /* Store NewVal */
+  assert(!DryRun);
+  CheckedStoreValueToMemory(NewVal,Ptr,I.getType());
+
+  TB.read_modify_write(Ptr_sas,
+                       OldVal.IntVal.getSExtValue(),
+                       NewVal.IntVal.getSExtValue());
+}
+
+
 void ZInterpreterSC::visitFenceInst(llvm::FenceInst &I){
   if(I.getOrdering() == LLVM_ATOMIC_ORDERING_SCOPE::SequentiallyConsistent){
     TB.fence();

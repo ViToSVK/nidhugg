@@ -156,6 +156,15 @@ class ZBuilderSC : public TSOTraceBuilder {
     llvm::errs() << "Builder: Load should be reported along with the captured value\n";
     abort();
   }
+  virtual void read_modify_write(const SymAddrSize &ml,
+                                 int old_val, int new_val);
+  virtual void compare_exchange(const SymAddrSize &ml, int old_val,
+                                int compare_val, int exchange_val, bool success);
+  virtual void compare_exchange
+  (const SymData &sd, const SymData::block_type expected, bool success) {
+    llvm::errs() << "Builder: Use the other TB function for compare_exchange\n";
+    abort();
+  }
   virtual void fence();
   virtual void mutex_init(const SymAddrSize &ml);
   virtual void mutex_destroy(const SymAddrSize &ml);
@@ -189,11 +198,6 @@ class ZBuilderSC : public TSOTraceBuilder {
   }
   virtual int cond_destroy(const SymAddrSize &ml) {
     llvm::errs() << "Builder: No support for cond_destroy\n";
-    abort();
-  }
-  virtual void compare_exchange
-  (const SymData &sd, const SymData::block_type expected, bool success) {
-    llvm::errs() << "Builder: No support for compare_exchange\n";
     abort();
   }
   virtual void full_memory_conflict() {
