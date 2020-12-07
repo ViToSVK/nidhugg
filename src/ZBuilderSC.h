@@ -150,7 +150,7 @@ class ZBuilderSC : public TSOTraceBuilder {
     llvm::errs() << "Builder: Store should be reported along with the captured value\n";
     abort();
   }
-  virtual void atomic_store(const SymData &sd, int val); // WRITE (val)
+  virtual void atomic_store(const SymAddrSize &ml, int val); // WRITE (val)
   virtual void load(const SymAddrSize &ml, int val); // READ (val)
   virtual void load(const SymAddrSize &ml) {
     llvm::errs() << "Builder: Load should be reported along with the captured value\n";

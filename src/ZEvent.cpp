@@ -21,6 +21,38 @@
 #include "ZEvent.h"
 
 
+ZEventAtomicInfo::ZEventAtomicInfo()
+  : _is_part_of_cas(false),
+    _is_part_of_rmw(false),
+    _cas_compare_val(12345),
+    _cas_exchange_val(12345) {}
+
+
+void ZEventAtomicInfo::set_read_of_cas
+(int compare_val, int exchange_val)
+{
+  assert(!is_part_of_cas() && !is_part_of_rmw());
+  _is_part_of_cas = true;
+  _cas_compare_val = compare_val;
+  _cas_exchange_val = exchange_val;
+}
+void ZEventAtomicInfo::set_write_of_cas()
+{
+  assert(!is_part_of_cas() && !is_part_of_rmw());
+  _is_part_of_cas = true;
+}
+void ZEventAtomicInfo::set_read_of_rmw()
+{
+  assert(!is_part_of_cas() && !is_part_of_rmw());
+  _is_part_of_rmw = true;
+}
+void ZEventAtomicInfo::set_write_of_rmw()
+{
+  assert(!is_part_of_cas() && !is_part_of_rmw());
+  _is_part_of_rmw = true;
+}
+
+
 ZEvent::ZEvent
 (const IID<int> &iid, const CPid& cpid,
  int instruction_id, int event_id, int trace_id)
@@ -81,6 +113,52 @@ ZEvent::ZEvent(const ZEvent& oth, int trace_id,
 }
 
 
+bool ZEvent::is_read_of_cas() const
+{
+  return kind == ZEvent::Kind::READ && _atomic_info.is_part_of_cas();
+}
+bool ZEvent::is_write_of_cas() const
+{
+  return kind == ZEvent::Kind::WRITE && _atomic_info.is_part_of_cas();
+}
+bool ZEvent::is_read_of_rmw() const
+{
+  return kind == ZEvent::Kind::READ && _atomic_info.is_part_of_rmw();
+}
+bool ZEvent::is_write_of_rmw() const
+{
+  return kind == ZEvent::Kind::WRITE && _atomic_info.is_part_of_rmw();
+}
+void ZEvent::set_read_of_cas(int compare_val, int exchange_val)
+{
+  assert(kind == ZEvent::Kind::READ);
+  _atomic_info.set_read_of_cas(compare_val, exchange_val);
+}
+void ZEvent::set_write_of_cas()
+{
+  assert(kind == ZEvent::Kind::WRITE);
+  _atomic_info.set_write_of_cas();
+}
+void ZEvent::set_read_of_rmw()
+{
+  assert(kind == ZEvent::Kind::READ);
+  _atomic_info.set_read_of_rmw();
+}
+void ZEvent::set_write_of_rmw()
+{
+  assert(kind == ZEvent::Kind::WRITE);
+  _atomic_info.set_write_of_rmw();
+}
+int ZEvent::cas_compare_val() const
+{
+  return _atomic_info.cas_compare_val();
+}
+int ZEvent::cas_exchange_val() const
+{
+  return _atomic_info.cas_exchange_val();
+}
+
+
 std::string ZEvent::to_string(bool write_cpid) const
 {
   if (this->kind == ZEvent::Kind::INITIAL)
@@ -99,9 +177,17 @@ std::string ZEvent::to_string(bool write_cpid) const
    case ZEvent::Kind::READ :
      res << " read " << ml().addr.to_string()
          << " <O:" << observed_trace_id() << "> <val:" << value() << ">";
+     if (is_read_of_cas())
+       res << " C(" << cas_compare_val() << ")AS(" << cas_exchange_val() << ")";
+     if (is_read_of_rmw())
+       res << " RMW";
      break;
    case ZEvent::Kind::WRITE :
      res << " write " << ml().addr.to_string() << " <val:" << value() << ">";
+     if (is_write_of_cas())
+       res << " CAS";
+     if (is_write_of_rmw())
+       res << " RMW";
      break;
    case ZEvent::Kind::SPAWN :
      res << " spawn " << childs_cpid();

@@ -424,7 +424,7 @@ void ZBuilderSC::join(int tgt_proc)
 }
 
 
-void ZBuilderSC::atomic_store(const SymData &sd, int val)
+void ZBuilderSC::atomic_store(const SymAddrSize &ml, int val)
 {
   start_err("store...");
   assert(!dryrun);
@@ -433,7 +433,6 @@ void ZBuilderSC::atomic_store(const SymData &sd, int val)
   assert(realp % 2 == 0);
   assert(threads[realp].store_buffer.empty() && !threads[realp + 1].available);
 
-  const SymAddrSize& ml = sd.get_ref();
   // We consider all Stack writes as invisible
   assert((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
          "Stack writes are treated as invisible");
@@ -459,7 +458,7 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
   assert(!dryrun);
   assert(curnode().iid.get_pid() % 2 == 0);
   if ((ml.addr.block.is_global() || ml.addr.block.is_heap()) &&
-      threads.size() > 2) { // 2 because two entries for each thread
+      threads.size() > 2) { // 2 because there are two entries for each thread
     assert(curnode().kind == ZEvent::Kind::DUMMY);
     curnode().kind = ZEvent::Kind::READ;
     curnode()._value = val;
@@ -469,8 +468,9 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
     int obs_idx = (lastWrite.count(ml)) ? lastWrite[ml] : -1;
     curnode()._observed_trace_id = obs_idx;
 
-    if (!sch_replay)
+    if (!sch_replay) {
       somethingToAnnotate.insert(curnode().iid.get_pid());
+    }
   }
   end_err();
 }
@@ -479,21 +479,121 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
 void ZBuilderSC::compare_exchange
 (const SymAddrSize &ml, int old_val, int compare_val, int exchange_val, bool success)
 {
-  llvm::errs() << "Builder: No support for compare_exchange\n";
-  llvm::errs() << ml.to_string() << " old_val: " << old_val << " compare: "
-               << compare_val << " exchange: " << exchange_val << "\n";
-  llvm::errs() << (success ? "SUCCESS\n" : "FAILED\n");
-  abort();
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  assert(success || old_val != compare_val);
+  assert(!success || old_val == compare_val);
+  if (!ml.addr.block.is_global() && !ml.addr.block.is_heap())
+    return;
+  if (threads.size() <= 2)
+    return; // 2 because there are two entries for each thread
+  start_err("compare_exchange");
+
+  if (sch_replay) {
+    assert(prefix_idx < (int) replay_trace.size());
+    assert(replay_trace.at(prefix_idx).is_read_of_cas());
+    assert(replay_trace.at(prefix_idx).size > 0);
+    if (success) {
+      assert(prefix_idx + 1 < (int) replay_trace.size());
+      assert(is_write(replay_trace.at(prefix_idx + 1)));
+      assert(same_ml(replay_trace.at(prefix_idx), replay_trace.at(prefix_idx + 1)));
+      assert(replay_trace.at(prefix_idx).cpid() == replay_trace.at(prefix_idx + 1).cpid());
+      assert(replay_trace.at(prefix_idx + 1).is_write_of_cas());
+      assert(replay_trace.at(prefix_idx + 1).size == 0);
+    } else {
+      assert(prefix_idx + 1 >= (int) replay_trace.size() ||
+             !replay_trace.at(prefix_idx + 1).is_write_of_cas());
+      assert(prefix_idx + 1 >= (int) replay_trace.size() ||
+             replay_trace.at(prefix_idx + 1).size > 0);
+    }
+  }
+
+  load(ml, old_val);
+  curnode().set_read_of_cas(compare_val, exchange_val);
+
+  if (!success) {
+    end_err();
+    return;
+  }
+
+  // Create a write event of instruction size 0,
+  // it is the continuation of the atomic CAS
+  assert(prefix_idx == (int) (prefix.size() - 1));
+  unsigned p = curnode().iid.get_pid();
+  ++prefix_idx;
+  // Mark that thread p owns the new event
+  threads[p].event_indices.push_back(prefix_idx);
+  // Create the new event
+  prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+                      threads[p].cpid,
+                      threads[p].executed_instructions, // first will be 1
+                      threads[p].executed_events, // first will be 0
+                      prefix.size());
+  ++threads[p].executed_events;
+  assert(prefix.back().trace_id() == (int) prefix.size() - 1);
+  assert((unsigned) prefix_idx == prefix.size() - 1);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+
+  atomic_store(ml, exchange_val);
+  assert(is_write(curnode()));
+  curnode().size = 0;
+  curnode().set_write_of_cas();
+
+  end_err();
 }
 
 
 void ZBuilderSC::read_modify_write
 (const SymAddrSize &ml, int old_val, int new_val)
 {
-  llvm::errs() << "Builder: No support for read_modify_write\n";
-  llvm::errs() << ml.to_string() << " old_val: " << old_val
-               << " new_val: " << new_val << "\n";
-  abort();
+  assert(!dryrun);
+  assert(curnode().iid.get_pid() % 2 == 0);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+  if (!ml.addr.block.is_global() && !ml.addr.block.is_heap())
+    return;
+  if (threads.size() <= 2)
+    return; // 2 because there are two entries for each thread
+  start_err("read_modify_write");
+
+  if (sch_replay) {
+    assert(prefix_idx + 1 < (int) replay_trace.size());
+    assert(replay_trace.at(prefix_idx).is_read_of_rmw());
+    assert(replay_trace.at(prefix_idx).size > 0);
+    assert(is_write(replay_trace.at(prefix_idx + 1)));
+    assert(same_ml(replay_trace.at(prefix_idx), replay_trace.at(prefix_idx + 1)));
+    assert(replay_trace.at(prefix_idx).cpid() == replay_trace.at(prefix_idx + 1).cpid());
+    assert(replay_trace.at(prefix_idx + 1).is_write_of_rmw());
+    assert(replay_trace.at(prefix_idx + 1).size == 0);
+  }
+
+  load(ml, old_val);
+  curnode().set_read_of_rmw();
+
+  // Create a write event of instruction size 0,
+  // it is the continuation of the atomic RMW
+  assert(prefix_idx == (int) (prefix.size() - 1));
+  unsigned p = curnode().iid.get_pid();
+  ++prefix_idx;
+  // Mark that thread p owns the new event
+  threads[p].event_indices.push_back(prefix_idx);
+  // Create the new event
+  prefix.emplace_back(IID<IPid>(IPid(p),threads[p].last_event_index()),
+                      threads[p].cpid,
+                      threads[p].executed_instructions, // first will be 1
+                      threads[p].executed_events, // first will be 0
+                      prefix.size());
+  ++threads[p].executed_events;
+  assert(prefix.back().trace_id() == (int) prefix.size() - 1);
+  assert((unsigned) prefix_idx == prefix.size() - 1);
+  assert(curnode().kind == ZEvent::Kind::DUMMY);
+
+  atomic_store(ml, new_val);
+  assert(is_write(curnode()));
+  curnode().size = 0;
+  curnode().set_write_of_rmw();
+
+  end_err();
 }
 
 

@@ -179,7 +179,7 @@ void ZInterpreterSC::visitStoreInst(llvm::StoreInst &I){
   const SymAddrSize& ml = sd.get_ref();
 
   if (ml.addr.block.is_global() || ml.addr.block.is_heap())
-    TB.atomic_store(sd, (int) Val.IntVal.getSExtValue());
+    TB.atomic_store(ml, (int) Val.IntVal.getSExtValue());
 
   CheckedStoreValueToMemory(Val, Ptr, I.getOperand(0)->getType());
 }

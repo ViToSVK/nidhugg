@@ -35,13 +35,37 @@
 #include "SymEv.h"
 
 
+class ZEventAtomicInfo {
+ public:
+  ZEventAtomicInfo();
+  ZEventAtomicInfo(const ZEventAtomicInfo&) = default;
+  ZEventAtomicInfo(ZEventAtomicInfo&&) = default;
+  ZEventAtomicInfo& operator=(const ZEventAtomicInfo&) = delete;
+  ZEventAtomicInfo& operator=(ZEventAtomicInfo&&) = delete;
+
+  bool is_part_of_cas() const { return _is_part_of_cas; }
+  bool is_part_of_rmw() const { return _is_part_of_rmw; }
+  int cas_compare_val() const { return _cas_compare_val; }
+  int cas_exchange_val() const { return _cas_exchange_val; }
+
+  void set_read_of_cas(int compare_val, int exchange_val);
+  void set_write_of_cas();
+  void set_read_of_rmw();
+  void set_write_of_rmw();
+
+ private:
+  bool _is_part_of_cas;
+  bool _is_part_of_rmw;
+  int _cas_compare_val;
+  int _cas_exchange_val;
+};
+
 /* Information about a (short) sequence of consecutive events by the
  * same thread. At most one event in the sequence may have conflicts
  * with other events, and if the sequence has a conflicting event,
  * it must be the LAST event in the sequence.
  */
 class ZEvent {
-
  public:
   ZEvent() = delete;
   // Default constructor
@@ -90,6 +114,18 @@ class ZEvent {
   /* The value read/written by this event */
   int _value;
   int value() const { return _value; }
+  /* Info whether this event is part of CAS or RMW */
+  ZEventAtomicInfo _atomic_info;
+  bool is_read_of_cas() const;
+  bool is_write_of_cas() const;
+  bool is_read_of_rmw() const;
+  bool is_write_of_rmw() const;
+  void set_read_of_cas(int compare_val, int exchange_val);
+  void set_write_of_cas();
+  void set_read_of_rmw();
+  void set_write_of_rmw();
+  int cas_compare_val() const;
+  int cas_exchange_val() const;
 
   /* Guide trace-builder */
 
