@@ -157,6 +157,32 @@ void ZPartialOrder::add_edge(const ZEvent *from, const ZEvent *to)
   assert(from && to && "Null pointer event");
   assert(!are_ordered(from, to));
 
+  if (to->is_write_of_atomic_event()) {
+    // 'from' needs to happen already before
+    // the read-part of the 'to' atomic event
+    assert(graph.has_event(to->cpid(), to->event_id() - 1));
+    const ZEvent * read_of_to = graph.event(to->cpid(), to->event_id() - 1);
+    assert(read_of_to && read_of_to->is_read_of_atomic_event());
+    assert(same_ml(read_of_to, to));
+    assert(!are_ordered(from, read_of_to));
+    add_edge(from, read_of_to);
+    return;
+  }
+
+  if (from->is_read_of_atomic_event()) {
+    // not just 'from', but also its write-part of
+    // the atomic event needs to happen before 'to'
+    if (graph.has_event(from->cpid(), from->event_id() + 1)) {
+      // the write-part is present in the graph
+      const ZEvent * write_of_from = graph.event(from->cpid(), from->event_id() + 1);
+      assert(write_of_from && write_of_from->is_write_of_atomic_event());
+      assert(same_ml(from, write_of_from));
+      assert(!are_ordered(write_of_from, to));
+      add_edge(write_of_from, to);
+      return;
+    }
+  }
+
   // Maintenance of the complete transitivity
   // Collect nodes from different lines with edges:
   // 1) to   li[li_evx]

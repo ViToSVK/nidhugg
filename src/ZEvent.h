@@ -120,6 +120,8 @@ class ZEvent {
   bool is_write_of_cas() const;
   bool is_read_of_rmw() const;
   bool is_write_of_rmw() const;
+  bool is_read_of_atomic_event() const;
+  bool is_write_of_atomic_event() const;
   void set_read_of_cas(int compare_val, int exchange_val);
   void set_write_of_cas();
   void set_read_of_rmw();

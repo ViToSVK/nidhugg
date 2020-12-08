@@ -46,6 +46,7 @@ class ZGraph {
   void add_line(const ZEvent *ev);
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
+  bool has_event(const CPid& cpid, int event_id) const;
   bool has_event(const ZEvent *ev) const;
   std::map<CPid, int> thread_sizes_minus_one() const;
   void shrink();

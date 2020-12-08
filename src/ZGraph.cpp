@@ -165,6 +165,16 @@ void ZGraph::replace_event(const ZEvent *old_ev, const ZEvent *new_ev)
 }
 
 
+bool ZGraph::has_event(const CPid& cpid, int event_id) const
+{
+  if (!has_thread(cpid))
+    return false;
+  const LineT& line = this->operator()(cpid);
+  assert(event_id >= 0);
+  return (event_id < line.size());
+}
+
+
 bool ZGraph::has_event(const ZEvent *ev) const
 {
   assert(ev);
@@ -172,7 +182,6 @@ bool ZGraph::has_event(const ZEvent *ev) const
     return true;
   if (!has_thread(ev->cpid()))
     return false;
-  assert(has_thread(ev->cpid()));
   const LineT& line = this->operator()(ev->cpid());
   assert(ev->event_id() >= 0);
   return (ev->event_id() < line.size() && line[ev->event_id()] == ev);

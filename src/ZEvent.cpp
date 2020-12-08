@@ -129,6 +129,16 @@ bool ZEvent::is_write_of_rmw() const
 {
   return kind == ZEvent::Kind::WRITE && _atomic_info.is_part_of_rmw();
 }
+bool ZEvent::is_read_of_atomic_event() const
+{
+  return (kind == ZEvent::Kind::READ &&
+          (_atomic_info.is_part_of_rmw() || _atomic_info.is_part_of_cas()));
+}
+bool ZEvent::is_write_of_atomic_event() const
+{
+  return (kind == ZEvent::Kind::WRITE &&
+          (_atomic_info.is_part_of_rmw() || _atomic_info.is_part_of_cas()));
+}
 void ZEvent::set_read_of_cas(int compare_val, int exchange_val)
 {
   assert(kind == ZEvent::Kind::READ);
