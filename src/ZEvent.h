@@ -74,9 +74,9 @@ class ZEvent {
   // Constructor for initial event
   ZEvent(bool initial);
 
-  // Copy of the event, with custom-set trace id, observed trace id, value
-  ZEvent(const ZEvent& oth, int trace_id,
-         int observed_trace_id, int value);
+  // Constructor for adding dummy write of CAS/RMW
+  ZEvent(const ZEvent& read_of_cas_or_rmw, int value);
+  ZEvent dummy_write_of_cas_or_rmw() const;
 
   ZEvent(const ZEvent& oth) = default;
   ZEvent(ZEvent&& oth) = default;

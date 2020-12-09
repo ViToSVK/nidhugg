@@ -93,23 +93,39 @@ ZEvent::ZEvent(bool initial)
 }
 
 
-ZEvent::ZEvent(const ZEvent& oth, int trace_id,
-               int observed_trace_id, int value)
-  : kind(oth.kind),
-    _id(oth.id()),
-    _trace_id(trace_id),
-    _observed_trace_id(observed_trace_id),
-    _childs_cpid(oth.childs_cpid()),
-    _ml(oth.ml()),
+ZEvent::ZEvent(const ZEvent& read_of_cas_or_rmw, int value)
+  : kind(ZEvent::Kind::WRITE),
+    _id(read_of_cas_or_rmw.cpid(), read_of_cas_or_rmw.event_id() + 1),
+    _trace_id(read_of_cas_or_rmw.trace_id() + 1),
+    _observed_trace_id(-1),
+    _childs_cpid(read_of_cas_or_rmw.childs_cpid()),
+    _ml(read_of_cas_or_rmw.ml()),
     _value(value),
     //
-    iid(oth.iid), /*guide trace-builder*/
-    size(oth.size), /*guide trace-builder*/
+    iid(read_of_cas_or_rmw.iid), /*guide trace-builder*/
+    size(0), /*guide trace-builder*/
     md(nullptr),
-    may_conflict(oth.may_conflict),
-    instruction_id(oth.instruction_id) /*guide trace-builder*/
+    may_conflict(read_of_cas_or_rmw.may_conflict),
+    instruction_id(read_of_cas_or_rmw.instruction_id) /*guide trace-builder*/
 {
+  assert(read_of_cas_or_rmw.is_read_of_atomic_event());
   assert(iid.get_pid() >= 0);
+  if (read_of_cas_or_rmw.is_read_of_cas()) {
+    set_write_of_cas();
+  } else {
+    assert(read_of_cas_or_rmw.is_read_of_rmw());
+    set_write_of_rmw();
+  }
+}
+
+
+ZEvent ZEvent::dummy_write_of_cas_or_rmw() const
+{
+  assert(is_read_of_atomic_event());
+  if (is_read_of_cas()) {
+    return ZEvent(*this, cas_exchange_val());
+  }
+  return ZEvent(*this, 12345);
 }
 
 
