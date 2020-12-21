@@ -105,6 +105,74 @@ void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
   // end_err();
 }
 
+void ZLinearization::State::advance_atomic(unsigned thr,  std::vector<ZEvent>& res) {
+  // start_err("advanceAux...");
+  const ZEvent *ev = currEvent(thr);
+  if (ev->kind==ZEvent::Kind::WRITE) {
+    // SymAddrSize ml=ev->ml();
+      if(occured.find(ev->ml())==occured.end()){
+        occured[ev->ml()]=key.size();
+        key.push_back(thr);
+      }
+      else{
+        key[occured.at(ev->ml())]=thr;
+      }
+ //     last_w[thr][ev->ml()]=ev->_id;
+
+  }
+  res.push_back(*ev);
+  
+  key[thr]++;
+
+  // second
+
+  assert(ev->is_read_of_atomic_event() && "Read of atomic event");
+  if(ev->is_read_of_cas() && ev->value() != ev->cas_compare_val()){
+      // do nothing
+  }
+  else{
+    if(key[thr]+1>=par.numEventsInThread(thr)){
+      // dummy 
+    ZEvent dummy = ev->dummy_write_of_cas_or_rmw();
+    if(occured.find(dummy.ml())==occured.end()){
+        occured[dummy.ml()]=key.size();
+        key.push_back(thr);
+      }
+      else{
+        key[occured.at(dummy.ml())]=thr;
+      }
+      res.push_back(dummy);
+  
+      key[thr]++;
+
+    }
+    else{
+      const ZEvent *ev2 = currEvent(thr);
+      assert(ev2->is_write_of_atomic_event() && "atomic read not followed by atomic write");
+      if (ev2->kind==ZEvent::Kind::WRITE) {
+        // SymAddrSize ml=ev->ml();
+          if(occured.find(ev2->ml())==occured.end()){
+            occured[ev2->ml()]=key.size();
+            key.push_back(thr);
+          }
+          else{
+            key[occured.at(ev2->ml())]=thr;
+          }
+     //     last_w[thr][ev->ml()]=ev->_id;
+
+      }
+      res.push_back(*ev2);
+      
+      key[thr]++;
+    }
+  }
+  
+
+
+
+
+}
+
 
 
 bool ZLinearization::State::finished() const {
@@ -154,10 +222,13 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       if(occured.find(ev->ml())==occured.end()){
         ZEventID idd= par.gr.initial()->_id;
         if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
-        return false;
-      else return true;
+          return false;
+        else 
+          return true;
       }
       unsigned thr_no=key[occured.at(ev->ml())];
+      if(key[thr_no]+1>=par.numEventsInThread(thr_no))
+        return false;
       CPid ii=par.gr.line_id_to_cpid(thr_no);
       //int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
       const ZEvent* ev1= par.gr.get_tailw(ev->ml(), ii, key[thr_no]);
@@ -172,7 +243,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       //  end_err(std::to_string(thr_no));
 
       // }
-    }
+    } 
   // end_err("1");
   return true;
 }
@@ -181,9 +252,14 @@ bool ZLinearization::State::canForce(unsigned thr) const {
 void ZLinearization::State::force(unsigned thr, std::vector<ZEvent>& res){
   // start_err("force...");
   assert(canForce(thr) && "According to .canForce, cannot force");
-  // const ZEvent *ev = currEvent(thr);
+  const ZEvent *ev = currEvent(thr);
+  if(ev->is_read_of_atomic_event())
+    advance_atomic(thr, res);
+  else
+    advance(thr,res);
+  // if atomic read, then advance nextt atomic write as well, create a dummy write if last in thread
 
-  advance(thr,res);
+
   end_err();
 }
 
@@ -195,7 +271,8 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     done = true;
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
 
-        while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE && canForce(thr)) {
+        while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE &&
+         !currEvent(thr)->is_read_of_atomic_event() && canForce(thr)) {
           advance(thr, res);
           done = false;
         }
@@ -236,7 +313,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
       end_err("0: null");
       continue;
     }
-    else if(ev->kind!=ZEvent::Kind::WRITE){
+    else if(ev->kind!=ZEvent::Kind::WRITE && !ev->is_read_of_atomic_event()){
       continue;
     }
     if (!curr.canForce(thr)) {

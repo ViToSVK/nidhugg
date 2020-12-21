@@ -169,6 +169,8 @@ class ZLinearization {
     //bool canAdvance(unsigned thr) const;
     void advance(unsigned thr, std::vector<ZEvent>& res);
 
+    void advance_atomic(unsigned thr, std::vector<ZEvent>& res);
+
     // Heuristic 1
     // bool isUseless(const ZEvent *ev) const;
     // bool canPushUp(unsigned thr, int aux) const;
