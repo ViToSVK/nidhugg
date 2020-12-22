@@ -169,7 +169,8 @@ void ZPartialOrder::add_edge(const ZEvent *from, const ZEvent *to)
     return;
   }
 
-  if (from->is_read_of_atomic_event()) {
+  if (from->is_read_of_rmw() ||
+      (from->is_read_of_cas() && from->value() == from->cas_compare_val())) {
     // not just 'from', but also its write-part of
     // the atomic event needs to happen before 'to'
     if (graph.has_event(from->cpid(), from->event_id() + 1)) {
