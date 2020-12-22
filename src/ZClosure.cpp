@@ -181,10 +181,7 @@ std::pair<bool, bool> ZClosure::rules
 (const ZEvent *read, const ZAnn& ann)
 {
   assert(read && is_read(read));
-  if (ann.goodwrites.size() != 1) {
-    assert(ann.goodwrites.size() >= 2);
-    return {false, false};
-  }
+  assert(ann.goodwrites.size() == 1);
   const ZEvent * write = gr.event(*ann.goodwrites.begin());
   bool change = false;
   // Rule2
@@ -202,12 +199,32 @@ std::pair<bool, bool> ZClosure::rules
 /* CLOSE                       */
 /* *************************** */
 
+bool ZClosure::close_finish
+(const std::map<ZEventID, ZAnn>& reads_with_multiple_good_writes) const
+{
+  for (const auto& read_ann : reads_with_multiple_good_writes) {
+    assert(read_ann.second.goodwrites.size() >= 2);
+  }
+  return true;
+}
+
+
 bool ZClosure::close(const ZEvent *newread) {
+  // Reads with multiple good writes will be checked at the end
+  std::map<ZEventID, ZAnn> reads_with_multiple_good_writes;
+
   // Rules for new read
   if (newread) {
     assert(is_read(newread));
-    auto res = rules(newread, an.ann(newread));
-    if (res.first) { return false; }
+    const ZAnn& newread_ann = an.ann(newread);
+    // If 1 good write perform rules, otherwise check at the end
+    if (newread_ann.goodwrites.size() != 1) {
+      assert(newread_ann.goodwrites.size() >= 2);
+      reads_with_multiple_good_writes.emplace(newread, newread_ann);
+    } else {
+      auto res = rules(newread, newread_ann);
+      if (res.first) { return false; }
+    }
   }
 
   bool change = true;
@@ -222,18 +239,25 @@ bool ZClosure::close(const ZEvent *newread) {
         // One entire iteration without any changes
         // hence the partial order is closed
         assert(!change);
-        return true;
+        return close_finish(reads_with_multiple_good_writes);
       }
       const ZEvent * read = gr.event(read_ann.first);
       if (newread && (*newread) == (*read))
         continue;
       if (po.is_closure_safe(read))
         continue;
-      auto res = rules(read, read_ann.second);
-      if (res.first) { return false; }
-      if (res.second) {
-        change = true;
-        last_change = cur;
+      // If 1 good write perform rules, otherwise check at the end
+      if (read_ann.second.goodwrites.size() != 1) {
+        assert(read_ann.second.goodwrites.size() >= 2);
+        if (!reads_with_multiple_good_writes.count(read_ann.first))
+          reads_with_multiple_good_writes.insert(read_ann);
+      } else {
+        auto res = rules(read, read_ann.second);
+        if (res.first) { return false; }
+        if (res.second) {
+          change = true;
+          last_change = cur;
+        }
       }
     }
     cur++;
@@ -242,19 +266,25 @@ bool ZClosure::close(const ZEvent *newread) {
       // One entire iteration without any changes
       // hence the partial order is closed
       assert(!change);
-      return true;
+      return close_finish(reads_with_multiple_good_writes);
     }
     if (newread) {
-      auto res = rules(newread, an.ann(newread));
-      if (res.first) { return false; }
-      if (res.second) {
-        change = true;
-        last_change = cur;
+      assert(is_read(newread));
+      const ZAnn& newread_ann = an.ann(newread);
+      // If 1 good write perform rules,
+      // otherwise already added beforehand to be checked at the end
+      if (newread_ann.goodwrites.size() == 1) {
+        auto res = rules(newread, an.ann(newread));
+        if (res.first) { return false; }
+        if (res.second) {
+          change = true;
+          last_change = cur;
+        }
       }
     }
   }
   assert(!change);
-  return true;
+  return close_finish(reads_with_multiple_good_writes);
 }
 
 /* *************************** */
