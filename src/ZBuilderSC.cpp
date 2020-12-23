@@ -486,8 +486,15 @@ void ZBuilderSC::compare_exchange
   assert(!success || old_val == compare_val);
   if (!ml.addr.block.is_global() && !ml.addr.block.is_heap())
     return;
-  if (threads.size() <= 2)
-    return; // 2 because there are two entries for each thread
+  if (threads.size() <= 2) { // 2 because there are two entries for each thread
+    // Only record the write (in case it happened)
+    if (success) {
+      assert(curnode().kind == ZEvent::Kind::DUMMY);
+      atomic_store(ml, exchange_val);
+      assert(is_write(curnode()));
+    }
+    return;
+  }
   start_err("compare_exchange");
 
   if (sch_replay) {
@@ -552,6 +559,13 @@ void ZBuilderSC::read_modify_write
   assert(curnode().kind == ZEvent::Kind::DUMMY);
   if (!ml.addr.block.is_global() && !ml.addr.block.is_heap())
     return;
+  if (threads.size() <= 2) { // 2 because there are two entries for each thread
+    // Only record the write
+    assert(curnode().kind == ZEvent::Kind::DUMMY);
+    atomic_store(ml, new_val);
+    assert(is_write(curnode()));
+    return;
+  }
   if (threads.size() <= 2)
     return; // 2 because there are two entries for each thread
   start_err("read_modify_write");
