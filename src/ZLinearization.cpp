@@ -182,8 +182,8 @@ bool ZLinearization::State::finished() const {
   for (unsigned thr = 0; thr < par.gr.size(); thr++) {
     int pos = key[thr];
     int tgt = par.numEventsInThread(thr)-1;
-    assert(pos <= tgt);
-    if (pos != tgt) {
+    assert(pos <= tgt+1);
+    if (pos < tgt) {
       end_err("0");
       return false;
     }
@@ -227,7 +227,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
           return true;
       }
       unsigned thr_no=key[occured.at(ev->ml())];
-      if(key[thr_no]+1>=par.numEventsInThread(thr_no))
+      if(key[thr_no]+1>par.numEventsInThread(thr_no))
         return false;
       CPid ii=par.gr.line_id_to_cpid(thr_no);
       //int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
