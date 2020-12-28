@@ -121,18 +121,21 @@ void ZLinearization::State::advance_atomic(unsigned thr,  std::vector<ZEvent>& r
 
   }
   res.push_back(*ev);
-  
+
   key[thr]++;
 
   // second
 
   assert(ev->is_read_of_atomic_event() && "Read of atomic event");
-  if(ev->is_read_of_cas() && ev->value() != ev->cas_compare_val()){
+  assert(par.an.defines(ev->id()));
+  // ev->value() may differ from what ev is annotated now to observe
+  // the value in the annotation is the proper one to follow
+  if(ev->is_read_of_cas() && par.an.ann(ev->id()).value != ev->cas_compare_val()){
       // do nothing
   }
   else{
     if(key[thr]+1>=par.numEventsInThread(thr)){
-      // dummy 
+      // dummy
     ZEvent dummy = ev->dummy_write_of_cas_or_rmw();
     if(occured.find(dummy.ml())==occured.end()){
         occured[dummy.ml()]=key.size();
@@ -142,7 +145,7 @@ void ZLinearization::State::advance_atomic(unsigned thr,  std::vector<ZEvent>& r
         key[occured.at(dummy.ml())]=thr;
       }
       res.push_back(dummy);
-  
+
       key[thr]++;
 
     }
@@ -162,11 +165,11 @@ void ZLinearization::State::advance_atomic(unsigned thr,  std::vector<ZEvent>& r
 
       }
       res.push_back(*ev2);
-      
+
       key[thr]++;
     }
   }
-  
+
 
 
 
@@ -223,7 +226,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
         ZEventID idd= par.gr.initial()->_id;
         if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
           return false;
-        else 
+        else
           return true;
       }
       unsigned thr_no=key[occured.at(ev->ml())];
@@ -243,7 +246,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       //  end_err(std::to_string(thr_no));
 
       // }
-    } 
+    }
   // end_err("1");
   return true;
 }
