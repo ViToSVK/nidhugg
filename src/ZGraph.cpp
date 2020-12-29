@@ -648,7 +648,7 @@ const ZEvent * ZGraph::get_tailw
 
 
 int ZGraph::get_latest_not_after_index
-(const ZEvent *read, const CPid& cpid) const
+(const ZPartialOrder& po, const ZEvent *read, const CPid& cpid) const
 {
   assert(is_read(read));
   assert(has_event(read));
@@ -660,7 +660,7 @@ int ZGraph::get_latest_not_after_index
     return -1;
   assert(_cache.writes.at(read->ml()).count(cpid));
 
-  int su = _po.succ(read, cpid).second;
+  int su = po.succ(read, cpid).second;
   if (su >= (int) (*this)(cpid).size()) {
     assert(su == INT_MAX);
     su = (int) (*this)(cpid).size();
@@ -672,14 +672,14 @@ int ZGraph::get_latest_not_after_index
 
 
 const ZEvent * ZGraph::get_latest_not_after
-(const ZEvent *read, const CPid& cpid) const
+(const ZPartialOrder& po, const ZEvent *read, const CPid& cpid) const
 {
   assert(is_read(read));
   assert(has_event(read));
   assert(has_thread(cpid));
   assert(cpid != read->cpid());
 
-  int idx = get_latest_not_after_index(read, cpid);
+  int idx = get_latest_not_after_index(po, read, cpid);
   if (idx == -1)
     return nullptr;
 
@@ -687,7 +687,7 @@ const ZEvent * ZGraph::get_latest_not_after
   auto res = _cache.writes.at(read->ml()).at(cpid)[idx]; // using 'at' because this method is const
   assert(is_write(res) && same_ml(res, read) &&
          res->cpid() != read->cpid() && res->cpid() == cpid &&
-         !_po.has_edge(read, res));
+         !po.has_edge(read, res));
   return res;
 }
 
@@ -723,13 +723,14 @@ std::list<const ZEvent *> ZGraph::events_to_mutate(const ZAnnotation& annotation
 }
 
 
-std::set<ZAnn> ZGraph::mutation_candidates
-(const ZEvent *read, const ZAnnotationNeg& negative) const
+std::set<const ZEvent *> ZGraph::mutation_candidates_collect
+(const ZPartialOrder& po, const ZEvent *read,
+ const std::set<ZEventID>& check_if_any_is_visible) const
 {
   assert(is_read(read));
   assert(has_event(read));
 
-  std::list<const ZEvent *> obs_events;
+  std::set<const ZEvent *> obs_events;
 
   std::unordered_set<const ZEvent *> notCovered;
   std::unordered_set<const ZEvent *> mayBeCovered;
@@ -741,7 +742,7 @@ std::set<ZAnn> ZGraph::mutation_candidates
   // Handle other threads
   for (const CPid& cpid : threads()) {
     if (read->cpid() != cpid) {
-      int su = _po.succ(read, cpid).second;
+      int su = po.succ(read, cpid).second;
       if (su >= (int) (*this)(cpid).size()) {
         assert(su == INT_MAX);
         su = (int) (*this)(cpid).size();
@@ -749,20 +750,20 @@ std::set<ZAnn> ZGraph::mutation_candidates
       // Cache-using implementation below; Naive -- see comment after the method
       // Tail write index to cache.writes
       int w_idx = get_tailw_index(read->ml(), cpid, su - 1);
-      assert(w_idx == get_latest_not_after_index(read, cpid));
+      assert(w_idx == get_latest_not_after_index(po, read, cpid));
       while (w_idx > -1) {
         const ZEvent *rem = _cache.writes.at(read->ml()).at(cpid).at(w_idx); // using 'at' because this method is const
         assert(rem && is_write(rem) && same_ml(read, rem) && rem->cpid() == cpid);
-        assert(!_po.has_edge(read, rem));
-        if (_po.has_edge(rem, read)) {
+        assert(!po.has_edge(read, rem));
+        if (po.has_edge(rem, read)) {
           // Others in this thread are covered from read by rem
-          assert(rem->event_id() <= _po.pred(read, cpid).second);
+          assert(rem->event_id() <= po.pred(read, cpid).second);
           // rem may be covered by some conflicting write rem -> x -> read
           mayBeCovered.emplace(rem);
           // Update cover
           for (const CPid& covcpid : threads()) {
             if (covcpid != rem->cpid()) {
-              int newcov = _po.pred(rem, covcpid).second;
+              int newcov = po.pred(rem, covcpid).second;
               assert(covered.count(covcpid));
               if (newcov > covered[covcpid])
                 covered[covcpid] = newcov;
@@ -773,6 +774,13 @@ std::set<ZAnn> ZGraph::mutation_candidates
         } else {
           notCovered.emplace(rem);
           --w_idx;
+          // VISIBLE check
+          if (!check_if_any_is_visible.empty() &&
+              check_if_any_is_visible.count(rem->id())) {
+            std::set<const ZEvent *> visible_hit;
+            visible_hit.emplace(rem);
+            return visible_hit;
+          }
         }
       }
     }
@@ -788,7 +796,7 @@ std::set<ZAnn> ZGraph::mutation_candidates
     // Update cover caused by local
     for (const CPid& covcpid : threads()) {
       if (covcpid != local->cpid()) {
-        int newcov = _po.pred(local, covcpid).second;
+        int newcov = po.pred(local, covcpid).second;
         assert(covered.count(covcpid));
         if (newcov > covered[covcpid])
           covered[covcpid] = newcov;
@@ -797,60 +805,72 @@ std::set<ZAnn> ZGraph::mutation_candidates
     // Check if not covered by some remote
     bool localCovered = false;
     for (const auto& rem : mayBeCovered) {
-      assert(is_write(rem) && same_ml(rem, read) && _po.has_edge(rem, read));
-      if (_po.has_edge(local, rem)) {
+      assert(is_write(rem) && same_ml(rem, read) && po.has_edge(rem, read));
+      if (po.has_edge(local, rem)) {
         localCovered = true;
         break;
       }
     }
-    // Add obs if not covered and not forbidden
-    if (!localCovered && !negative.forbids(read, local))
-      obs_events.emplace_back(local);
+    if (!localCovered) {
+      // Local write not covered, add obs
+      obs_events.emplace(local);
+      // VISIBLE check
+      if (!check_if_any_is_visible.empty() &&
+          check_if_any_is_visible.count(local->id())) {
+        std::set<const ZEvent *> visible_hit;
+        visible_hit.emplace(local);
+        return visible_hit;
+      }
+    }
   } else {
     // No local write for read
     if (mayBeCovered.empty()) {
-      // Consider initial event if not forbidden
-      if (!negative.forbids_initial(read)) {
-        assert(initial()->value() == 0);
-        obs_events.emplace_back(initial());
+      // Consider initial event
+      assert(initial()->value() == 0);
+      obs_events.emplace(initial());
+      // VISIBLE check
+      if (!check_if_any_is_visible.empty() &&
+          check_if_any_is_visible.count(initial()->id())) {
+        std::set<const ZEvent *> visible_hit;
+        visible_hit.emplace(initial());
+        return visible_hit;
       }
     }
   }
 
   // Take candidates unordered with read
+  // VISIBLE check has already been done above for these
   for (const auto& rem : notCovered) {
     assert(is_write(rem) && same_ml(rem, read) &&
-           !_po.are_ordered(rem, read));
-    // Add if not forbidden
-    if (!negative.forbids(read, rem))
-      obs_events.emplace_back(rem);
+           !po.are_ordered(rem, read));
+    obs_events.emplace(rem);
   }
 
   // Take candidates that happen before read
   for (const auto& rem : mayBeCovered) {
     assert(is_write(rem) && same_ml(rem, read) &&
-           _po.has_edge(rem, read));
+           po.has_edge(rem, read));
     assert(covered.count(rem->cpid()));
     if (rem->event_id() > covered[rem->cpid()]) {
-      // Not covered, add if not forbidden
-      if (!negative.forbids(read, rem))
-        obs_events.emplace_back(rem);
+      // Not covered, add
+      obs_events.emplace(rem);
+      // VISIBLE check
+      if (!check_if_any_is_visible.empty() &&
+          check_if_any_is_visible.count(rem->id())) {
+        std::set<const ZEvent *> visible_hit;
+        visible_hit.emplace(rem);
+        return visible_hit;
+      }
     }
   }
 
-  // Group by value
-  std::map<int, std::set<ZEventID>> anns;
-  for (const ZEvent * ev : obs_events) {
-    if (!anns.count(ev->value()))
-      anns.emplace(ev->value(), std::set<ZEventID>());
-    anns[ev->value()].emplace(ev->id());
-  }
+  // VISIBLE failed if it reached here
+  if (!check_if_any_is_visible.empty())
+    return std::set<const ZEvent *>();
 
-  std::set<ZAnn> res;
-  for (const auto& v_e : anns)
-    res.emplace(ZAnn(v_e.first, v_e.second));
-  return res;
+  return obs_events;
 }
+
       /*
       int curr = su - 1;
       while (curr >= 0) {
@@ -882,6 +902,54 @@ std::set<ZAnn> ZGraph::mutation_candidates
         }
       }
       */
+
+void ZGraph::mutation_candidates_filter_by_negative
+(const ZEvent *read, std::set<const ZEvent *>& candidates,
+ const ZAnnotationNeg& negative) const
+{
+  auto it = candidates.begin();
+  while (it != candidates.end()) {
+    const ZEvent * cand = *it;
+    if (is_initial(cand)) {
+      if (negative.forbids_initial(read))
+        it = candidates.erase(it);
+      else
+        ++it;
+      continue;
+    }
+    assert(is_write(cand));
+    if (negative.forbids(read, cand))
+      it = candidates.erase(it);
+    else
+      ++it;
+  }
+}
+
+
+std::set<ZAnn> ZGraph::mutation_candidates_grouped
+(const ZEvent *read, const ZAnnotationNeg& negative) const
+{
+  // Collect the candidates
+  std::set<const ZEvent *> obs_events = mutation_candidates_collect
+  (_po, read, std::set<ZEventID>());
+
+  // Filter by negative annotation
+  mutation_candidates_filter_by_negative(read, obs_events, negative);
+
+  // Group by value
+  std::map<int, std::set<ZEventID>> anns;
+  for (const ZEvent * ev : obs_events) {
+    if (!anns.count(ev->value()))
+      anns.emplace(ev->value(), std::set<ZEventID>());
+    anns[ev->value()].emplace(ev->id());
+  }
+
+  // Create ZAnn-s
+  std::set<ZAnn> res;
+  for (const auto& v_e : anns)
+    res.emplace(ZAnn(v_e.first, v_e.second));
+  return res;
+}
 
 
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr)

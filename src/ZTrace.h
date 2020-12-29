@@ -57,7 +57,7 @@ class ZTrace {
   }
 
   std::set<ZAnn> mutation_candidates(const ZEvent *read) const {
-    return graph.mutation_candidates(read, negative);
+    return graph.mutation_candidates_grouped(read, negative);
   }
 
   /* *************************** */

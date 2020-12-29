@@ -100,7 +100,7 @@ std::pair<bool, bool> ZClosure::rule_three
 
   // Handle thread of write
   if (!is_initial(write) && write->cpid() != read->cpid()) {
-    int idx = gr.get_latest_not_after_index(read, write->cpid());
+    int idx = gr.get_latest_not_after_index(po, read, write->cpid());
     // {0,1,..,idx} in cache at same ml not happening after read
     if (idx != -1) {
       const auto& wrcache = gr.cache().writes.at(read->ml()).at(write->cpid());
@@ -136,7 +136,7 @@ std::pair<bool, bool> ZClosure::rule_three
   // Handle all threads except thread of read and thread of write
   for (const CPid& cpid : gr.threads()) {
     if (cpid != read->cpid() && (is_initial(write) || cpid != write->cpid())) {
-      int idx = gr.get_latest_not_after_index(read, cpid);
+      int idx = gr.get_latest_not_after_index(po, read, cpid);
       // {0,1,..,idx} in cache at same ml not happening after read
       if (idx == -1)
         continue;
@@ -200,10 +200,21 @@ std::pair<bool, bool> ZClosure::rules
 /* *************************** */
 
 bool ZClosure::close_finish
-(const std::map<ZEventID, ZAnn>& reads_with_multiple_good_writes) const
+(const std::map<const ZEvent *, ZAnn>& reads_with_multiple_good_writes) const
 {
   for (const auto& read_ann : reads_with_multiple_good_writes) {
     assert(read_ann.second.goodwrites.size() >= 2);
+    assert(read_ann.first && is_read(read_ann.first));
+    std::set<const ZEvent *> any_good_write_visible = (
+      gr.mutation_candidates_collect(po, read_ann.first, read_ann.second.goodwrites));
+    if (any_good_write_visible.empty())
+      return false;
+    else {
+      assert(any_good_write_visible.size() == 1);
+      assert(*(any_good_write_visible.begin()));
+      assert(read_ann.second.goodwrites.count(
+             (*(any_good_write_visible.begin()))->id()));
+    }
   }
   return true;
 }
@@ -211,7 +222,7 @@ bool ZClosure::close_finish
 
 bool ZClosure::close(const ZEvent *newread) {
   // Reads with multiple good writes will be checked at the end
-  std::map<ZEventID, ZAnn> reads_with_multiple_good_writes;
+  std::map<const ZEvent *, ZAnn> reads_with_multiple_good_writes;
 
   // Rules for new read
   if (newread) {
@@ -249,8 +260,8 @@ bool ZClosure::close(const ZEvent *newread) {
       // If 1 good write perform rules, otherwise check at the end
       if (read_ann.second.goodwrites.size() != 1) {
         assert(read_ann.second.goodwrites.size() >= 2);
-        if (!reads_with_multiple_good_writes.count(read_ann.first))
-          reads_with_multiple_good_writes.insert(read_ann);
+        if (!reads_with_multiple_good_writes.count(read))
+          reads_with_multiple_good_writes.emplace(read, read_ann.second);
       } else {
         auto res = rules(read, read_ann.second);
         if (res.first) { return false; }

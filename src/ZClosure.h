@@ -49,7 +49,7 @@ class ZClosure {
  public:
 
   bool close_finish
-    (const std::map<ZEventID, ZAnn>& reads_with_multiple_good_writes) const;
+    (const std::map<const ZEvent *, ZAnn>& reads_with_multiple_good_writes) const;
 
   bool close
     (const ZEvent *newread);

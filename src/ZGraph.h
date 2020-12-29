@@ -157,8 +157,8 @@ class ZGraph {
   // In thread cpid, from all writes conflicting with read
   // that do not happen after the read in po,
   // return the latest one (resp. return its index in cache.wm)
-  int get_latest_not_after_index(const ZEvent *read, const CPid& cpid) const;
-  const ZEvent *get_latest_not_after(const ZEvent *read, const CPid& cpid) const;
+  int get_latest_not_after_index(const ZPartialOrder& po, const ZEvent *read, const CPid& cpid) const;
+  const ZEvent *get_latest_not_after(const ZPartialOrder& po, const ZEvent *read, const CPid& cpid) const;
 
   // Get the local write of the read
   // Returns nullptr if there is no local write before read
@@ -167,8 +167,18 @@ class ZGraph {
   // Returns events-to-mutate in a specified order
   std::list<const ZEvent *> events_to_mutate(const ZAnnotation& annotation) const;
 
-  // Returns mutation candidates for a read node
-  std::set<ZAnn> mutation_candidates
+  // Collect all write events visible to the read
+  std::set<const ZEvent *> mutation_candidates_collect
+  (const ZPartialOrder& po, const ZEvent *read,
+   const std::set<ZEventID>& check_if_any_is_visible) const;
+
+  // Filter out candidates forbidden to read by negative annotation
+  void mutation_candidates_filter_by_negative
+  (const ZEvent *read, std::set<const ZEvent *>& candidates,
+   const ZAnnotationNeg& negative) const;
+
+  // Returns mutation candidates for a read node grouped by value
+  std::set<ZAnn> mutation_candidates_grouped
   (const ZEvent *read, const ZAnnotationNeg& negative) const;
 
   std::string to_string() const { return _po.to_string(); }
