@@ -310,12 +310,47 @@ void ZClosure::rule_one_lock(const ZEvent *lock, const ZEvent *unlock)
     po.add_edge(unlock, lock);
 }
 
+void ZClosure::rule_one_multi_good(const ZEvent *read, const ZAnn& ann)
+{
+  assert(is_read(read));
+  assert(ann.goodwrites.size() >= 2);
+  // If there is a po-smallest write, it should happen before read
+  std::set<const ZEvent *> good;
+  const ZEvent * candidate = nullptr;
+  for (const auto& goodwrite_id : ann.goodwrites) {
+    const ZEvent * write = gr.event(goodwrite_id);
+    if (is_initial(write))
+      return; // Initial is po-smallest and already happens before read
+    assert(is_write(write));
+    good.emplace(write);
+    if (!candidate || po.has_edge(write, candidate))
+      candidate = write;
+  }
+  // candidate holds a po-minimal write, check if it is po-smallest
+  assert(candidate);
+  for (const auto& goodwrite : good) {
+    if (goodwrite == candidate)
+      continue;
+    if (!po.has_edge(candidate, goodwrite))
+      return; // There is no po-smallest write
+  }
+  // candidate holds a po-smallest write
+  #ifndef NDEBUG
+  for (const auto& goodwrite_id : ann.goodwrites) {
+    const ZEvent * write = gr.event(goodwrite_id);
+    assert(candidate == write || po.has_edge(candidate, write));
+  }
+  #endif
+  if (!po.has_edge(candidate, read))
+    po.add_edge(candidate, read);
+}
+
 void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
 {
   assert(is_read(read));
   if (ann.goodwrites.size() != 1) {
     assert(ann.goodwrites.size() >= 2);
-    return;
+    rule_one_multi_good(read, ann);
   }
   const ZEvent * write = gr.event(*ann.goodwrites.begin());
   if (is_initial(write)) {

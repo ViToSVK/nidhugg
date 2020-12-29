@@ -57,6 +57,9 @@ class ZClosure {
   void rule_one
     (const ZEvent *ev, const ZAnn& ann);
 
+  void rule_one_multi_good
+    (const ZEvent *ev, const ZAnn& ann);
+
   void rule_one_lock
     (const ZEvent *lock, const ZEvent *unlock);
 

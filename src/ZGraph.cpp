@@ -839,11 +839,13 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
   }
 
   // Take candidates unordered with read
-  // VISIBLE check has already been done above for these
   for (const auto& rem : notCovered) {
     assert(is_write(rem) && same_ml(rem, read) &&
            !po.are_ordered(rem, read));
     obs_events.emplace(rem);
+    // VISIBLE check has already been done above for these
+    assert(check_if_any_is_visible.empty() ||
+           !check_if_any_is_visible.count(rem->id()));
   }
 
   // Take candidates that happen before read
