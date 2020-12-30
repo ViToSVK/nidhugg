@@ -29,25 +29,15 @@ static const bool DEBUG = false;
 
 
 ZExplorer::TraceExtension::TraceExtension
-(std::vector<ZEvent>&& extension, bool some_to_ann, bool assume_blocked)
-  : trace(std::move(extension)), something_to_annotate(some_to_ann),
+(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& extension,
+ bool some_to_ann, bool assume_blocked)
+  : trace(extension), something_to_annotate(some_to_ann),
     has_assume_blocked_thread(assume_blocked), has_error(false)
 {
-  assert(extension.empty() && !trace.empty());
+  assert(!empty());
+  assert(trace && !trace->empty());
 }
 
-
-ZExplorer::TraceExtension::TraceExtension
-(std::pair<std::vector<ZEvent>&&, bool>&& ext_sometoann)
-  : TraceExtension(std::move(ext_sometoann.first),
-                   ext_sometoann.second, false) {}
-
-
-ZExplorer::~ZExplorer()
-{
-  delete initial;
-  initial = nullptr;
-}
 
 
 ZExplorer::ZExplorer(ZBuilderSC& tb)
@@ -59,7 +49,8 @@ ZExplorer::ZExplorer(ZBuilderSC& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = new ZTrace(std::move(tb.prefix), tb.someThreadAssumeBlocked);
+    initial = std::unique_ptr<ZTrace>(
+      new ZTrace(tb.prefix, tb.someThreadAssumeBlocked));
 }
 
 
@@ -121,7 +112,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   if (info) {
     llvm::errs() << "-------------------------exploreRec\n\n";
   }
-  assert(global_variables_initialized_with_value_zero(ann_trace.trace));
+  assert(global_variables_initialized_with_value_zero(*ann_trace.trace));
 
   auto events_to_mutate = ann_trace.events_to_mutate();
   assert(!events_to_mutate.empty());
@@ -207,9 +198,10 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool mutation_follows_current_trace = false;
+    assert(read->observed_trace_id() < (int) ann_trace.trace->size());
     ZEventID observed_id = (read->observed_trace_id() < 0
       ? ann_trace.graph.initial()->id()
-      : ann_trace.trace.at(read->observed_trace_id()).id());
+      : ann_trace.trace->at(read->observed_trace_id())->id());
     for (const ZEventID& good : mutation.goodwrites) {
       if (observed_id == good) {
         mutation_follows_current_trace = true;
@@ -388,9 +380,8 @@ bool ZExplorer::extend_and_recur
   }
   else {
     clock_t init = std::clock();
-    ZLinearization linearizer(mutated_annotation, mutated_po, parent_trace.trace);
-    std::vector<ZEvent> linear;
-    linear = linearizer.linearize();
+    ZLinearization linearizer(mutated_annotation, mutated_po);
+    std::vector<ZEvent> linear = linearizer.linearize();
     end_err("finished linearisation1");
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     end_err("finished linearisation2");
@@ -414,7 +405,7 @@ bool ZExplorer::extend_and_recur
     assert(linearization_respects_annotation(linear, mutated_annotation,
                                              mutated_po, parent_trace));
     mutated_trace = extend_trace(std::move(linear));
-    assert(extension_respects_annotation(mutated_trace.trace, mutated_annotation,
+    assert(extension_respects_annotation(*mutated_trace.trace, mutated_annotation,
                                          mutated_po, parent_trace));
   }
 
@@ -445,13 +436,12 @@ bool ZExplorer::extend_and_recur
   err_msg("creating extension");
   ZTrace mutated_ZTrace
     (parent_trace,
-     std::move(mutated_trace.trace),
+     mutated_trace.trace,
      std::move(mutated_annotation),
      std::move(mutated_po),
      mutated_trace.has_assume_blocked_thread);
   err_msg("created extension");
-  assert(mutated_trace.empty() && mutated_po.empty() &&
-         mutated_annotation.empty());
+  assert(mutated_annotation.empty() && mutated_po.empty());
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   auto res = explore_rec(mutated_ZTrace);
@@ -469,28 +459,29 @@ ZExplorer::reuse_trace
 (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation)
 {
   start_err("reuseTrace..");
-  std::vector<ZEvent> tr;
-  tr.reserve(parent_trace.trace.size());
   bool something_to_annotate = false;
-
-  for (const ZEvent& ev : parent_trace.trace) {
-    if (!something_to_annotate) {
-      if (is_read(ev) && (!mutated_annotation.defines(&ev)))
+  for (int i = parent_trace.trace->size() - 1; i >= 0; --i) {
+    const ZEvent& ev = *(parent_trace.trace->at(i));
+    assert(!something_to_annotate);
+    if (is_read(ev) && (!mutated_annotation.defines(&ev))) {
+      something_to_annotate = true;
+      break;
+    }
+    if (is_lock(ev)) {
+      if (!parent_trace.graph.has_event(&ev)) {
         something_to_annotate = true;
-      else if (is_lock(ev)) {
-        if (!parent_trace.graph.has_event(&ev))
-          something_to_annotate = true;
-        else if (ev.event_id() == // last in its thread
-                 (parent_trace.graph)(ev.cpid()).size() - 1
-                 && !mutated_annotation.is_last_lock(&ev))
-          something_to_annotate = true;
+        break;
+      }
+      else if (ev.event_id() == // last in its thread
+               (parent_trace.graph)(ev.cpid()).size() - 1
+               && !mutated_annotation.is_last_lock(&ev)) {
+        something_to_annotate = true;
+        break;
       }
     }
-
-    tr.push_back(ZEvent(ev));
   }
 
-  auto res = TraceExtension(std::move(tr), something_to_annotate,
+  auto res = TraceExtension(parent_trace.trace, something_to_annotate,
                             parent_trace.assumeblocked);
   end_err("?");
   return res;
@@ -508,18 +499,18 @@ ZExplorer::extend_trace(std::vector<ZEvent>&& tr)
   assert(original_TB);
   clock_t init = std::clock();
   ZBuilderSC TB(*(original_TB->config), original_TB->M, std::move(tr));
-  auto trace_extension = TraceExtension(TB.extendGivenTrace());
+  TB.extendGivenTrace();
+  assert(TB.prefix && !TB.prefix->empty());
   time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
   interpreter_used++;
+  TraceExtension trace_extension(
+    TB.prefix, !TB.somethingToAnnotate.empty(), TB.someThreadAssumeBlocked);
 
   if (TB.has_error()) {
     // ERROR FOUND
     original_TB->error_trace = TB.get_trace();
     trace_extension.has_error = true;
   }
-
-  if (TB.someThreadAssumeBlocked)
-    trace_extension.has_assume_blocked_thread = true;
 
   end_err("?a");
   return trace_extension;
@@ -531,19 +522,21 @@ ZExplorer::extend_trace(std::vector<ZEvent>&& tr)
 /* *************************** */
 
 bool ZExplorer::extension_respects_annotation
-(const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
- const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const
+(const std::vector<std::unique_ptr<ZEvent>>& trace,
+ const ZAnnotation& annotation, const ZPartialOrder& mutated_po,
+ const ZTrace& parent_trace) const
 {
   assert(!trace.empty());
-  for (const ZEvent& evref : trace) {
-    const ZEvent *ev = &evref;
+  for (const std::unique_ptr<ZEvent>& evref : trace) {
+    const ZEvent *ev = evref.get();
     if (is_read(ev)) {
       if (annotation.defines(ev->id())) {
         const ZAnn& ann = annotation.ann(ev->id());
         bool observes_good_write = false;
+        assert(ev->observed_trace_id() < (int) trace.size());
         const ZEventID observed_id = (ev->observed_trace_id() < 0
           ? ZEventID(CPid(), -1) // initial event id
-          : trace.at(ev->observed_trace_id()).id());
+          : trace.at(ev->observed_trace_id())->id());
         for (const ZEventID& good : ann.goodwrites)
           if (observed_id == good) {
             assert(!observes_good_write);
@@ -651,10 +644,10 @@ bool ZExplorer::linearization_respects_annotation
 
 
 bool ZExplorer::global_variables_initialized_with_value_zero
-(const std::vector<ZEvent>& trace) const
+(const std::vector<std::unique_ptr<ZEvent>>& trace) const
 {
   for (unsigned i=0; i<trace.size(); ++i) {
-    const ZEvent *ev = &(trace.at(i));
+    const ZEvent *ev = trace.at(i).get();
     if (is_read(ev)) {
       // If read observes initial, make sure it observes value 0
       if (ev->observed_trace_id() < 0 && ev->value() != 0) {

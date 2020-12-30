@@ -63,7 +63,7 @@ class ZBuilderSC : public TSOTraceBuilder {
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
-  std::vector<ZEvent> prefix;
+  std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> prefix;
 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
@@ -87,14 +87,14 @@ class ZBuilderSC : public TSOTraceBuilder {
 
   ZEvent& curnode() {
     assert(0 <= prefix_idx);
-    assert(prefix_idx < int(prefix.size()));
-    return prefix[prefix_idx];
+    assert(prefix_idx < int(prefix->size()));
+    return *(*prefix)[prefix_idx];
   };
 
   const ZEvent& curnode() const {
     assert(0 <= prefix_idx);
-    assert(prefix_idx < int(prefix.size()));
-    return prefix[prefix_idx];
+    assert(prefix_idx < int(prefix->size()));
+    return *(*prefix)[prefix_idx];
   };
 
   /* *************************** */
@@ -208,8 +208,8 @@ class ZBuilderSC : public TSOTraceBuilder {
   }
 
   // Called from ZExplorer on a TB created exclusively for this
-  // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<ZEvent>, bool> extendGivenTrace();
+  // Schedule entire replay_trace, then extend it
+  void extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;

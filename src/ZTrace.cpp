@@ -22,10 +22,10 @@
 
 
 ZTrace::ZTrace
-(std::vector<ZEvent>&& initial_trace,
+(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
  bool assumeblocked)
   : parent(nullptr),
-    trace(std::move(initial_trace)),
+    trace(initial_trace),
     annotation(),
     negative(),
     graph(this->trace),
@@ -36,12 +36,12 @@ ZTrace::ZTrace
 
 ZTrace::ZTrace
 (const ZTrace& parentTrace,
- std::vector<ZEvent>&& new_trace,
+ const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& new_trace,
  ZAnnotation&& new_annotation,
  ZPartialOrder&& new_po,
  bool assumeblocked)
   : parent(&parentTrace),
-    trace(std::move(new_trace)),
+    trace(new_trace),
     annotation(std::move(new_annotation)),
     negative(parentTrace.negative),
     graph(parentTrace.graph, std::move(new_po),

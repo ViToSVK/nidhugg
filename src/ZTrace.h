@@ -29,7 +29,7 @@ class ZTrace {
   const ZTrace *parent;
 
  public:
-  const std::vector<ZEvent> trace;
+  const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> trace;
   const ZAnnotation annotation;
   ZAnnotationNeg negative;
   ZGraph graph;
@@ -41,7 +41,7 @@ class ZTrace {
   mutable bool deadlocked;
 
   bool empty() const {
-    return (trace.empty() && annotation.empty() &&
+    return (!trace && annotation.empty() &&
             negative.empty() && graph.empty());
   }
 
@@ -66,11 +66,11 @@ class ZTrace {
 
   ZTrace() = delete;
 
-  ZTrace(std::vector<ZEvent>&& initial_trace,
+  ZTrace(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
          bool assumeblocked);
 
   ZTrace(const ZTrace& parentTrace,
-         std::vector<ZEvent>&& new_trace,
+         const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& new_trace,
          ZAnnotation&& new_annotation,
          ZPartialOrder&& new_po,
          bool assumeblocked);

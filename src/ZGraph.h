@@ -107,7 +107,7 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::vector<ZEvent>& trace);
+  ZGraph(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace);
   // Moving
   ZGraph(ZGraph&& oth) = default;
 
@@ -116,7 +116,7 @@ class ZGraph {
   // Trace and annotation that will extend this copy of the graph
   ZGraph(const ZGraph& oth,
          ZPartialOrder&& po,
-         const std::vector<ZEvent>& trace,
+         const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace,
          const ZAnnotation& annotation);
 
   ZGraph(const ZGraph& oth) = delete;
@@ -140,7 +140,7 @@ class ZGraph {
   // 3) partial order is extended to accomodate new
   //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void trace_to_po(const std::vector<ZEvent>& trace, const ZAnnotation *annotation_ptr);
+  void trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation *annotation_ptr);
 
 
   /* *************************** */

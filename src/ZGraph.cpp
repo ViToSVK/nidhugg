@@ -40,10 +40,11 @@ ZGraph::ZGraph()
 
 
 // Initial
-ZGraph::ZGraph(const std::vector<ZEvent>& trace)
+ZGraph::ZGraph(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace)
   : ZGraph()
 {
-  trace_to_po(trace, nullptr);
+  assert(trace);
+  trace_to_po(*trace, nullptr);
 }
 
 
@@ -53,7 +54,7 @@ ZGraph::ZGraph(const std::vector<ZEvent>& trace)
 ZGraph::ZGraph
 (const ZGraph& oth,
  ZPartialOrder&& po,
- const std::vector<ZEvent>& trace,
+ const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace,
  const ZAnnotation& annotation)
   : _init(ZEvent(true)),
     _lines(oth._lines),
@@ -62,7 +63,8 @@ ZGraph::ZGraph
     _po(std::move(po), *this),
     _cache()
 {
-  trace_to_po(trace, &annotation);
+  assert(trace);
+  trace_to_po(*trace, &annotation);
 }
 
 
@@ -148,11 +150,15 @@ void ZGraph::add_event(const ZEvent *ev)
 void ZGraph::replace_event(const ZEvent *old_ev, const ZEvent *new_ev)
 {
   assert(old_ev && new_ev);
-  assert(old_ev != new_ev && (*old_ev == *new_ev)
-         && "different pointers but same ZEventID is expected");
+  assert(*old_ev == *new_ev);
   assert(old_ev->kind == new_ev->kind &&
          old_ev->id() == new_ev->id() &&
          old_ev->ml() == new_ev->ml());
+  if (old_ev == new_ev) {
+    // Latest change: we can have same pointers across runs now.
+    return;
+  }
+  // assert(old_ev != new_ev && "different pointers but same ZEventID is expected");
   assert(has_event(old_ev) && !has_event(new_ev));
 
   unsigned lid = line_id(old_ev->cpid());
@@ -261,7 +267,7 @@ bool ZGraph::has_thread(const CPid& cpid) const
 
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
-void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
+void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
                          const ZAnnotation *annotation_ptr)
 {
   assert(!trace.empty());
@@ -283,7 +289,7 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
 
   std::unordered_set<CPid> allowed_threads;
   allowed_threads.reserve(8);
-  allowed_threads.insert(trace[0].cpid());
+  allowed_threads.insert(trace[0]->cpid());
 
   std::unordered_set<CPid> threads_with_event_we_dont_add;
   threads_with_event_we_dont_add.reserve(8);
@@ -313,7 +319,7 @@ void ZGraph::trace_to_po(const std::vector<ZEvent>& trace,
   mutex_last.reserve(8);
 
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
-    const ZEvent *ev = &(*traceit);
+    const ZEvent *ev = traceit->get();
     assert(!(ev->cpid().is_auxiliary()) && "Only real threads");
 
     if (forbidden_threads.count(ev->cpid())) {

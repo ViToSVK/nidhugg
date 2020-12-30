@@ -166,5 +166,6 @@ llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZEvent& ev);
 
 
 void dump_trace(const std::vector<ZEvent>& trace);
+void dump_trace(const std::vector<std::unique_ptr<ZEvent>>& trace);
 
 #endif // _Z_EVENT_H_

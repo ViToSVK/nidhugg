@@ -35,21 +35,19 @@ class ZExplorer {
 
   TSOPSOTraceBuilder * original_TB = nullptr;
 
-  ZTrace * initial;
+  std::unique_ptr<ZTrace> initial;
 
   bool info = false;
 
   class TraceExtension {
    public:
     TraceExtension() = default;
-    TraceExtension(std::vector<ZEvent>&& extension,
+    TraceExtension(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& extension,
                    bool some_to_ann, bool assume_blocked);
 
-    TraceExtension(std::pair<std::vector<ZEvent>&&, bool>&& ext_sometoann);
+    bool empty() const { return !trace; }
 
-    bool empty() const { return (trace.empty()); }
-
-    std::vector<ZEvent> trace;
+    std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> trace;
     bool something_to_annotate;
     bool has_assume_blocked_thread;
     bool has_error;
@@ -89,7 +87,7 @@ class ZExplorer {
   TraceExtension extend_trace(std::vector<ZEvent>&& tr);
 
   bool extension_respects_annotation
-  (const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
+  (const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation& annotation,
    const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
 
   bool linearization_respects_annotation
@@ -97,7 +95,7 @@ class ZExplorer {
    const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
 
   bool global_variables_initialized_with_value_zero
-  (const std::vector<ZEvent>& trace) const;
+  (const std::vector<std::unique_ptr<ZEvent>>& trace) const;
 
 
   /* *************************** */
@@ -105,8 +103,6 @@ class ZExplorer {
   /* *************************** */
 
  public:
-
-  ~ZExplorer();
 
   ZExplorer(ZBuilderSC& tb);
 
