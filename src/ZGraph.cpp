@@ -244,17 +244,6 @@ const CPid& ZGraph::line_id_to_cpid(unsigned line_id) const
 }
 
 
-std::set<CPid> ZGraph::threads() const
-{
-  std::set<CPid> res;
-  for (const auto& cpid_lineid : _cpid_to_line) {
-    assert(!res.count(cpid_lineid.first));
-    res.insert(cpid_lineid.first);
-  }
-  return res;
-}
-
-
 bool ZGraph::has_thread(const CPid& cpid) const
 {
   return _cpid_to_line.count(cpid);
@@ -275,8 +264,8 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
 
   std::unordered_map<CPid, unsigned> cur_evidx;
   cur_evidx.reserve(8);
-  for (const CPid& cpid : threads())
-    cur_evidx.emplace(cpid, 0);
+  for (const auto& cpid_line : threads())
+    cur_evidx.emplace(cpid_line.first, 0);
 
   std::unordered_set<CPid> has_unannotated_read_or_lock;
   has_unannotated_read_or_lock.reserve(8);
@@ -742,11 +731,12 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
   std::unordered_set<const ZEvent *> mayBeCovered;
   // From the value (evid) and below, everything is covered from read by some other write
   std::unordered_map<CPid, int> covered;
-  for (const CPid& cpid : threads())
-    covered.emplace(cpid, -1);
+  for (const auto& cpid_line : threads())
+    covered.emplace(cpid_line.first, -1);
 
   // Handle other threads
-  for (const CPid& cpid : threads()) {
+  for (const auto& cpid_line : threads()) {
+    const CPid& cpid = cpid_line.first;
     if (read->cpid() != cpid) {
       int su = po.succ(read, cpid).second;
       if (su >= (int) (*this)(cpid).size()) {
@@ -767,7 +757,8 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
           // rem may be covered by some conflicting write rem -> x -> read
           mayBeCovered.emplace(rem);
           // Update cover
-          for (const CPid& covcpid : threads()) {
+          for (const auto& covcpid_line : threads()) {
+            const CPid& covcpid = covcpid_line.first;
             if (covcpid != rem->cpid()) {
               int newcov = po.pred(rem, covcpid).second;
               assert(covered.count(covcpid));
@@ -800,7 +791,8 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
            local->cpid() == read->cpid() &&
            local->event_id() < read->event_id());
     // Update cover caused by local
-    for (const CPid& covcpid : threads()) {
+    for (const auto& covcpid_line : threads()) {
+      const CPid& covcpid = covcpid_line.first;
       if (covcpid != local->cpid()) {
         int newcov = po.pred(local, covcpid).second;
         assert(covered.count(covcpid));

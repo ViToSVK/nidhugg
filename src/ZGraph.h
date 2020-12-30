@@ -32,6 +32,7 @@ using LinesT = std::vector<LineT>;
 
 class ZGraph {
   friend class ZPartialOrder;
+
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:
   const ZEvent _init; ////
@@ -53,13 +54,13 @@ class ZGraph {
 
   // CPID->LINE_ID (retained accross recursion children)
  private:
-  std::unordered_map<CPid, unsigned> _cpid_to_line; ////
+  std::map<CPid, unsigned> _cpid_to_line; ////
   std::vector<CPid> _line_to_cpid; ////
   unsigned line_id(const CPid& cpid) const;
   unsigned line_id(const ZEvent *ev) const;
  public:
+  const std::map<CPid, unsigned>& threads() const { return _cpid_to_line; }
   const CPid& line_id_to_cpid(unsigned line_id) const;
-  std::set<CPid> threads() const;
   bool has_thread(const CPid& cpid) const;
 
   // PO
@@ -103,7 +104,6 @@ class ZGraph {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ~ZGraph() {};
   // Empty
   ZGraph();
   // Initial

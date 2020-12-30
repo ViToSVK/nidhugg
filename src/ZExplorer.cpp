@@ -499,6 +499,7 @@ ZExplorer::extend_trace(std::vector<ZEvent>&& tr)
   assert(original_TB);
   clock_t init = std::clock();
   ZBuilderSC TB(*(original_TB->config), original_TB->M, std::move(tr));
+  assert(tr.empty());
   TB.extendGivenTrace();
   assert(TB.prefix && !TB.prefix->empty());
   time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;

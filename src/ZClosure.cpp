@@ -55,7 +55,8 @@ std::pair<bool, bool> ZClosure::rule_two
   }
 
   // Handle all threads except thread of read and thread of write
-  for (const CPid& cpid : gr.threads()) {
+  for (const auto& cpid_line : gr.threads()) {
+    const CPid& cpid = cpid_line.first;
     if (cpid != read->cpid() && (is_initial(write) || cpid != write->cpid())) {
       int last_pred = po.pred(read, cpid).second;
       if (last_pred == -1)
@@ -134,7 +135,8 @@ std::pair<bool, bool> ZClosure::rule_three
   }
 
   // Handle all threads except thread of read and thread of write
-  for (const CPid& cpid : gr.threads()) {
+  for (const auto& cpid_line : gr.threads()) {
+    const CPid& cpid = cpid_line.first;
     if (cpid != read->cpid() && (is_initial(write) || cpid != write->cpid())) {
       int idx = gr.get_latest_not_after_index(po, read, cpid);
       // {0,1,..,idx} in cache at same ml not happening after read
