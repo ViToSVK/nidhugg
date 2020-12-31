@@ -26,43 +26,27 @@
 //#include "ZDebug.h"
 
 
-// Empty
+// Empty/Initial
 ZGraph::ZGraph()
   : _init(ZEvent(true)),
     _lines(),
     _cpid_to_line(),
     _line_to_cpid(),
-    _po(*this),
     _cache()
 {
   assert(empty());
 }
 
 
-// Initial
-ZGraph::ZGraph(const std::vector<std::unique_ptr<ZEvent>>& trace)
-  : ZGraph()
-{
-  trace_to_po(trace, nullptr);
-}
-
-
-// Extending
-// Partial order that will be moved as original
-// Trace and annotation that will extend this copy of the graph
-ZGraph::ZGraph
-(const ZGraph& oth,
- ZPartialOrder&& po,
- const std::vector<std::unique_ptr<ZEvent>>& trace,
- const ZAnnotation& annotation)
+// Copying/Extending
+ZGraph::ZGraph(const ZGraph& oth)
   : _init(ZEvent(true)),
     _lines(oth._lines),
     _cpid_to_line(oth._cpid_to_line),
     _line_to_cpid(oth._line_to_cpid),
-    _po(std::move(po), *this),
     _cache()
 {
-  trace_to_po(trace, &annotation);
+  assert(!empty());
 }
 
 
@@ -254,8 +238,9 @@ bool ZGraph::has_thread(const CPid& cpid) const
 
 // Extends this graph so it corresponds to 'trace'
 // Check the header file for the method description
-void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
-                         const ZAnnotation *annotation_ptr)
+void ZGraph::trace_to_po
+(const std::vector<std::unique_ptr<ZEvent>>& trace,
+ ZPartialOrder& po, const ZAnnotation *annotation_ptr)
 {
   assert(!trace.empty());
   assert(trace.size() >= events_size());
@@ -353,7 +338,7 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
       cur_evidx.emplace(ev->cpid(), 0);
 
       add_line(ev);
-      _po.add_line(ev);
+      po.add_line(ev);
       assert(has_thread(ev->cpid()));
     }
     assert(cur_evidx.count(ev->cpid()));
@@ -363,7 +348,7 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
     if (ev_idx == (*this)(ev->cpid()).size()) {
       // New event
       add_event(ev);
-      _po.add_event(ev);
+      po.add_event(ev);
 
       // XXX: function pointer calls not handled
       if (is_spawn(ev))
@@ -453,7 +438,7 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
   } // end of loop for traversing trace and creating nodes
 
   shrink();
-  _po.shrink();
+  po.shrink();
 
   #ifndef NDEBUG
   assert(size() == cur_evidx.size());
@@ -469,9 +454,9 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
     assert(!(*this)(spwn->childs_cpid()).empty());
     const ZEvent *nthr = event(spwn->childs_cpid(), 0);
 
-    assert(!_po.has_edge(nthr, spwn));
-    if (!_po.has_edge(spwn, nthr))
-      _po.add_edge(spwn, nthr);
+    assert(!po.has_edge(nthr, spwn));
+    if (!po.has_edge(spwn, nthr))
+      po.add_edge(spwn, nthr);
   }
 
   // EDGES - joins
@@ -482,9 +467,9 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
     assert(lastev_idx >= 0);
     const ZEvent *wthr = event(jn->childs_cpid(), lastev_idx);\
 
-    assert(!_po.has_edge(jn, wthr));
-    if (!_po.has_edge(wthr, jn))
-      _po.add_edge(wthr, jn);
+    assert(!po.has_edge(jn, wthr));
+    if (!po.has_edge(wthr, jn))
+      po.add_edge(wthr, jn);
   }
 }
 
@@ -856,11 +841,12 @@ void ZGraph::mutation_candidates_filter_by_negative
 
 
 std::set<ZAnn> ZGraph::mutation_candidates_grouped
-(const ZEvent *read, const ZAnnotationNeg& negative) const
+(const ZPartialOrder& po, const ZEvent *read,
+ const ZAnnotationNeg& negative) const
 {
   // Collect the candidates
   std::set<const ZEvent *> obs_events = mutation_candidates_collect
-  (_po, read, std::set<ZEventID>());
+  (po, read, std::set<ZEventID>());
 
   // Filter by negative annotation
   mutation_candidates_filter_by_negative(read, obs_events, negative);
@@ -878,11 +864,4 @@ std::set<ZAnn> ZGraph::mutation_candidates_grouped
   for (const auto& v_e : anns)
     res.emplace(ZAnn(v_e.first, v_e.second));
   return res;
-}
-
-
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr)
-{
-  out << gr.to_string();
-  return out;
 }

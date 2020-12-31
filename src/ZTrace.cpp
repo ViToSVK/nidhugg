@@ -28,10 +28,14 @@ ZTrace::ZTrace
     _trace(initial_trace),
     _annotation(),
     _negative(),
-    _graph(new ZGraph(this->trace())),
+    _graph(new ZGraph()),
+    _po_part(new ZPartialOrder(graph())),
     assumeblocked(assumeblocked),
     deadlocked(false)
-{}
+{
+  assert(_graph && _trace);
+  _graph->trace_to_po(*_trace, *_po_part, nullptr);
+}
 
 
 ZTrace::ZTrace
@@ -44,11 +48,14 @@ ZTrace::ZTrace
     _trace(new_trace),
     _annotation(std::move(new_annotation)),
     _negative(parentTrace.negative()),
-    _graph(new ZGraph(parentTrace.graph(), std::move(new_po),
-                      this->trace(), this->annotation())),
+    _graph(new ZGraph(parentTrace.graph())),
+    _po_part(new ZPartialOrder(std::move(new_po), graph())),
     assumeblocked(assumeblocked),
     deadlocked(false)
-{}
+{
+  assert(_graph && _trace && _po_part);
+  _graph->trace_to_po(*_trace, *_po_part, &annotation());
+}
 
 
 const std::vector<std::unique_ptr<ZEvent>>& ZTrace::trace() const
@@ -75,6 +82,13 @@ const ZGraph& ZTrace::graph() const
 }
 
 
+const ZPartialOrder& ZTrace::po_part() const
+{
+  assert(_po_part);
+  return *_po_part;
+}
+
+
 bool ZTrace::empty() const
 {
   return (!_trace && annotation().empty() &&
@@ -94,7 +108,7 @@ std::string ZTrace::to_string(unsigned depth = 2) const
     res << _parent->to_string(depth-1);
   }
 
-  res << graph().to_string();
+  res << po_part().to_string();
   res << annotation().to_string();
   res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n";
 

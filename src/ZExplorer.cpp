@@ -186,7 +186,7 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     ZAnnotation mutated_annotation(ann_trace.annotation());
     mutated_annotation.add(read->id(), mutation);
     assert(mutated_annotation.size() == ann_trace.annotation().size() + 1);
-    auto mutated_po = ann_trace.graph().copy_po();
+    ZPartialOrder mutated_po(ann_trace.po_part());
 
     if (info) {
       llvm::errs() << "Mutation:\n" << mutation.to_string() << "\n";
@@ -261,7 +261,7 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
     ++mutations_considered;
     ZAnnotation mutated_annotation(ann_trace.annotation());
     mutated_annotation.set_last_lock(lock);
-    auto mutated_po = ann_trace.graph().copy_po();
+    ZPartialOrder mutated_po(ann_trace.po_part());
 
     if (info) {
       llvm::errs() << "Not locked before\n";
@@ -305,7 +305,7 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
   ++mutations_considered;
   ZAnnotation mutated_annotation(ann_trace.annotation());
   mutated_annotation.set_last_lock(lock);
-  auto mutated_po = ann_trace.graph().copy_po();
+  ZPartialOrder mutated_po(ann_trace.po_part());
 
   if (info) {
     llvm::errs() << "Currently unlocked by: " << *last_unlock << "\n";
@@ -382,26 +382,24 @@ bool ZExplorer::extend_and_recur
     clock_t init = std::clock();
     ZLinearization linearizer(mutated_annotation, mutated_po);
     std::vector<ZEvent> linear = linearizer.linearize();
-    end_err("finished linearisation1");
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
-    end_err("finished linearisation2");
     ++total_lin;
     total_parents += linearizer.num_parents;
     total_children += linearizer.num_children;
     double cur_br = (linearizer.num_parents==0) ? 1.0 :
       ((double)linearizer.num_children/linearizer.num_parents);
     avg2_branch += ((double)(cur_br - avg2_branch)/total_lin);
-    if(cur_br>max_branch) {
+    if (cur_br > max_branch) {
       max_branch = cur_br;
     }
-    end_err("finished linearisation3");
+    err_msg("finished linearisation");
     if (linear.empty()) {
       ++linearization_failed;
       end_err("0a");
       return false;
     }
     ++linearization_succeeded;
-    assert(total_lin==linearization_succeeded+linearization_failed);
+    assert(total_lin == linearization_succeeded + linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,
                                              mutated_po, parent_trace));
     mutated_trace = extend_trace(std::move(linear));
@@ -571,10 +569,6 @@ bool ZExplorer::linearization_respects_annotation
   // Trace index of the last lock + whether given ML is currently locked
   std::unordered_map<SymAddrSize, int> last_lock;
   std::unordered_set<SymAddrSize> locked;
-  // ThreadID -> ML -> Writes in store queue of thr for ml
-  std::unordered_map
-    <int, std::unordered_map
-     <SymAddrSize, std::list<int>>> storeQueue;
   // Observation in trace: Read -> id in trace of observed event
   std::unordered_map<int, int> observed_trace_id;
 

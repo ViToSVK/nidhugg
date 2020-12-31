@@ -31,6 +31,7 @@ class ZTrace {
   const ZAnnotation _annotation;
   ZAnnotationNeg _negative;
   const std::shared_ptr<ZGraph> _graph;
+  const std::shared_ptr<ZPartialOrder> _po_part;
 
  public:
   const std::vector<std::unique_ptr<ZEvent>>& trace() const;
@@ -39,6 +40,7 @@ class ZTrace {
   ZAnnotationNeg& negative();
   const ZAnnotationNeg& negative() const;
   const ZGraph& graph() const;
+  const ZPartialOrder& po_part() const;
 
   // Whether trace has an assume-blocked thread
   bool assumeblocked;
@@ -59,7 +61,7 @@ class ZTrace {
   }
 
   std::set<ZAnn> mutation_candidates(const ZEvent *read) const {
-    return graph().mutation_candidates_grouped(read, negative());
+    return graph().mutation_candidates_grouped(po_part(), read, negative());
   }
 
   /* *************************** */

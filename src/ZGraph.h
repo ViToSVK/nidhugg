@@ -63,12 +63,6 @@ class ZGraph {
   const CPid& line_id_to_cpid(unsigned line_id) const;
   bool has_thread(const CPid& cpid) const;
 
-  // PO
- private:
-  ZPartialOrder _po; ////
- public:
-  ZPartialOrder copy_po() const { return ZPartialOrder(_po); }
-
   // CACHE
   class Cache {
    public:
@@ -89,8 +83,8 @@ class ZGraph {
   const Cache& cache() const { return _cache; }
 
   bool empty() const {
-    return (_lines.empty() && _cpid_to_line.empty() && _line_to_cpid.empty() &&
-            _po.empty() && _cache.empty());
+    return (_lines.empty() && _cpid_to_line.empty() &&
+            _line_to_cpid.empty() && _cache.empty());
   }
   size_t size() const { return _lines.size(); }
   size_t events_size() const {
@@ -104,22 +98,13 @@ class ZGraph {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  // Empty
+  // Empty/Initial
   ZGraph();
-  // Initial
-  ZGraph(const std::vector<std::unique_ptr<ZEvent>>& trace);
   // Moving
   ZGraph(ZGraph&& oth) = default;
+  // Copying/Extending
+  ZGraph(const ZGraph& oth);
 
-  // Extending
-  // Partial order that will be moved
-  // Trace and annotation that will extend this copy of the graph
-  ZGraph(const ZGraph& oth,
-         ZPartialOrder&& po,
-         const std::vector<std::unique_ptr<ZEvent>>& trace,
-         const ZAnnotation& annotation);
-
-  ZGraph(const ZGraph& oth) = delete;
   ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph& operator=(const ZGraph& oth) = delete;
 
@@ -127,7 +112,7 @@ class ZGraph {
   /* GRAPH EXTENSION             */
   /* *************************** */
 
- private:
+ public:
 
   // At the point of calling the method, this graph
   // is linked to some 'orig_trace', graph's nodes
@@ -140,7 +125,8 @@ class ZGraph {
   // 3) partial order is extended to accomodate new
   //    threads+events while keeping all the original info
   // Special case: initial trace extends an empty graph
-  void trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation *annotation_ptr);
+  void trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
+                   ZPartialOrder& po, const ZAnnotation *annotation_ptr);
 
 
   /* *************************** */
@@ -179,11 +165,8 @@ class ZGraph {
 
   // Returns mutation candidates for a read node grouped by value
   std::set<ZAnn> mutation_candidates_grouped
-  (const ZEvent *read, const ZAnnotationNeg& negative) const;
-
-  std::string to_string() const { return _po.to_string(); }
-  void dump() const { _po.dump(); }
+  (const ZPartialOrder& po, const ZEvent *read,
+   const ZAnnotationNeg& negative) const;
 };
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr);
 
 #endif // __Z_GRAPH_H__
