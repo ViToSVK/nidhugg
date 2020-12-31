@@ -24,11 +24,11 @@
 ZTrace::ZTrace
 (const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
  bool assumeblocked)
-  : parent(nullptr),
-    trace(initial_trace),
-    annotation(),
-    negative(),
-    graph(this->trace),
+  : _parent(nullptr),
+    _trace(initial_trace),
+    _annotation(),
+    _negative(),
+    _graph(new ZGraph(this->trace())),
     assumeblocked(assumeblocked),
     deadlocked(false)
 {}
@@ -40,31 +40,62 @@ ZTrace::ZTrace
  ZAnnotation&& new_annotation,
  ZPartialOrder&& new_po,
  bool assumeblocked)
-  : parent(&parentTrace),
-    trace(new_trace),
-    annotation(std::move(new_annotation)),
-    negative(parentTrace.negative),
-    graph(parentTrace.graph, std::move(new_po),
-          this->trace, this->annotation),
+  : _parent(&parentTrace),
+    _trace(new_trace),
+    _annotation(std::move(new_annotation)),
+    _negative(parentTrace.negative()),
+    _graph(new ZGraph(parentTrace.graph(), std::move(new_po),
+                      this->trace(), this->annotation())),
     assumeblocked(assumeblocked),
     deadlocked(false)
 {}
+
+
+const std::vector<std::unique_ptr<ZEvent>>& ZTrace::trace() const
+{
+  assert(_trace);
+  return *_trace;
+}
+
+
+const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& ZTrace::trace_ptr() const
+{
+  assert(_trace);
+  return _trace;
+}
+
+const ZAnnotation& ZTrace::annotation() const { return _annotation; }
+ZAnnotationNeg& ZTrace::negative() { return _negative; }
+const ZAnnotationNeg& ZTrace::negative() const { return _negative; }
+
+const ZGraph& ZTrace::graph() const
+{
+  assert(_graph);
+  return *_graph;
+}
+
+
+bool ZTrace::empty() const
+{
+  return (!_trace && annotation().empty() &&
+          _negative.empty() && !_graph);
+}
 
 
 std::string ZTrace::to_string(unsigned depth = 2) const
 {
   std::stringstream res;
 
-  if (!parent) {
+  if (!_parent) {
     res << "########################\n"
         << "#     INITIAL TRACE    #\n"
         << "########################\n";
   } else if (depth > 0) {
-    res << parent->to_string(depth-1);
+    res << _parent->to_string(depth-1);
   }
 
-  res << graph.to_string();
-  res << annotation.to_string();
+  res << graph().to_string();
+  res << annotation().to_string();
   res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n";
 
   return res.str();

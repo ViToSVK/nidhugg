@@ -26,13 +26,19 @@
 
 class ZTrace {
  private:
-  const ZTrace *parent;
+  const ZTrace *_parent;
+  const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> _trace;
+  const ZAnnotation _annotation;
+  ZAnnotationNeg _negative;
+  const std::shared_ptr<ZGraph> _graph;
 
  public:
-  const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> trace;
-  const ZAnnotation annotation;
-  ZAnnotationNeg negative;
-  ZGraph graph;
+  const std::vector<std::unique_ptr<ZEvent>>& trace() const;
+  const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace_ptr() const;
+  const ZAnnotation& annotation() const;
+  ZAnnotationNeg& negative();
+  const ZAnnotationNeg& negative() const;
+  const ZGraph& graph() const;
 
   // Whether trace has an assume-blocked thread
   bool assumeblocked;
@@ -40,11 +46,7 @@ class ZTrace {
   // is possible (i.e. deadlocked). We'll count it as full
   mutable bool deadlocked;
 
-  bool empty() const {
-    return (!trace && annotation.empty() &&
-            negative.empty() && graph.empty());
-  }
-
+  bool empty() const;
   std::string to_string(unsigned depth) const;
   void dump() const;
 
@@ -53,11 +55,11 @@ class ZTrace {
   /* *************************** */
 
   std::list<const ZEvent *> events_to_mutate() const {
-    return graph.events_to_mutate(annotation);
+    return graph().events_to_mutate(annotation());
   }
 
   std::set<ZAnn> mutation_candidates(const ZEvent *read) const {
-    return graph.mutation_candidates_grouped(read, negative);
+    return graph().mutation_candidates_grouped(read, negative());
   }
 
   /* *************************** */

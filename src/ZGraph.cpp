@@ -40,11 +40,10 @@ ZGraph::ZGraph()
 
 
 // Initial
-ZGraph::ZGraph(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace)
+ZGraph::ZGraph(const std::vector<std::unique_ptr<ZEvent>>& trace)
   : ZGraph()
 {
-  assert(trace);
-  trace_to_po(*trace, nullptr);
+  trace_to_po(trace, nullptr);
 }
 
 
@@ -54,7 +53,7 @@ ZGraph::ZGraph(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trac
 ZGraph::ZGraph
 (const ZGraph& oth,
  ZPartialOrder&& po,
- const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace,
+ const std::vector<std::unique_ptr<ZEvent>>& trace,
  const ZAnnotation& annotation)
   : _init(ZEvent(true)),
     _lines(oth._lines),
@@ -63,8 +62,7 @@ ZGraph::ZGraph
     _po(std::move(po), *this),
     _cache()
 {
-  assert(trace);
-  trace_to_po(*trace, &annotation);
+  trace_to_po(trace, &annotation);
 }
 
 

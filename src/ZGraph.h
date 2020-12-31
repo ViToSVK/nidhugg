@@ -107,7 +107,7 @@ class ZGraph {
   // Empty
   ZGraph();
   // Initial
-  ZGraph(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace);
+  ZGraph(const std::vector<std::unique_ptr<ZEvent>>& trace);
   // Moving
   ZGraph(ZGraph&& oth) = default;
 
@@ -116,7 +116,7 @@ class ZGraph {
   // Trace and annotation that will extend this copy of the graph
   ZGraph(const ZGraph& oth,
          ZPartialOrder&& po,
-         const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& trace,
+         const std::vector<std::unique_ptr<ZEvent>>& trace,
          const ZAnnotation& annotation);
 
   ZGraph(const ZGraph& oth) = delete;

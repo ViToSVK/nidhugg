@@ -112,7 +112,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   if (info) {
     llvm::errs() << "-------------------------exploreRec\n\n";
   }
-  assert(global_variables_initialized_with_value_zero(*ann_trace.trace));
+  assert(global_variables_initialized_with_value_zero(ann_trace.trace()));
 
   auto events_to_mutate = ann_trace.events_to_mutate();
   assert(!events_to_mutate.empty());
@@ -140,8 +140,8 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
         return error;
       }
     }
-    ann_trace.negative.update
-      (ev, ann_trace.graph.thread_sizes_minus_one());
+    ann_trace.negative().update
+      (ev, ann_trace.graph().thread_sizes_minus_one());
   }
 
   // Done with this recursion node
@@ -183,10 +183,10 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
   for (auto& mutation : mutation_candidates) {
     ++mutations_considered;
 
-    ZAnnotation mutated_annotation(ann_trace.annotation);
+    ZAnnotation mutated_annotation(ann_trace.annotation());
     mutated_annotation.add(read->id(), mutation);
-    assert(mutated_annotation.size() == ann_trace.annotation.size() + 1);
-    auto mutated_po = ann_trace.graph.copy_po();
+    assert(mutated_annotation.size() == ann_trace.annotation().size() + 1);
+    auto mutated_po = ann_trace.graph().copy_po();
 
     if (info) {
       llvm::errs() << "Mutation:\n" << mutation.to_string() << "\n";
@@ -198,10 +198,10 @@ bool ZExplorer::mutate_read(const ZTrace& ann_trace, const ZEvent *read)
     time_closure += (double)(clock() - init)/CLOCKS_PER_SEC;
 
     bool mutation_follows_current_trace = false;
-    assert(read->observed_trace_id() < (int) ann_trace.trace->size());
+    assert(read->observed_trace_id() < (int) ann_trace.trace().size());
     ZEventID observed_id = (read->observed_trace_id() < 0
-      ? ann_trace.graph.initial()->id()
-      : ann_trace.trace->at(read->observed_trace_id())->id());
+      ? ann_trace.graph().initial()->id()
+      : ann_trace.trace().at(read->observed_trace_id())->id());
     for (const ZEventID& good : mutation.goodwrites) {
       if (observed_id == good) {
         mutation_follows_current_trace = true;
@@ -245,10 +245,10 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
     llvm::errs() << "Lock to mutate: " << *lock << "\n";
   }
 
-  if (!ann_trace.annotation.location_has_some_lock(lock)) {
+  if (!ann_trace.annotation().location_has_some_lock(lock)) {
     // This lock hasn't been touched before
     ann_trace.deadlocked = false;
-    if (ann_trace.negative.forbids_initial(lock)) {
+    if (ann_trace.negative().forbids_initial(lock)) {
       // Negative annotation forbids initial unlock
       end_err("0a");
       if (info) {
@@ -259,9 +259,9 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
 
     // Trivially realizable
     ++mutations_considered;
-    ZAnnotation mutated_annotation(ann_trace.annotation);
+    ZAnnotation mutated_annotation(ann_trace.annotation());
     mutated_annotation.set_last_lock(lock);
-    auto mutated_po = ann_trace.graph.copy_po();
+    auto mutated_po = ann_trace.graph().copy_po();
 
     if (info) {
       llvm::errs() << "Not locked before\n";
@@ -278,8 +278,8 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
   }
 
   // The lock has been touched before
-  auto last_lock_obs = ann_trace.annotation.last_lock(lock);
-  auto last_unlock = ann_trace.graph.unlock_of_this_lock(last_lock_obs);
+  auto last_lock_obs = ann_trace.annotation().last_lock(lock);
+  auto last_unlock = ann_trace.graph().unlock_of_this_lock(last_lock_obs);
 
   if (!last_unlock) {
     // This lock is currently locked
@@ -295,7 +295,7 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
   assert(last_unlock && is_unlock(last_unlock) && same_ml(lock, last_unlock));
   ann_trace.deadlocked = false;
 
-  if (ann_trace.negative.forbids(lock, last_unlock)) {
+  if (ann_trace.negative().forbids(lock, last_unlock)) {
     // Negative annotation forbids this unlock
     end_err("0c");
     return false;
@@ -303,9 +303,9 @@ bool ZExplorer::mutate_lock(const ZTrace& ann_trace, const ZEvent *lock)
 
   // Realizable
   ++mutations_considered;
-  ZAnnotation mutated_annotation(ann_trace.annotation);
+  ZAnnotation mutated_annotation(ann_trace.annotation());
   mutated_annotation.set_last_lock(lock);
-  auto mutated_po = ann_trace.graph.copy_po();
+  auto mutated_po = ann_trace.graph().copy_po();
 
   if (info) {
     llvm::errs() << "Currently unlocked by: " << *last_unlock << "\n";
@@ -460,20 +460,20 @@ ZExplorer::reuse_trace
 {
   start_err("reuseTrace..");
   bool something_to_annotate = false;
-  for (int i = parent_trace.trace->size() - 1; i >= 0; --i) {
-    const ZEvent& ev = *(parent_trace.trace->at(i));
+  for (int i = parent_trace.trace().size() - 1; i >= 0; --i) {
+    const ZEvent& ev = *(parent_trace.trace().at(i));
     assert(!something_to_annotate);
     if (is_read(ev) && (!mutated_annotation.defines(&ev))) {
       something_to_annotate = true;
       break;
     }
     if (is_lock(ev)) {
-      if (!parent_trace.graph.has_event(&ev)) {
+      if (!parent_trace.graph().has_event(&ev)) {
         something_to_annotate = true;
         break;
       }
       else if (ev.event_id() == // last in its thread
-               (parent_trace.graph)(ev.cpid()).size() - 1
+               (parent_trace.graph())(ev.cpid()).size() - 1
                && !mutated_annotation.is_last_lock(&ev)) {
         something_to_annotate = true;
         break;
@@ -481,7 +481,7 @@ ZExplorer::reuse_trace
     }
   }
 
-  auto res = TraceExtension(parent_trace.trace, something_to_annotate,
+  auto res = TraceExtension(parent_trace.trace_ptr(), something_to_annotate,
                             parent_trace.assumeblocked);
   end_err("?");
   return res;
