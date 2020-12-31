@@ -293,20 +293,6 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
   std::vector<const ZEvent *> joins;
   joins.reserve(8);
 
-  std::unordered_map<SymAddrSize, const ZEvent *> mutex_inits;
-  mutex_inits.reserve(8);
-
-  std::unordered_map<SymAddrSize, const ZEvent *> mutex_destroys;
-  mutex_destroys.reserve(8);
-
-  std::unordered_map
-    <SymAddrSize, std::unordered_map<CPid, const ZEvent *>> mutex_first;
-  mutex_first.reserve(8);
-
-  std::unordered_map
-    <SymAddrSize, std::unordered_map<CPid, const ZEvent *>> mutex_last;
-  mutex_last.reserve(8);
-
   for (auto traceit = trace.begin(); traceit != trace.end(); ++traceit) {
     const ZEvent *ev = traceit->get();
     assert(!(ev->cpid().is_auxiliary()) && "Only real threads");
@@ -446,14 +432,6 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
 
     // Handle Mutex events
     //
-    if (is_mutex_init(ev)) {
-      assert(!mutex_inits.count(ev->ml()));
-      mutex_inits.emplace(ev->ml(), ev);
-    }
-    if (is_mutex_destroy(ev)) {
-      assert(!mutex_destroys.count(ev->ml()));
-      mutex_destroys.emplace(ev->ml(), ev);
-    }
     if (is_lock(ev)) {
       // Check if ev is not annotated yet
       if (!annotation_ptr || !(annotation_ptr->location_has_some_lock(ev))) {
@@ -472,21 +450,6 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
           has_unannotated_read_or_lock.insert(ev->cpid());
         }
       }
-    }
-    if (is_lock(ev) || is_unlock(ev)) {
-      // For each ml, for each thread, remember first access
-      if (!mutex_first.count(ev->ml())) {
-        mutex_first.emplace(ev->ml(), std::unordered_map<CPid, const ZEvent *>());
-        mutex_first[ev->ml()].reserve(8);
-      }
-      if (!mutex_first[ev->ml()].count(ev->cpid()))
-        mutex_first[ev->ml()].emplace(ev->cpid(), ev);
-      // For each ml, for each thread, remember last access
-      if (!mutex_last.count(ev->ml())) {
-        mutex_last.emplace(ev->ml(), std::unordered_map<CPid, const ZEvent *>());
-        mutex_last[ev->ml()].reserve(8);
-      }
-      mutex_last[ev->ml()][ev->cpid()] = ev;
     }
 
   } // end of loop for traversing trace and creating nodes
@@ -524,38 +487,6 @@ void ZGraph::trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
     assert(!_po.has_edge(jn, wthr));
     if (!_po.has_edge(wthr, jn))
       _po.add_edge(wthr, jn);
-  }
-
-  // EDGES - mutex inits
-  for (auto& in : mutex_inits) {
-    const SymAddrSize& loc_init = in.first;
-    const ZEvent *ev_init = in.second;
-
-    if (mutex_first.count(loc_init)) {
-      for (auto& cpid_ev_first : mutex_first[loc_init]) {
-        const ZEvent *ev_first = cpid_ev_first.second;
-
-        assert(!_po.has_edge(ev_first, ev_init));
-        if (!_po.has_edge(ev_init, ev_first))
-          _po.add_edge(ev_init, ev_first);
-      }
-    } else assert(!mutex_last.count(loc_init));
-  }
-
-  // EDGES - mutex destroys
-  for (auto& de : mutex_destroys) {
-    const SymAddrSize& loc_destroy = de.first;
-    const ZEvent *ev_destroy = de.second;
-
-    if (mutex_last.count(loc_destroy)) {
-      for (auto& cpid_ev_last : mutex_last[loc_destroy]) {
-        const ZEvent *ev_last = cpid_ev_last.second;
-
-        assert(!_po.has_edge(ev_destroy, ev_last));
-        if (!_po.has_edge(ev_last, ev_destroy))
-          _po.add_edge(ev_last, ev_destroy);
-      }
-    } else assert(!mutex_first.count(loc_destroy));
   }
 }
 

@@ -636,8 +636,8 @@ void ZBuilderSC::mutex_init(const SymAddrSize &ml)
   fence();
   assert(!mutexes.count(ml.addr));
   assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::M_INIT;
-  mayConflict(&ml);
+  // curnode().kind = ZEvent::Kind::M_INIT;
+  // mayConflict(&ml);
   mutexes[ml.addr] = Mutex(-1); // prefix_idx
   end_err();
 }
@@ -655,8 +655,8 @@ void ZBuilderSC::mutex_destroy(const SymAddrSize &ml)
   }
   assert(mutexes.count(ml.addr));
   assert(curnode().kind == ZEvent::Kind::DUMMY);
-  curnode().kind = ZEvent::Kind::M_DESTROY;
-  mayConflict(&ml);
+  // curnode().kind = ZEvent::Kind::M_DESTROY;
+  // mayConflict(&ml);
   mutexes.erase(ml.addr);
   end_err();
 }
