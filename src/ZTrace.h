@@ -27,6 +27,7 @@
 class ZTrace {
  private:
   const ZTrace *_parent;
+
   const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> _trace;
   const ZAnnotation _annotation;
   ZAnnotationNeg _negative;
@@ -42,11 +43,16 @@ class ZTrace {
   const ZGraph& graph() const;
   const ZPartialOrder& po_part() const;
 
+  void set_negative(const ZAnnotationNeg& oth);
+
   // Whether trace has an assume-blocked thread
   bool assumeblocked;
   // Whether this annotated trace is not full but no mutation
   // is possible (i.e. deadlocked). We'll count it as full
   mutable bool deadlocked;
+
+  std::map<const ZEvent *, std::map<int, std::unique_ptr<ZTrace>>> children_read;
+  std::map<const ZEvent *, std::unique_ptr<ZTrace>> children_lock;
 
   bool empty() const;
   std::string to_string(unsigned depth) const;

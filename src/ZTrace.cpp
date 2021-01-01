@@ -47,7 +47,7 @@ ZTrace::ZTrace
   : _parent(&parentTrace),
     _trace(new_trace),
     _annotation(std::move(new_annotation)),
-    _negative(parentTrace.negative()),
+    _negative(),
     _graph(new ZGraph(parentTrace.graph())),
     _po_part(new ZPartialOrder(std::move(new_po), graph())),
     assumeblocked(assumeblocked),
@@ -86,6 +86,13 @@ const ZPartialOrder& ZTrace::po_part() const
 {
   assert(_po_part);
   return *_po_part;
+}
+
+
+void ZTrace::set_negative(const ZAnnotationNeg& oth)
+{
+  assert(negative().empty());
+  _negative.set_mapping(oth);
 }
 
 

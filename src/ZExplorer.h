@@ -37,8 +37,6 @@ class ZExplorer {
 
   std::unique_ptr<ZTrace> initial;
 
-  bool info = false;
-
   class TraceExtension {
    public:
     TraceExtension() = default;
@@ -68,16 +66,18 @@ class ZExplorer {
 
   bool explore_rec(ZTrace& ann_trace);
 
-  bool mutate_read(const ZTrace& ann_trace, const ZEvent *read);
+  bool mutate_read
+  (ZTrace& ann_trace, const ZEvent *read);
 
-  bool mutate_lock(const ZTrace& ann_trace, const ZEvent *lock);
+  bool mutate_lock
+  (ZTrace& ann_trace, const ZEvent *lock);
 
-  bool close_po
+  std::pair<bool, std::unique_ptr<ZTrace>> close_po
   (const ZTrace& ann_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
    bool mutation_follows_current_trace);
 
-  bool extend_and_recur
+  std::pair<bool, std::unique_ptr<ZTrace>> realize_mutation
   (const ZTrace& parent_trace, ZAnnotation&& mutated_annotation,
    ZPartialOrder&& mutated_po, bool mutation_follows_current_trace);
 
