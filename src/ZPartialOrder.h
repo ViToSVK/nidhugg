@@ -54,7 +54,16 @@ class ZPartialOrder {
   // For each thread, up until what index (not including that index)
   // the events of the corresponding thread are closure-safe
   std::vector<int> _closure_safe_until;
+  // How many events of the given line does the partial order have?
+  std::vector<int> _line_sizes;
+  int line_size(unsigned line_id) const;
  public:
+  // Does the partial order span this thread?
+  bool spans_thread(const CPid& cpid) const;
+  // How many events of the given thread does the partial order have?
+  int thread_size(const CPid& cpid) const;
+  // Does the partial order span this event?
+  bool spans_event(const ZEvent *ev) const;
   // Is this annotated read provably closure-safe?
   bool is_closure_safe(const ZEvent *read) const;
   // Smallest (i.e. earliest) successor. Returns:
@@ -94,7 +103,7 @@ class ZPartialOrder {
 
   bool empty() const {
     assert(_succ.size() == _pred.size());
-    return _succ.empty() && _closure_safe_until.empty();
+    return _succ.empty() && _closure_safe_until.empty() && _line_sizes.empty();
   }
   size_t size() const {
     assert(_succ.size() == _pred.size());
