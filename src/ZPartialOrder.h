@@ -57,7 +57,11 @@ class ZPartialOrder {
   // How many events of the given line does the partial order have?
   std::vector<int> _line_sizes;
   int line_size(unsigned line_id) const;
+  // Iterate through threads that this partial order spans
+  std::vector<CPid> _threads_spanned;
  public:
+  const std::vector<CPid>& threads_spanned() const;
+  std::map<CPid, int> thread_sizes_minus_one() const;
   // Does the partial order span this thread?
   bool spans_thread(const CPid& cpid) const;
   // How many events of the given thread does the partial order have?

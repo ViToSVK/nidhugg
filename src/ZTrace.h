@@ -63,7 +63,7 @@ class ZTrace {
   /* *************************** */
 
   std::list<const ZEvent *> events_to_mutate() const {
-    return graph().events_to_mutate(annotation());
+    return graph().events_to_mutate(po_part(), annotation());
   }
 
   std::set<ZAnn> mutation_candidates(const ZEvent *read) const {

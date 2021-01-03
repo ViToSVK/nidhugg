@@ -49,7 +49,6 @@ class ZGraph {
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const CPid& cpid, int event_id) const;
   bool has_event(const ZEvent *ev) const;
-  std::map<CPid, int> thread_sizes_minus_one() const;
   void shrink();
 
   // CPID->LINE_ID (retained accross recursion children)
@@ -151,7 +150,8 @@ class ZGraph {
   const ZEvent *get_local_write(const ZEvent *read) const;
 
   // Returns events-to-mutate in a specified order
-  std::list<const ZEvent *> events_to_mutate(const ZAnnotation& annotation) const;
+  std::list<const ZEvent *> events_to_mutate
+  (const ZPartialOrder& po, const ZAnnotation& annotation) const;
 
   // Collect all write events visible to the read
   std::set<const ZEvent *> mutation_candidates_collect

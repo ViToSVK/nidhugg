@@ -117,7 +117,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   // Unset this when any mutation succeeds
   ann_trace.deadlocked = true;
 
-  auto negative_update = ann_trace.graph().thread_sizes_minus_one();
+  auto negative_update = ann_trace.po_part().thread_sizes_minus_one();
 
   // Collect mutations
   for (const auto& ev : events_to_mutate) {

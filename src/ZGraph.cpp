@@ -176,19 +176,6 @@ bool ZGraph::has_event(const ZEvent *ev) const
 }
 
 
-std::map<CPid, int> ZGraph::thread_sizes_minus_one() const
-{
-  std::map<CPid, int> res;
-  for (unsigned thr = 0; thr < _lines.size(); ++thr) {
-    assert(!_lines[thr].empty());
-    CPid cpid = line_id_to_cpid(thr);
-    assert(!res.count(cpid));
-    res.emplace(cpid, _lines[thr].size() - 1);
-  }
-  return res;
-}
-
-
 void ZGraph::shrink()
 {
   _lines.shrink_to_fit();
@@ -612,13 +599,20 @@ const ZEvent * ZGraph::get_local_write(const ZEvent *read) const
 }
 
 
-std::list<const ZEvent *> ZGraph::events_to_mutate(const ZAnnotation& annotation) const
+std::list<const ZEvent *> ZGraph::events_to_mutate
+(const ZPartialOrder& po, const ZAnnotation& annotation) const
 {
   auto res = std::list<const ZEvent *>();
-  for (unsigned i = 0; i < _lines.size(); ++i) {
+  for (unsigned i = 0; i < po.threads_spanned().size(); ++i) {
+    assert(i < _lines.size() && i < _line_to_cpid.size());
+    const CPid& cpid = line_id_to_cpid(i);
+    assert(po.spans_thread(cpid));
     assert(!_lines[i].empty());
-    const ZEvent * last_ev = _lines[i][ _lines[i].size() - 1 ];
+    int thread_size = po.thread_size(cpid);
+    assert(thread_size > 0);
+    const ZEvent * last_ev = _lines[i][ thread_size - 1 ];
     assert(last_ev);
+    assert(po.spans_event(last_ev));
     // When the last event of a thread is lock, it suffices to ask whether it's
     // the 'last-annotated' lock, because if it was annotated before, it would
     // not be the last event of the thread - at least its unlock would follow

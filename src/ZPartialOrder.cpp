@@ -31,7 +31,8 @@ ZPartialOrder::ZPartialOrder()
     _succ(),
     _pred(),
     _closure_safe_until(),
-    _line_sizes()
+    _line_sizes(),
+    _threads_spanned()
 {
   assert(empty());
 }
@@ -43,7 +44,8 @@ ZPartialOrder::ZPartialOrder(const ZGraph& graph)
     _succ(),
     _pred(),
     _closure_safe_until(),
-    _line_sizes()
+    _line_sizes(),
+    _threads_spanned()
 {
   assert(empty());
 }
@@ -55,7 +57,8 @@ ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
     _succ(std::move(oth._succ)),
     _pred(std::move(oth._pred)),
     _closure_safe_until(std::move(oth._closure_safe_until)),
-    _line_sizes(std::move(oth._line_sizes))
+    _line_sizes(std::move(oth._line_sizes)),
+    _threads_spanned(std::move(oth._threads_spanned))
 {
   // We extend from a closed partial order, hence everything is safe
   assert(graph.size() == graph._cpid_to_line.size());
@@ -66,9 +69,29 @@ ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
 }
 
 
+const std::vector<CPid>& ZPartialOrder::threads_spanned() const
+{
+  return _threads_spanned;
+}
+
+
+std::map<CPid, int> ZPartialOrder::thread_sizes_minus_one() const
+{
+  std::map<CPid, int> res;
+  for (const CPid& cpid : threads_spanned()) {
+    assert(spans_thread(cpid));
+    assert(!res.count(cpid));
+    assert(thread_size(cpid) > 0);
+    res.emplace(cpid, thread_size(cpid) - 1);
+  }
+  return res;
+}
+
+
 int ZPartialOrder::line_size(unsigned line_id) const
 {
   assert(line_id < _succ.size() && line_id < _line_sizes.size());
+  assert(line_id < _threads_spanned.size());
   int size = _line_sizes[line_id];
   assert(size >= 0);
   return size;
@@ -80,7 +103,10 @@ bool ZPartialOrder::spans_thread(const CPid& cpid) const
   assert(graph.has_thread(cpid));
   unsigned line_id = graph.line_id(cpid);
   assert(_succ.size() == _pred.size());
-  return (line_id < _succ.size());
+  assert(_succ.size() == _threads_spanned.size());
+  bool res = (line_id < _threads_spanned.size());
+  assert(!res || _threads_spanned[line_id] == cpid);
+  return res;
 }
 
 
@@ -385,7 +411,9 @@ void ZPartialOrder::add_line(const ZEvent * ev)
   assert(graph.line_id(ev) >= _succ.size());
   assert(_succ.size() == _pred.size());
   _line_sizes.push_back(0);
+  _threads_spanned.push_back(ev->cpid());
   assert(_succ.size() + 1 == _line_sizes.size());
+  assert(_threads_spanned.size() == _line_sizes.size());
 
   // Clocks from original lines to new one
   for (unsigned li=0; li<_succ.size(); li++) {
@@ -493,6 +521,8 @@ void ZPartialOrder::shrink()
   }
   assert(_closure_safe_until.size() == _succ.size());
   _closure_safe_until.shrink_to_fit();
+  _line_sizes.shrink_to_fit();
+  _threads_spanned.shrink_to_fit();
 }
 
 
