@@ -557,9 +557,10 @@ int ZGraph::get_latest_not_after_index
   assert(_cache.writes.at(read->ml()).count(cpid));
 
   int su = po.succ(read, cpid).second;
-  if (su >= (int) (*this)(cpid).size()) {
+  int thr_size = po.thread_size(cpid);
+  if (su >= thr_size) {
     assert(su == INT_MAX);
-    su = (int) (*this)(cpid).size();
+    su = thr_size;
   }
   // find tail write in cpid, starting from (and including) su-1, for read-ml
   // return its index in cache.writes
@@ -584,6 +585,7 @@ const ZEvent * ZGraph::get_latest_not_after
   assert(is_write(res) && same_ml(res, read) &&
          res->cpid() != read->cpid() && res->cpid() == cpid &&
          !po.has_edge(read, res));
+  assert(po.spans_event(res));
   return res;
 }
 
@@ -608,9 +610,9 @@ std::list<const ZEvent *> ZGraph::events_to_mutate
     const CPid& cpid = line_id_to_cpid(i);
     assert(po.spans_thread(cpid));
     assert(!_lines[i].empty());
-    int thread_size = po.thread_size(cpid);
-    assert(thread_size > 0);
-    const ZEvent * last_ev = _lines[i][ thread_size - 1 ];
+    int thr_size = po.thread_size(cpid);
+    assert(thr_size > 0);
+    const ZEvent * last_ev = _lines[i][ thr_size - 1 ];
     assert(last_ev);
     assert(po.spans_event(last_ev));
     // When the last event of a thread is lock, it suffices to ask whether it's
@@ -639,54 +641,54 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
   std::unordered_set<const ZEvent *> mayBeCovered;
   // From the value (evid) and below, everything is covered from read by some other write
   std::unordered_map<CPid, int> covered;
-  for (const auto& cpid_line : threads())
-    covered.emplace(cpid_line.first, -1);
+  for (const CPid& cpid : po.threads_spanned())
+    covered.emplace(cpid, -1);
 
   // Handle other threads
-  for (const auto& cpid_line : threads()) {
-    const CPid& cpid = cpid_line.first;
-    if (read->cpid() != cpid) {
-      int su = po.succ(read, cpid).second;
-      if (su >= (int) (*this)(cpid).size()) {
-        assert(su == INT_MAX);
-        su = (int) (*this)(cpid).size();
-      }
-      // Cache-using implementation below; Naive -- see comment after the method
-      // Tail write index to cache.writes
-      int w_idx = get_tailw_index(read->ml(), cpid, su - 1);
-      assert(w_idx == get_latest_not_after_index(po, read, cpid));
-      while (w_idx > -1) {
-        const ZEvent *rem = _cache.writes.at(read->ml()).at(cpid).at(w_idx); // using 'at' because this method is const
-        assert(rem && is_write(rem) && same_ml(read, rem) && rem->cpid() == cpid);
-        assert(!po.has_edge(read, rem));
-        if (po.has_edge(rem, read)) {
-          // Others in this thread are covered from read by rem
-          assert(rem->event_id() <= po.pred(read, cpid).second);
-          // rem may be covered by some conflicting write rem -> x -> read
-          mayBeCovered.emplace(rem);
-          // Update cover
-          for (const auto& covcpid_line : threads()) {
-            const CPid& covcpid = covcpid_line.first;
-            if (covcpid != rem->cpid()) {
-              int newcov = po.pred(rem, covcpid).second;
-              assert(covered.count(covcpid));
-              if (newcov > covered[covcpid])
-                covered[covcpid] = newcov;
-            }
-          }
-          // Break -- Others in this thread are covered from read by rem
-          break;
-        } else {
-          notCovered.emplace(rem);
-          --w_idx;
-          // VISIBLE check
-          if (!check_if_any_is_visible.empty() &&
-              check_if_any_is_visible.count(rem->id())) {
-            std::set<const ZEvent *> visible_hit;
-            visible_hit.emplace(rem);
-            return visible_hit;
-          }
+  for (const CPid& cpid : po.threads_spanned()) {
+    if (read->cpid() == cpid)
+      continue;
+    int su = po.succ(read, cpid).second;
+    int thr_size = po.thread_size(cpid);
+    if (su >= thr_size) {
+      assert(su == INT_MAX);
+      su = thr_size;
+    }
+    // Cache-using implementation below; Naive -- see comment after the method
+    // Tail write index to cache.writes
+    int w_idx = get_tailw_index(read->ml(), cpid, su - 1);
+    assert(w_idx == get_latest_not_after_index(po, read, cpid));
+    while (w_idx > -1) {
+      const ZEvent *rem = _cache.writes.at(read->ml()).at(cpid).at(w_idx); // using 'at' because this method is const
+      assert(rem && is_write(rem) && same_ml(read, rem) && rem->cpid() == cpid);
+      assert(po.spans_event(rem));
+      assert(!po.has_edge(read, rem));
+      if (po.has_edge(rem, read)) {
+        // Others in this thread are covered from read by rem
+        assert(rem->event_id() <= po.pred(read, cpid).second);
+        // rem may be covered by some conflicting write rem -> x -> read
+        mayBeCovered.emplace(rem);
+        // Update cover
+        for (const CPid& covcpid : po.threads_spanned()) {
+          if (covcpid == rem->cpid())
+            continue;
+          int newcov = po.pred(rem, covcpid).second;
+          assert(covered.count(covcpid));
+          if (newcov > covered[covcpid])
+            covered[covcpid] = newcov;
         }
+        // Break -- Others in this thread are covered from read by rem
+        break;
+      }
+      assert(!po.are_ordered(read, rem));
+      notCovered.emplace(rem);
+      --w_idx;
+      // VISIBLE check
+      if (!check_if_any_is_visible.empty() &&
+          check_if_any_is_visible.count(rem->id())) {
+        std::set<const ZEvent *> visible_hit;
+        visible_hit.emplace(rem);
+        return visible_hit;
       }
     }
   }
@@ -699,24 +701,28 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
            local->cpid() == read->cpid() &&
            local->event_id() < read->event_id());
     // Update cover caused by local
-    for (const auto& covcpid_line : threads()) {
-      const CPid& covcpid = covcpid_line.first;
-      if (covcpid != local->cpid()) {
-        int newcov = po.pred(local, covcpid).second;
-        assert(covered.count(covcpid));
-        if (newcov > covered[covcpid])
-          covered[covcpid] = newcov;
-      }
+    for (const CPid& covcpid : po.threads_spanned()) {
+      if (covcpid == local->cpid())
+        continue;
+      int newcov = po.pred(local, covcpid).second;
+      assert(covered.count(covcpid));
+      if (newcov > covered[covcpid])
+        covered[covcpid] = newcov;
     }
     // Check if not covered by some remote
-    bool localCovered = false;
+    assert(covered.count(local->cpid()));
+    bool localCovered = (covered.at(local->cpid()) >= local->event_id());
+  #ifndef NDEBUG
+    bool loc = false;
     for (const auto& rem : mayBeCovered) {
       assert(is_write(rem) && same_ml(rem, read) && po.has_edge(rem, read));
       if (po.has_edge(local, rem)) {
-        localCovered = true;
+        loc = true;
         break;
       }
     }
+    assert((!localCovered || loc) && (localCovered || !loc));
+  #endif
     if (!localCovered) {
       // Local write not covered, add obs
       obs_events.emplace(local);
