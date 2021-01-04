@@ -322,6 +322,7 @@ bool ZExplorer::mutate_lock(ZTrace& ann_trace, const ZEvent *lock)
 
   // This lock is currently unlocked by lastUnlock
   assert(last_unlock && is_unlock(last_unlock) && same_ml(lock, last_unlock));
+  assert(ann_trace.po_part().spans_event(last_unlock));
   ann_trace.deadlocked = false;
 
   if (ann_trace.negative().forbids(lock, last_unlock)) {
@@ -491,18 +492,19 @@ ZExplorer::reuse_trace
   bool something_to_annotate = false;
   for (int i = parent_trace.trace().size() - 1; i >= 0; --i) {
     const ZEvent& ev = *(parent_trace.trace().at(i));
+    // assert(parent_trace.graph().has_event(&ev));    TODO ENABLE ONCE GRAPH HAS FULL TRACE
     assert(!something_to_annotate);
     if (is_read(ev) && (!mutated_annotation.defines(&ev))) {
       something_to_annotate = true;
       break;
     }
     if (is_lock(ev)) {
-      if (!parent_trace.graph().has_event(&ev)) {
+      if (!parent_trace.po_part().spans_event(&ev)) {
         something_to_annotate = true;
         break;
       }
       else if (ev.event_id() == // last in its thread
-               (parent_trace.graph())(ev.cpid()).size() - 1
+               parent_trace.po_part().thread_size(ev.cpid()) - 1
                && !mutated_annotation.is_last_lock(&ev)) {
         something_to_annotate = true;
         break;

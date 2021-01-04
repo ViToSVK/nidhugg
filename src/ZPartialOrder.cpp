@@ -100,7 +100,8 @@ int ZPartialOrder::line_size(unsigned line_id) const
 
 bool ZPartialOrder::spans_thread(const CPid& cpid) const
 {
-  assert(graph.has_thread(cpid));
+  // assert(graph.has_thread(cpid));  TODO ENABLE ONCE GRAPH HAS FULL TRACE
+  if (!graph.has_thread(cpid)) return false; ////
   unsigned line_id = graph.line_id(cpid);
   assert(_succ.size() == _pred.size());
   assert(_succ.size() == _threads_spanned.size());
@@ -121,7 +122,9 @@ int ZPartialOrder::thread_size(const CPid& cpid) const
 bool ZPartialOrder::spans_event(const ZEvent *ev) const
 {
   assert(ev);
-  assert(graph.has_event(ev));
+  // assert(graph.has_event(ev));  TODO ENABLE ONCE GRAPH HAS FULL TRACE
+  if (ev == graph.initial())
+    return true;
   if (!spans_thread(ev->cpid()))
     return false;
   return (thread_size(ev->cpid()) > ev->event_id());
