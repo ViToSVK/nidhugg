@@ -84,7 +84,8 @@ class ZExplorer {
   TraceExtension reuse_trace
   (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation);
 
-  TraceExtension extend_trace(std::vector<ZEvent>&& tr);
+  TraceExtension extend_trace
+  (std::vector<ZEvent>&& tr, const ZPartialOrder& mutated_po);
 
   bool extension_respects_annotation
   (const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation& annotation,

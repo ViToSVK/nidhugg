@@ -89,7 +89,9 @@ class ZPartialOrder {
   void add_edge_help(const ZEvent *from, const ZEvent *to);
  public:
   // When creating PO from trace
+  void add_line(const CPid& cpid);
   void add_line(const ZEvent * ev);
+  void inherit_lines(const ZPartialOrder& oth);
   void add_event(const ZEvent * ev);
   void shrink();
 

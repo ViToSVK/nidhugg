@@ -33,7 +33,10 @@ ZBuilderSC::ZBuilderSC
   : TSOTraceBuilder(conf),
     sch_replay(false), sch_extend(true),
     prefix(new std::vector<std::unique_ptr<ZEvent>>()),
-    initial_trace_only(init_only)
+    initial_trace_only(init_only),
+    graph(new ZGraph()),
+    po_part(new ZPartialOrder(*graph)),
+    po_full(new ZPartialOrder(*graph))
 {
   config = &conf;
   M = m;
@@ -45,11 +48,15 @@ ZBuilderSC::ZBuilderSC
 // (step1) replay the trace tr
 // (step2) get a maximal extension
 ZBuilderSC::ZBuilderSC
-(const Configuration &conf, llvm::Module *m, std::vector<ZEvent>&& tr)
+(const Configuration &conf, llvm::Module *m, std::vector<ZEvent>&& tr,
+ ZPartialOrder&& mutated_po)
   : TSOTraceBuilder(conf),
     sch_replay(true), sch_extend(false),
     prefix(new std::vector<std::unique_ptr<ZEvent>>()),
-    replay_trace(std::move(tr))
+    replay_trace(std::move(tr)),
+    graph(new ZGraph()),
+    po_part(new ZPartialOrder(std::move(mutated_po), *graph)),
+    po_full(new ZPartialOrder(*graph))
 {
   config = &conf;
   M = m;
@@ -72,6 +79,10 @@ bool ZBuilderSC::reset()
 
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
+
+  // Graph and PO building - process the very last event
+  graph_po_process_event(true);
+  assert(graph_po_constructed);
 
   // Construct the explorer with the original TB, holding the initial trace
   ZExplorer explorer = ZExplorer(*this);
@@ -166,6 +177,8 @@ bool ZBuilderSC::schedule_replay_trace(int *proc)
     // Mark that thread executes a new event
     ++threads[p].executed_events;
     assert(prefix->back()->trace_id() == (int) prefix->size() - 1);
+    // Graph and PO building
+    if (prefix->size() != 1) graph_po_process_event(false);
   } else {
     // Next instruction is a continuation of the current event
     assert(replay_trace[prefix_idx].size > (*prefix)[prefix_idx]->size);
@@ -295,6 +308,8 @@ void ZBuilderSC::update_prefix(unsigned p)
     ++threads[p].executed_events;
     assert(prefix->back()->trace_id() == (int) prefix->size() - 1);
     assert((unsigned) prefix_idx == prefix->size() - 1);
+    // Graph and PO building
+    if (prefix->size() != 1) graph_po_process_event(false);
   }
 }
 
@@ -419,6 +434,8 @@ void ZBuilderSC::join(int tgt_proc)
     ++threads[p].executed_events;
     assert(prefix->back()->trace_id() == (int) prefix->size() - 1);
     assert((unsigned) prefix_idx == prefix->size() - 1);
+    // Graph and PO building
+    graph_po_process_event(false);
   }
 
   assert(curnode().kind == ZEvent::Kind::DUMMY);
@@ -475,6 +492,7 @@ void ZBuilderSC::load(const SymAddrSize &ml, int val)
 
     if (!sch_replay) {
       somethingToAnnotate.insert(curnode().iid.get_pid());
+      threads_with_unannotated_readlock.insert(curnode().cpid());
     }
   }
   end_err();
@@ -552,6 +570,8 @@ void ZBuilderSC::compare_exchange
   assert(is_write(curnode()));
   curnode().size = 0;
   curnode().set_write_of_cas();
+  // Graph and PO building
+  graph_po_process_event(false);
 
   end_err();
 }
@@ -613,6 +633,8 @@ void ZBuilderSC::read_modify_write
   assert(is_write(curnode()));
   curnode().size = 0;
   curnode().set_write_of_rmw();
+  // Graph and PO building
+  graph_po_process_event(false);
 
   end_err();
 }
@@ -727,6 +749,8 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
     ++threads[p].executed_events;
     assert(prefix->back()->trace_id() == (int) prefix->size() - 1);
     assert((unsigned) prefix_idx == prefix->size() - 1);
+    // Graph and PO building
+    graph_po_process_event(false);
   }
 
   assert(curnode().size == 1);
@@ -735,8 +759,10 @@ void ZBuilderSC::mutex_lock(const SymAddrSize &ml)
   curnode()._observed_trace_id = mutex.last_access; // initialized with -1
 
   mayConflict(&ml);
-  if (!sch_replay)
+  if (!sch_replay) {
     somethingToAnnotate.insert(curnode().iid.get_pid());
+    threads_with_unannotated_readlock.insert(curnode().cpid());
+  }
   endsWithLockFail.erase(curnode().iid.get_pid());
 
   assert(!mutex.locked);
@@ -783,6 +809,10 @@ void ZBuilderSC::extendGivenTrace() {
   // Add lock event for every thread ending with a failed mutex lock attempt
   add_failed_lock_attempts();
 
+  // Graph and PO building - process the very last event
+  graph_po_process_event(true);
+  assert(graph_po_constructed);
+
   end_err();
 }
 
@@ -810,6 +840,9 @@ void ZBuilderSC::add_failed_lock_attempts() {
     curnode().kind = ZEvent::Kind::M_LOCK;
 
     mayConflict(&(p_ml.second));
+    threads_with_unannotated_readlock.insert(curnode().cpid());
+    // Graph and PO building
+    graph_po_process_event(false);
   }
 }
 
@@ -838,4 +871,169 @@ Trace *ZBuilderSC::get_trace() const
   Trace *t = new IIDSeqTrace(cmp,cmp_md,errs);
   t->set_blocked(false);
   return t;
+}
+
+
+void ZBuilderSC::graph_po_process_event(bool take_last_event)
+{
+  assert(prefix->size() > 1);
+  assert(prefix_idx == prefix->size() - 1);
+  const ZEvent * ev;
+  if (take_last_event) {
+    // We are at the end of interpreting, all events except
+    // the very last one have already been processed
+    ev = (*prefix)[prefix_idx].get();
+  } else {
+    // We are in the middle of interpreting, we process the second-to-last
+    // event since the last one might get refuse_schedule-d
+    ev = (*prefix)[prefix_idx - 1].get();
+    if (graph->has_event(ev)) {
+      // We are revisiting ev because some event after it got
+      // refuse_schedule-d and now there is a different event after it
+      // Nothing to do now since we have processed ev before
+      assert(graph->events_size() == ev->trace_id() + 1);
+      return;
+    }
+  }
+  assert(graph->events_size() == ev->trace_id());
+  assert(!graph->has_event(ev));
+
+  if (prefix_idx == 1) {
+    assert(!take_last_event);
+    graph->inherit_lines(*po_part);
+    po_full->inherit_lines(*po_part);
+  }
+
+  // Add to graph and po_full
+
+  if (!graph->has_thread(ev->cpid())) {
+    graph->add_line(ev);
+    assert(!po_full->spans_thread(ev->cpid()));
+    po_full->add_line(ev);
+  }
+  assert(graph->has_thread(ev->cpid()));
+  assert(po_full->spans_thread(ev->cpid()));
+  graph->add_event(ev);
+  assert(!po_full->spans_event(ev));
+  po_full->add_event(ev);
+  assert(po_full->spans_event(ev));
+
+  // Handle specific event types
+
+  if (is_spawn(ev)) {
+    spawns.push_back(ev);
+    if (threads_past_annotated_region.count(ev->cpid())) {
+      assert(!threads_past_annotated_region.count(ev->childs_cpid()));
+      threads_past_annotated_region.insert(ev->childs_cpid());
+    }
+  }
+
+  if (is_join(ev)) {
+    joins.push_back(ev);
+    if (threads_past_annotated_region.count(ev->childs_cpid()) &&
+        !threads_past_annotated_region.count(ev->cpid())) {
+      threads_past_annotated_region.insert(ev->cpid());
+    }
+  }
+
+  if (is_write(ev)) {
+    // Last write of thread
+    if (!last_write_of_thread.count(ev->cpid()))
+      last_write_of_thread.emplace
+        (ev->cpid(), std::unordered_map<SymAddrSize, const ZEvent *>());
+    last_write_of_thread[ev->cpid()][ev->ml()] = ev;
+    // Cache - writes
+    auto& writes = graph->_cache.writes;
+    if (!writes.count(ev->ml()))
+      writes.emplace
+        (ev->ml(), std::unordered_map<CPid, std::vector<const ZEvent *>>());
+    if (!writes[ev->ml()].count(ev->cpid()))
+      writes[ev->ml()].emplace(ev->cpid(), std::vector<const ZEvent *>());
+    writes[ev->ml()][ev->cpid()].push_back(ev);
+  }
+
+  if (is_read(ev)) {
+    // Cache - writes
+    auto& writes = graph->_cache.writes;
+    if (!writes.count(ev->ml()))
+      writes.emplace
+        (ev->ml(), std::unordered_map<CPid, std::vector<const ZEvent *>>());
+    // Cache - local_write
+    auto& local_write = graph->_cache.local_write;
+    assert(!local_write.count(ev));
+    if (last_write_of_thread.count(ev->cpid()) &&
+        last_write_of_thread[ev->cpid()].count(ev->ml())) {
+      assert(is_write(last_write_of_thread.at(ev->cpid()).at(ev->ml())));
+      local_write.emplace(ev, last_write_of_thread[ev->cpid()][ev->ml()]);
+    }
+    else
+      local_write.emplace(ev, nullptr);
+  }
+
+  // Add to po_part if not past annotated region
+
+  if (!threads_past_annotated_region.count(ev->cpid())) {
+    if (!po_part->spans_thread(ev->cpid())) {
+      po_part->add_line(ev);
+    }
+    if (!po_part->spans_event(ev)) {
+      assert(sch_extend || ev->is_write_of_atomic_event());
+      po_part->add_event(ev);
+    }
+    assert(po_part->spans_event(ev));
+
+    if (threads_with_unannotated_readlock.count(ev->cpid())) {
+      // We are at the first unannotated read/lock of this thread
+      assert(sch_extend);
+      assert(is_read(ev) || is_lock(ev));
+      threads_past_annotated_region.insert(ev->cpid());
+    }
+  }
+
+  if (!take_last_event)
+    return;
+
+  // We processed all events
+
+  // EDGES - spawns
+  for (const ZEvent *spwn : spawns) {
+    assert(graph->has_thread(spwn->childs_cpid()));
+    assert(!(*graph)(spwn->childs_cpid()).empty());
+    const ZEvent *nthr = graph->event(spwn->childs_cpid(), 0);
+
+    assert(!po_full->has_edge(nthr, spwn));
+    if (!po_full->has_edge(spwn, nthr))
+      po_full->add_edge(spwn, nthr);
+
+    if (!po_part->spans_event(spwn))
+      continue;
+    assert(po_part->spans_event(nthr));
+    assert(!po_part->has_edge(nthr, spwn));
+    if (!po_part->has_edge(spwn, nthr))
+      po_part->add_edge(spwn, nthr);
+  }
+
+  // EDGES - joins
+  for (const ZEvent *jn : joins) {
+    assert(graph->has_thread(jn->childs_cpid()));
+    assert(!(*graph)(jn->childs_cpid()).empty());
+    int lastev_idx = (*graph)(jn->childs_cpid()).size() - 1;
+    assert(lastev_idx >= 0);
+    const ZEvent *wthr = graph->event(jn->childs_cpid(), lastev_idx);
+
+    assert(!po_full->has_edge(jn, wthr));
+    if (!po_full->has_edge(wthr, jn))
+      po_full->add_edge(wthr, jn);
+
+    if (!po_part->spans_event(jn))
+      continue;
+    assert(po_part->spans_event(wthr));
+    assert(!po_part->has_edge(jn, wthr));
+    if (!po_part->has_edge(wthr, jn))
+      po_part->add_edge(wthr, jn);
+  }
+
+  #ifndef NDEBUG
+  graph_po_constructed = true;
+  #endif
 }

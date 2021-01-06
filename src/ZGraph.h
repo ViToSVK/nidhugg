@@ -32,6 +32,7 @@ using LinesT = std::vector<LineT>;
 
 class ZGraph {
   friend class ZPartialOrder;
+  friend class ZBuilderSC;
 
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:
@@ -44,7 +45,9 @@ class ZGraph {
   const ZEvent *event(const CPid& cpid, int event_id) const;
   const ZEvent *event(const ZEventID& id) const;
   const ZEvent *unlock_of_this_lock(const ZEventID& id) const;
+  void add_line(const CPid& cpid);
   void add_line(const ZEvent *ev);
+  void inherit_lines(const ZPartialOrder& po);
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const CPid& cpid, int event_id) const;

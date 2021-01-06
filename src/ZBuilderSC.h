@@ -34,7 +34,7 @@
 #include "DPORDriver.h"
 #include "TSOTraceBuilder.h"
 #include "Trace.h"
-#include "ZEvent.h"
+#include "ZGraph.h"
 
 
 class ZBuilderSC : public TSOTraceBuilder {
@@ -102,6 +102,26 @@ class ZBuilderSC : public TSOTraceBuilder {
   /* *************************** */
   bool initial_trace_only = false;
 
+  /* *************************** */
+  /* GRAPH AND PO BUILDING       */
+  /* *************************** */
+
+  std::shared_ptr<ZGraph> graph;
+  std::shared_ptr<ZPartialOrder> po_part;
+  std::shared_ptr<ZPartialOrder> po_full;
+
+  std::unordered_set<CPid> threads_with_unannotated_readlock;
+  std::unordered_set<CPid> threads_past_annotated_region;
+  std::unordered_map<CPid, std::unordered_map
+    <SymAddrSize, const ZEvent *>> last_write_of_thread;
+  std::vector<const ZEvent *> spawns;
+  std::vector<const ZEvent *> joins;
+  #ifndef NDEBUG
+  bool graph_po_constructed = false;
+  #endif
+
+  void graph_po_process_event(bool take_last_event);
+
  public:
 
   /* *************************** */
@@ -116,7 +136,8 @@ class ZBuilderSC : public TSOTraceBuilder {
   // (step1) replay the trace tr
   // (step2) get a maximal extension
   ZBuilderSC(const Configuration &conf, llvm::Module *m,
-             std::vector<ZEvent>&& tr);
+             std::vector<ZEvent>&& tr,
+             ZPartialOrder&& mutated_po);
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */

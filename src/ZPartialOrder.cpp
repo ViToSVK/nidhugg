@@ -401,20 +401,13 @@ void ZPartialOrder::add_edge_help(const ZEvent *from, const ZEvent *to)
 }
 
 
-void ZPartialOrder::add_line(const ZEvent * ev)
+void ZPartialOrder::add_line(const CPid& cpid)
 {
-  assert(ev && "Null pointer event");
-  assert(ev->event_id() == 0);
-  assert(graph.has_thread(ev->cpid()));
-  assert(!spans_thread(ev->cpid()));
-  assert(!graph.has_event(ev)); // TODO DELETE THIS ASSERT ENABLE BELOW ASSERT WHEN GRAPH FULL (CHECK OTHER TODOS HERE THEN ALSO)
-  // assert(ev == graph._lines.at(graph.line_id(ev)).at(0));
-  assert(graph.size() > _succ.size() &&
-         graph.size() > _pred.size());
-  assert(graph.line_id(ev) >= _succ.size());
+  assert(graph.has_thread(cpid));
+  assert(!spans_thread(cpid));
   assert(_succ.size() == _pred.size());
   _line_sizes.push_back(0);
-  _threads_spanned.push_back(ev->cpid());
+  _threads_spanned.push_back(cpid);
   assert(_succ.size() + 1 == _line_sizes.size());
   assert(_threads_spanned.size() == _line_sizes.size());
 
@@ -449,7 +442,29 @@ void ZPartialOrder::add_line(const ZEvent * ev)
   assert(_succ.size() == _closure_safe_until.size() + 1);
   _closure_safe_until.push_back(0);
   assert(_succ.size() == _closure_safe_until.size());
-  assert(spans_thread(ev->cpid()));
+  assert(spans_thread(cpid));
+}
+
+
+void ZPartialOrder::add_line(const ZEvent * ev)
+{
+  assert(ev && "Null pointer event");
+  assert(ev->event_id() == 0);
+  // TODO ENABLE BELOW ASSERT WHEN GRAPH FULL (CHECK OTHER TODOS HERE THEN ALSO)
+  // assert(ev == graph._lines.at(graph.line_id(ev)).at(0));
+  assert(graph.size() > _succ.size() &&
+         graph.size() > _pred.size());
+  assert(graph.line_id(ev) >= _succ.size());
+  add_line(ev->cpid());
+}
+
+
+void ZPartialOrder::inherit_lines(const ZPartialOrder& oth)
+{
+  assert(empty());
+  for (const CPid& cpid : oth.threads_spanned()) {
+    add_line(cpid);
+  }
 }
 
 

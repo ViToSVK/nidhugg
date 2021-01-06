@@ -438,7 +438,7 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
     assert(total_lin == linearization_succeeded + linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,
                                              mutated_po, parent_trace));
-    mutated_trace = extend_trace(std::move(linear));
+    mutated_trace = extend_trace(std::move(linear), mutated_po);
     assert(extension_respects_annotation(*mutated_trace.trace, mutated_annotation,
                                          mutated_po, parent_trace));
   }
@@ -524,12 +524,14 @@ ZExplorer::reuse_trace
 /* *************************** */
 
 ZExplorer::TraceExtension
-ZExplorer::extend_trace(std::vector<ZEvent>&& tr)
+ZExplorer::extend_trace
+(std::vector<ZEvent>&& tr, const ZPartialOrder& mutated_po)
 {
   start_err("extend_trace...");
   assert(original_TB);
   clock_t init = std::clock();
-  ZBuilderSC TB(*(original_TB->config), original_TB->M, std::move(tr));
+  ZBuilderSC TB(*(original_TB->config), original_TB->M,
+                std::move(tr), ZPartialOrder(mutated_po));
   assert(tr.empty());
   TB.extendGivenTrace();
   assert(TB.prefix && !TB.prefix->empty());

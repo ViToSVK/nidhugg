@@ -98,17 +98,31 @@ const ZEvent * ZGraph::unlock_of_this_lock(const ZEventID& id) const
 }
 
 
+void ZGraph::add_line(const CPid& cpid)
+{
+  assert(!has_thread(cpid));
+  _cpid_to_line.emplace(cpid, _lines.size());
+  _line_to_cpid.push_back(cpid);
+  assert(_cpid_to_line.size() == _line_to_cpid.size());
+  _lines.push_back(LineT());
+  _lines.back().reserve(16);
+}
+
+
 void ZGraph::add_line(const ZEvent *ev)
 {
   assert(ev && !is_initial(ev));
   assert(!has_event(ev));
-  assert(!has_thread(ev->cpid()));
+  add_line(ev->cpid());
+}
 
-  _cpid_to_line.emplace(ev->cpid(), _lines.size());
-  _line_to_cpid.push_back(ev->cpid());
-  assert(_cpid_to_line.size() == _line_to_cpid.size());
-  _lines.push_back(LineT());
-  _lines.back().reserve(16);
+
+void ZGraph::inherit_lines(const ZPartialOrder& po)
+{
+  assert(empty());
+  for (const CPid& cpid : po.threads_spanned()) {
+    add_line(cpid);
+  }
 }
 
 
