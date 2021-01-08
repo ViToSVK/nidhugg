@@ -32,6 +32,7 @@ class ZTrace {
   const ZAnnotation _annotation;
   ZAnnotationNeg _negative;
   const std::shared_ptr<ZGraph> _graph;
+  const std::shared_ptr<ZPartialOrder> _po_full;
   const std::shared_ptr<ZPartialOrder> _po_part;
 
  public:
@@ -41,6 +42,9 @@ class ZTrace {
   ZAnnotationNeg& negative();
   const ZAnnotationNeg& negative() const;
   const ZGraph& graph() const;
+  const std::shared_ptr<ZGraph>& graph_ptr() const;
+  const ZPartialOrder& po_full() const;
+  const std::shared_ptr<ZPartialOrder>& po_full_ptr() const;
   const ZPartialOrder& po_part() const;
 
   void set_negative(const ZAnnotationNeg& oth);
@@ -76,14 +80,21 @@ class ZTrace {
 
   ZTrace() = delete;
 
-  ZTrace(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
-         bool assumeblocked);
+  ZTrace
+  (const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
+   const std::shared_ptr<ZGraph>& initial_graph,
+   const std::shared_ptr<ZPartialOrder>& initial_po_full,
+   const std::shared_ptr<ZPartialOrder>& initial_po_part,
+   bool assumeblocked);
 
-  ZTrace(const ZTrace& parentTrace,
-         const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& new_trace,
-         ZAnnotation&& new_annotation,
-         ZPartialOrder&& new_po,
-         bool assumeblocked);
+  ZTrace
+  (const ZTrace& parentTrace,
+   const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& new_trace,
+   ZAnnotation&& new_annotation,
+   const std::shared_ptr<ZGraph>& new_graph,
+   const std::shared_ptr<ZPartialOrder>& new_po_full,
+   const std::shared_ptr<ZPartialOrder>& new_po_part,
+   bool assumeblocked);
 
   ZTrace(ZTrace&& tr) = default;
   ZTrace(const ZTrace& tr) = delete;

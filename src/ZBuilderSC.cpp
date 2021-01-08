@@ -840,9 +840,10 @@ void ZBuilderSC::add_failed_lock_attempts() {
     curnode().kind = ZEvent::Kind::M_LOCK;
 
     mayConflict(&(p_ml.second));
-    threads_with_unannotated_readlock.insert(curnode().cpid());
     // Graph and PO building
     graph_po_process_event(false);
+    // Mark unannotated lock only now, this event will be checked the next time
+    threads_with_unannotated_readlock.insert(curnode().cpid());
   }
 }
 

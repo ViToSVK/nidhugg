@@ -29,15 +29,33 @@ static const bool DEBUG = false;
 
 
 ZExplorer::TraceExtension::TraceExtension
-(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& extension,
+(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& ext_trace,
+ const std::shared_ptr<ZGraph>& ext_graph,
+ const std::shared_ptr<ZPartialOrder>& ext_po_full,
+ const std::shared_ptr<ZPartialOrder>& ext_po_part,
  bool some_to_ann, bool assume_blocked)
-  : trace(extension), something_to_annotate(some_to_ann),
+  : trace(ext_trace),
+    graph(ext_graph),
+    po_full(ext_po_full),
+    po_part(ext_po_part),
+    something_to_annotate(some_to_ann),
     has_assume_blocked_thread(assume_blocked), has_error(false)
 {
   assert(!empty());
-  assert(trace && !trace->empty());
+  assert(ext_trace && !ext_trace->empty());
+  assert(ext_graph && !ext_graph->empty());
+  assert(ext_po_full && !ext_po_full->empty());
+  assert(ext_po_part && !ext_po_part->empty());
 }
 
+
+bool ZExplorer::TraceExtension::empty() const
+{
+  return ((!trace || trace->empty()) &&
+          (!graph || graph->empty()) &&
+          (!po_full || po_full->empty()) &&
+          (!po_part || po_part->empty()));
+}
 
 
 ZExplorer::ZExplorer(ZBuilderSC& tb)
@@ -49,8 +67,8 @@ ZExplorer::ZExplorer(ZBuilderSC& tb)
   if (tb.somethingToAnnotate.empty())
     executed_traces_full = 1;
   else
-    initial = std::unique_ptr<ZTrace>(
-      new ZTrace(tb.prefix, tb.someThreadAssumeBlocked));
+    initial = std::unique_ptr<ZTrace>(new ZTrace
+    (tb.prefix, tb.graph, tb.po_full, tb.po_part, tb.someThreadAssumeBlocked));
 }
 
 
@@ -313,7 +331,7 @@ bool ZExplorer::mutate_lock(ZTrace& ann_trace, const ZEvent *lock)
   auto last_lock_obs = ann_trace.annotation().last_lock(lock);
   auto last_unlock = ann_trace.graph().unlock_of_this_lock(last_lock_obs);
 
-  if (!last_unlock) {
+  if (!last_unlock || !ann_trace.po_part().spans_event(last_unlock)) {
     // This lock is currently locked
     // Trivially unrealizable
     end_err("0b");
@@ -411,8 +429,9 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
 {
   start_err("realize_mutation...");
   TraceExtension mutated_trace;
-  if (mutation_follows_current_trace) {
-    mutated_trace = reuse_trace(parent_trace, mutated_annotation);
+  if (false && mutation_follows_current_trace) {  // TODO ////////////////////////////////////////////////
+    mutated_trace = reuse_trace(parent_trace, mutated_annotation,
+                                std::move(mutated_po));
   }
   else {
     clock_t init = std::clock();
@@ -438,7 +457,9 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
     assert(total_lin == linearization_succeeded + linearization_failed);
     assert(linearization_respects_annotation(linear, mutated_annotation,
                                              mutated_po, parent_trace));
-    mutated_trace = extend_trace(std::move(linear), mutated_po);
+    assert(!mutated_po.empty() && !linear.empty());
+    mutated_trace = extend_trace(std::move(linear), std::move(mutated_po));
+    assert(mutated_po.empty() && linear.empty());
     assert(extension_respects_annotation(*mutated_trace.trace, mutated_annotation,
                                          mutated_po, parent_trace));
   }
@@ -463,13 +484,15 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
   }
 
   clock_t init = std::clock();
-  assert(!mutated_trace.empty() && !mutated_po.empty());
+  assert(mutated_po.empty());
   err_msg("creating extension");
   std::unique_ptr<ZTrace> mutated_ZTrace(new ZTrace(
     parent_trace,
     mutated_trace.trace,
     std::move(mutated_annotation),
-    std::move(mutated_po),
+    mutated_trace.graph,
+    mutated_trace.po_full,
+    mutated_trace.po_part,
     mutated_trace.has_assume_blocked_thread));
   err_msg("created extension");
   assert(mutated_annotation.empty() && mutated_po.empty());
@@ -486,7 +509,8 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
 
 ZExplorer::TraceExtension
 ZExplorer::reuse_trace
-(const ZTrace& parent_trace, const ZAnnotation& mutated_annotation)
+(const ZTrace& parent_trace, const ZAnnotation& mutated_annotation,
+ ZPartialOrder&& mutated_po)
 {
   start_err("reuse_trace...");
   bool something_to_annotate = false;
@@ -512,8 +536,18 @@ ZExplorer::reuse_trace
     }
   }
 
-  auto res = TraceExtension(parent_trace.trace_ptr(), something_to_annotate,
-                            parent_trace.assumeblocked);
+  assert(!mutated_po.empty());
+  std::shared_ptr<ZPartialOrder> mutated_po_ptr(new ZPartialOrder
+  (std::move(mutated_po), parent_trace.graph()));
+  assert(mutated_po.empty());
+
+  auto res = TraceExtension
+  (parent_trace.trace_ptr(),
+   parent_trace.graph_ptr(),
+   parent_trace.po_full_ptr(),
+   mutated_po_ptr,
+   something_to_annotate,
+   parent_trace.assumeblocked);
   end_err("?");
   return res;
 }
@@ -525,20 +559,25 @@ ZExplorer::reuse_trace
 
 ZExplorer::TraceExtension
 ZExplorer::extend_trace
-(std::vector<ZEvent>&& tr, const ZPartialOrder& mutated_po)
+(std::vector<ZEvent>&& tr, ZPartialOrder&& mutated_po)
 {
   start_err("extend_trace...");
   assert(original_TB);
+  assert(!tr.empty() && !mutated_po.empty());
   clock_t init = std::clock();
   ZBuilderSC TB(*(original_TB->config), original_TB->M,
-                std::move(tr), ZPartialOrder(mutated_po));
-  assert(tr.empty());
+                std::move(tr), std::move(mutated_po));
+  assert(tr.empty() && mutated_po.empty());
   TB.extendGivenTrace();
-  assert(TB.prefix && !TB.prefix->empty());
   time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
   interpreter_used++;
+  assert(TB.prefix && !TB.prefix->empty());
+  assert(TB.graph && !TB.graph->empty());
+  assert(TB.po_full && !TB.po_full->empty());
+  assert(TB.po_part && !TB.po_part->empty());
   TraceExtension trace_extension(
-    TB.prefix, !TB.somethingToAnnotate.empty(), TB.someThreadAssumeBlocked);
+    TB.prefix, TB.graph, TB.po_full, TB.po_part,
+    !TB.somethingToAnnotate.empty(), TB.someThreadAssumeBlocked);
 
   if (TB.has_error()) {
     // ERROR FOUND

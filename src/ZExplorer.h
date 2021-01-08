@@ -40,12 +40,19 @@ class ZExplorer {
   class TraceExtension {
    public:
     TraceExtension() = default;
-    TraceExtension(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& extension,
-                   bool some_to_ann, bool assume_blocked);
+    TraceExtension
+    (const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& ext_trace,
+     const std::shared_ptr<ZGraph>& ext_graph,
+     const std::shared_ptr<ZPartialOrder>& ext_po_full,
+     const std::shared_ptr<ZPartialOrder>& ext_po_part,
+     bool some_to_ann, bool assume_blocked);
 
-    bool empty() const { return !trace; }
+    bool empty() const;
 
     std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> trace;
+    std::shared_ptr<ZGraph> graph;
+    std::shared_ptr<ZPartialOrder> po_full;
+    std::shared_ptr<ZPartialOrder> po_part;
     bool something_to_annotate;
     bool has_assume_blocked_thread;
     bool has_error;
@@ -82,10 +89,11 @@ class ZExplorer {
    ZPartialOrder&& mutated_po, bool mutation_follows_current_trace);
 
   TraceExtension reuse_trace
-  (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation);
+  (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation,
+   ZPartialOrder&& mutated_po);
 
   TraceExtension extend_trace
-  (std::vector<ZEvent>&& tr, const ZPartialOrder& mutated_po);
+  (std::vector<ZEvent>&& tr, ZPartialOrder&& mutated_po);
 
   bool extension_respects_annotation
   (const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation& annotation,
