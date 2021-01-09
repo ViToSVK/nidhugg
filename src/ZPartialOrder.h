@@ -94,6 +94,8 @@ class ZPartialOrder {
   void inherit_lines(const ZPartialOrder& oth);
   void add_event(const ZEvent * ev);
   void shrink();
+  // Extending when reusing trace and graph
+  void extend(const ZEvent *read_lock, const ZAnnotation& mutated_annotation);
 
   // Empty
   ZPartialOrder();

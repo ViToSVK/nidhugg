@@ -100,8 +100,7 @@ int ZPartialOrder::line_size(unsigned line_id) const
 
 bool ZPartialOrder::spans_thread(const CPid& cpid) const
 {
-  // assert(graph.has_thread(cpid));  TODO ENABLE ONCE GRAPH HAS FULL TRACE
-  if (!graph.has_thread(cpid)) return false; ////
+  assert(graph.has_thread(cpid));
   unsigned line_id = graph.line_id(cpid);
   assert(_succ.size() == _pred.size());
   assert(_succ.size() == _threads_spanned.size());
@@ -122,7 +121,7 @@ int ZPartialOrder::thread_size(const CPid& cpid) const
 bool ZPartialOrder::spans_event(const ZEvent *ev) const
 {
   assert(ev);
-  // assert(graph.has_event(ev));  TODO ENABLE ONCE GRAPH HAS FULL TRACE
+  assert(graph.has_event(ev));
   if (ev == graph.initial())
     return true;
   if (!spans_thread(ev->cpid()))
@@ -253,16 +252,15 @@ void ZPartialOrder::add_edge(const ZEvent *from, const ZEvent *to)
       (from->is_read_of_cas() && from->value() == from->cas_compare_val())) {
     // not just 'from', but also its write-part of
     // the atomic event needs to happen before 'to'
-    if (graph.has_event(from->cpid(), from->event_id() + 1)) { //// TODO: Once graph has full traces, this should be an assert
-      // the write-part is present in the graph
-      const ZEvent * write_of_from = graph.event(from->cpid(), from->event_id() + 1);
-      if (spans_event(write_of_from)) {
-        assert(write_of_from && write_of_from->is_write_of_atomic_event());
-        assert(same_ml(from, write_of_from));
-        assert(!are_ordered(write_of_from, to));
-        add_edge(write_of_from, to);
-        return;
-      }
+    assert(graph.has_event(from->cpid(), from->event_id() + 1));
+    // the write-part is always present in the graph, but maybe not in po
+    const ZEvent * write_of_from = graph.event(from->cpid(), from->event_id() + 1);
+    if (spans_event(write_of_from)) {
+      assert(write_of_from && write_of_from->is_write_of_atomic_event());
+      assert(same_ml(from, write_of_from));
+      assert(!are_ordered(write_of_from, to));
+      add_edge(write_of_from, to);
+      return;
     }
   }
 
@@ -450,8 +448,9 @@ void ZPartialOrder::add_line(const ZEvent * ev)
 {
   assert(ev && "Null pointer event");
   assert(ev->event_id() == 0);
-  // TODO ENABLE BELOW ASSERT WHEN GRAPH FULL (CHECK OTHER TODOS HERE THEN ALSO)
-  // assert(ev == graph._lines.at(graph.line_id(ev)).at(0));
+  assert(graph.line_id(ev) < graph._lines.size());
+  assert(!graph._lines.at(graph.line_id(ev)).empty());
+  assert(ev == graph._lines.at(graph.line_id(ev)).at(0));
   assert(graph.size() > _succ.size() &&
          graph.size() > _pred.size());
   assert(graph.line_id(ev) >= _succ.size());
@@ -541,6 +540,115 @@ void ZPartialOrder::shrink()
   _closure_safe_until.shrink_to_fit();
   _line_sizes.shrink_to_fit();
   _threads_spanned.shrink_to_fit();
+}
+
+
+void ZPartialOrder::extend(const ZEvent *read_lock, const ZAnnotation& mutated_annotation)
+{
+  assert((is_read(read_lock) && mutated_annotation.defines(read_lock)) ||
+         (is_lock(read_lock) && mutated_annotation.is_last_lock(read_lock)));
+  assert(spans_event(read_lock));
+
+  std::list<CPid> todo;
+  todo.push_back(read_lock->cpid());
+
+  std::map<CPid, const ZEvent *> spawns;
+
+  while (!todo.empty()) {
+    CPid curr_cpid(todo.front());
+    todo.pop_front();
+    assert(graph.has_thread(curr_cpid));
+    assert(curr_cpid == read_lock->cpid() || !spans_thread(curr_cpid) ||
+           (is_join(graph.event(curr_cpid, thread_size(curr_cpid)))));
+
+    if (!spans_thread(curr_cpid))
+      add_line(curr_cpid);
+    assert(spans_thread(curr_cpid));
+
+    int full_size = graph(curr_cpid).size();
+    for (int ev_id = thread_size(curr_cpid); ev_id < full_size; ++ev_id) {
+      const ZEvent *ev = graph.event(curr_cpid, ev_id);
+      assert(!spans_event(ev));
+      assert(ev->event_id() == ev_id);
+
+      // Handle join before adding the event
+      if (is_join(ev)) {
+        assert(ev->event_id() > 0);
+        assert(graph.has_thread(ev->childs_cpid()));
+        if (!spans_thread(ev->childs_cpid()) ||
+            thread_size(ev->childs_cpid()) < graph(ev->childs_cpid()).size()) {
+          // Join waiting for unfinished thread, do not add it and break
+          break;
+        }
+        assert(spans_thread(ev->childs_cpid()) &&
+               thread_size(ev->childs_cpid()) == graph(ev->childs_cpid()).size());
+      }
+
+      add_event(ev);
+      assert(spans_event(ev));
+
+      // Spawn edge
+      if (ev->event_id() == 0) {
+        assert(spawns.count(ev->cpid()));
+        const ZEvent *spwn = spawns[ev->cpid()];
+        assert(spans_event(spwn));
+        assert(!are_ordered(spwn, ev));
+        add_edge(spwn, ev);
+      }
+
+      // Join edge
+      if (is_join(ev)) {
+        assert(spans_thread(ev->childs_cpid()) &&
+               thread_size(ev->childs_cpid()) == graph(ev->childs_cpid()).size());
+        int lastev_idx = graph(ev->childs_cpid()).size() - 1;
+        assert(lastev_idx >= 0);
+        const ZEvent *wthr = graph.event(ev->childs_cpid(), lastev_idx);
+        assert(spans_event(wthr));
+        assert(!are_ordered(wthr, ev));
+        add_edge(wthr, ev);
+      }
+
+      // Handle specific event types
+      if (is_read(ev) || is_lock(ev)) {
+        // We reached new unannotated event, break
+        break;
+      }
+      if (is_spawn(ev)) {
+        assert(!spawns.count(ev->childs_cpid()));
+        spawns.emplace(ev->childs_cpid(), ev);
+        assert(graph.has_thread(ev->childs_cpid()));
+        assert(!spans_thread(ev->childs_cpid()));
+        todo.push_back(ev->childs_cpid());
+      }
+    }
+    // We finished extending in curr_cpid
+    if (thread_size(curr_cpid) == full_size) {
+      // We extended until the complete end of curr_cpid
+      // Locate threads waiting to join curr_cpid
+      for (const CPid& jn_cpid : threads_spanned()) {
+        int jn_line_size = thread_size(jn_cpid);
+        assert(jn_line_size > 0);
+        if (jn_line_size >= graph(jn_cpid).size()) {
+          // jn_cpid is already fully extended
+          assert(jn_line_size == graph(jn_cpid).size());
+          continue;
+        }
+        const ZEvent * jn_ev = graph.event(jn_cpid, jn_line_size - 1);
+        assert(spans_event(jn_ev));
+        if ((is_read(jn_ev) && !mutated_annotation.defines(jn_ev)) ||
+            (is_lock(jn_ev) && !mutated_annotation.is_last_lock(jn_ev))) {
+          // Do not extend jn_cpid if our last event of it is unannotated
+          continue;
+        }
+        jn_ev = graph.event(jn_cpid, jn_line_size);
+        assert(!spans_event(jn_ev));
+        if (is_join(jn_ev) && jn_ev->childs_cpid() == curr_cpid) {
+          // Located: next event of jn_cpid wants to join curr_cpid
+          todo.push_back(jn_cpid);
+        }
+      }
+    }
+  }
 }
 
 

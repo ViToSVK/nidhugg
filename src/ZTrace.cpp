@@ -97,6 +97,7 @@ const ZAnnotation& ZTrace::annotation() const { return _annotation; }
 ZAnnotationNeg& ZTrace::negative() { return _negative; }
 const ZAnnotationNeg& ZTrace::negative() const { return _negative; }
 
+
 const ZGraph& ZTrace::graph() const
 {
   assert(_graph);
@@ -130,6 +131,7 @@ const ZPartialOrder& ZTrace::po_part() const
   assert(_po_part);
   return *_po_part;
 }
+
 
 void ZTrace::set_negative(const ZAnnotationNeg& oth)
 {

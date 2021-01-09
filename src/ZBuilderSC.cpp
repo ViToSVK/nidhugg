@@ -281,8 +281,10 @@ bool ZBuilderSC::schedule_thread(int *proc, unsigned p)
 // Used only when we are not replaying replay_trace
 void ZBuilderSC::update_prefix(unsigned p)
 {
+  start_err("update_prefix...");
   assert(sch_extend && !sch_replay);
   assert(p % 2 == 0);
+  assert(p < threads.size());
   ++threads[p].executed_instructions;
 
   if (prefix_idx != -1 && (int) p == curnode().iid.get_pid() &&
@@ -293,6 +295,7 @@ void ZBuilderSC::update_prefix(unsigned p)
     // Because of the above, we extend the current event
     assert(prefix_idx == (int) (prefix->size() - 1));
     ++((*prefix)[prefix_idx]->size);
+    end_err("event_extend");
   } else {
     // Because one of 1)2)3) doesn't hold, we create a new event
     ++prefix_idx;
@@ -310,6 +313,7 @@ void ZBuilderSC::update_prefix(unsigned p)
     assert((unsigned) prefix_idx == prefix->size() - 1);
     // Graph and PO building
     if (prefix->size() != 1) graph_po_process_event(false);
+    end_err("event_new");
   }
 }
 
@@ -877,6 +881,7 @@ Trace *ZBuilderSC::get_trace() const
 
 void ZBuilderSC::graph_po_process_event(bool take_last_event)
 {
+  start_err("graph_po_process_event...");
   assert(prefix->size() > 1);
   assert(prefix_idx == prefix->size() - 1);
   const ZEvent * ev;
@@ -909,14 +914,18 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
 
   if (!graph->has_thread(ev->cpid())) {
     graph->add_line(ev);
+    graph->add_event(ev);
     assert(!po_full->spans_thread(ev->cpid()));
     po_full->add_line(ev);
+    po_full->add_event(ev);
+  } else {
+    graph->add_event(ev);
+    assert(po_full->spans_thread(ev->cpid()));
+    po_full->add_event(ev);
   }
   assert(graph->has_thread(ev->cpid()));
   assert(po_full->spans_thread(ev->cpid()));
-  graph->add_event(ev);
-  assert(!po_full->spans_event(ev));
-  po_full->add_event(ev);
+  assert(graph->has_event(ev));
   assert(po_full->spans_event(ev));
 
   // Handle specific event types
@@ -991,8 +1000,10 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
     }
   }
 
-  if (!take_last_event)
+  if (!take_last_event) {
+    end_err("not_last");
     return;
+  }
 
   // We processed all events
 
@@ -1037,4 +1048,5 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
   #ifndef NDEBUG
   graph_po_constructed = true;
   #endif
+  end_err("last");
 }

@@ -412,7 +412,7 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::close_po
   closure_iter += closure.iterations;
 
   auto res = realize_mutation
-    (ann_trace, std::move(mutated_annotation),
+    (ann_trace, read_lock, std::move(mutated_annotation),
      std::move(mutated_po), mutation_follows_current_trace);
   end_err("?");
   return res;
@@ -424,14 +424,15 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::close_po
 /* *************************** */
 
 std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
-(const ZTrace& parent_trace, ZAnnotation&& mutated_annotation,
- ZPartialOrder&& mutated_po, bool mutation_follows_current_trace)
+(const ZTrace& parent_trace, const ZEvent *read_lock,
+ ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
+ bool mutation_follows_current_trace)
 {
   start_err("realize_mutation...");
   TraceExtension mutated_trace;
-  if (false && mutation_follows_current_trace) {  // TODO ////////////////////////////////////////////////
-    mutated_trace = reuse_trace(parent_trace, mutated_annotation,
-                                std::move(mutated_po));
+  if (mutation_follows_current_trace) {
+    mutated_trace = reuse_trace
+    (parent_trace, read_lock, mutated_annotation, std::move(mutated_po));
   }
   else {
     clock_t init = std::clock();
@@ -509,14 +510,14 @@ std::pair<bool, std::unique_ptr<ZTrace>> ZExplorer::realize_mutation
 
 ZExplorer::TraceExtension
 ZExplorer::reuse_trace
-(const ZTrace& parent_trace, const ZAnnotation& mutated_annotation,
- ZPartialOrder&& mutated_po)
+(const ZTrace& parent_trace, const ZEvent *read_lock,
+ const ZAnnotation& mutated_annotation, ZPartialOrder&& mutated_po)
 {
   start_err("reuse_trace...");
   bool something_to_annotate = false;
   for (int i = parent_trace.trace().size() - 1; i >= 0; --i) {
     const ZEvent& ev = *(parent_trace.trace().at(i));
-    // assert(parent_trace.graph().has_event(&ev));    TODO ENABLE ONCE GRAPH HAS FULL TRACE
+    assert(parent_trace.graph().has_event(&ev));
     assert(!something_to_annotate);
     if (is_read(ev) && (!mutated_annotation.defines(&ev))) {
       something_to_annotate = true;
@@ -536,11 +537,18 @@ ZExplorer::reuse_trace
     }
   }
 
+  clock_t init = std::clock();
   assert(!mutated_po.empty());
   std::shared_ptr<ZPartialOrder> mutated_po_ptr(new ZPartialOrder
   (std::move(mutated_po), parent_trace.graph()));
   assert(mutated_po.empty());
+  time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
+  if (something_to_annotate) {
+    mutated_po_ptr->extend(read_lock, mutated_annotation);
+  }
+
+  init = std::clock();
   auto res = TraceExtension
   (parent_trace.trace_ptr(),
    parent_trace.graph_ptr(),
@@ -548,6 +556,8 @@ ZExplorer::reuse_trace
    mutated_po_ptr,
    something_to_annotate,
    parent_trace.assumeblocked);
+  time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
+
   end_err("?");
   return res;
 }
@@ -575,9 +585,12 @@ ZExplorer::extend_trace
   assert(TB.graph && !TB.graph->empty());
   assert(TB.po_full && !TB.po_full->empty());
   assert(TB.po_part && !TB.po_part->empty());
+
+  init = std::clock();
   TraceExtension trace_extension(
     TB.prefix, TB.graph, TB.po_full, TB.po_part,
     !TB.somethingToAnnotate.empty(), TB.someThreadAssumeBlocked);
+  time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (TB.has_error()) {
     // ERROR FOUND

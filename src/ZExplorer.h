@@ -85,12 +85,13 @@ class ZExplorer {
    bool mutation_follows_current_trace);
 
   std::pair<bool, std::unique_ptr<ZTrace>> realize_mutation
-  (const ZTrace& parent_trace, ZAnnotation&& mutated_annotation,
-   ZPartialOrder&& mutated_po, bool mutation_follows_current_trace);
+  (const ZTrace& parent_trace, const ZEvent *read_lock,
+   ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
+   bool mutation_follows_current_trace);
 
   TraceExtension reuse_trace
-  (const ZTrace& parent_trace, const ZAnnotation& mutated_annotation,
-   ZPartialOrder&& mutated_po);
+  (const ZTrace& parent_trace, const ZEvent *read_lock,
+   const ZAnnotation& mutated_annotation, ZPartialOrder&& mutated_po);
 
   TraceExtension extend_trace
   (std::vector<ZEvent>&& tr, ZPartialOrder&& mutated_po);
