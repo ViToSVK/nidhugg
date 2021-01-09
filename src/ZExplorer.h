@@ -96,6 +96,8 @@ class ZExplorer {
   TraceExtension extend_trace
   (std::vector<ZEvent>&& tr, ZPartialOrder&& mutated_po);
 
+  bool early_stopping(const ZTrace& ann_trace) const;
+
   bool extension_respects_annotation
   (const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation& annotation,
    const ZPartialOrder& mutated_po, const ZTrace& parent_trace) const;
@@ -124,22 +126,26 @@ class ZExplorer {
 
   // Number of fully executed traces
   unsigned executed_traces_full = 0;
-  // Number of executed traces
+  // Number of fully+partially executed traces
   unsigned executed_traces = 1;
   // Number of times we used the interpreter to get a trace
   unsigned interpreter_used = 1;
-  // Number of executed traces with some thread assume-blocked
+  // Number of full/partial traces with some thread assume-blocked
   unsigned assume_blocked_thread = 0;
   // Number of 'full' traces ending in a deadlock
   unsigned executed_traces_full_deadlock = 0;
-  // Number of annotated traces with no mutation
-  // choices (eg all blocked by negative annotation)
+  // Early stopping considered and failed
+  unsigned early_failed = 0;
+  // Early stopping considered and succeeded
+  unsigned early_succeeded = 0;
+  // Number of reads with no mutation choices
+  // (eg all blocked by negative annotation)
   unsigned no_mut_choices = 0;
   // Number of mutations considered
   unsigned mutations_considered = 0;
-  // Closure of mutated PO (already chrono-ordered) failed
+  // Closure of mutated POs failed
   unsigned closure_failed = 0;
-  // Closure of mutated PO (already chrono-ordered) succeeded
+  // Closure of mutated POs succeeded
   unsigned closure_succeeded = 0;
   // Succeeded closure without any added edge
   unsigned closure_no_edge = 0;
@@ -157,6 +163,8 @@ class ZExplorer {
   double time_closure = 0;
   // Total time spent on closure succ no edge
   double time_closure_no_edge = 0;
+  // Total time spent on early stopping
+  double time_early = 0;
   // Linearization failed
   unsigned linearization_failed = 0;
   // Linearization succeeded
@@ -170,7 +178,6 @@ class ZExplorer {
   double avg2_branch = 1.0;
   // max branching factor
   double max_branch = 1.0;
-
 };
 
 #endif // __Z_EXPLORER_H__

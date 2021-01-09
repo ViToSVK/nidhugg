@@ -80,7 +80,9 @@ void ZExplorer::print_stats() const
   std::cout << "Interpreter used to get a trace:   " << interpreter_used << "\n";
   std::cout << "Traces with assume-blocked thread: " << assume_blocked_thread << "\n";
   std::cout << "Full traces ending in a deadlock:  " << executed_traces_full_deadlock << "\n";
-  std::cout << "Traces with no mutation choices:   " << no_mut_choices << "\n";
+  std::cout << "Early stopping failed:             " << early_failed << "\n";
+  std::cout << "Early stopping succeeded:          " << early_succeeded << "\n";
+  std::cout << "Reads with no mutation choices:    " << no_mut_choices << "\n";
   std::cout << "Mutations considered:              " << mutations_considered << "\n";
   std::cout << "Closure failed:                    " << closure_failed << "\n";
   std::cout << "Closure succeeded:                 " << closure_succeeded << "\n";
@@ -99,6 +101,7 @@ void ZExplorer::print_stats() const
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
+  std::cout << "Time spent on early stopping:      " << time_early << "\n";
   std::cout << "\n" << std::scientific;
 
   // Change to false to test if assertions are on
@@ -166,6 +169,18 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     assert(ann_trace.children_read.empty());
     ++executed_traces_full;
     ++executed_traces_full_deadlock;
+    end_err("deadlock");
+    return false;
+  }
+
+  // Early stopping
+  auto init = std::clock();
+  bool stop_early = early_stopping(ann_trace);
+  time_early += (double)(clock() - init)/CLOCKS_PER_SEC;
+  if (stop_early) {
+    // This exploration provably leads to no new behaviour, stop early
+    end_err("early");
+    return false;
   }
 
   // Recursive calls - locks
@@ -600,6 +615,16 @@ ZExplorer::extend_trace
 
   end_err("?a");
   return trace_extension;
+}
+
+
+/* *************************** */
+/* EARLY STOPPING              */
+/* *************************** */
+
+bool ZExplorer::early_stopping(const ZTrace& ann_trace) const
+{
+  return false;
 }
 
 
