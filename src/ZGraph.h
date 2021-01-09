@@ -111,27 +111,6 @@ class ZGraph {
   ZGraph& operator=(const ZGraph& oth) = delete;
 
   /* *************************** */
-  /* GRAPH EXTENSION             */
-  /* *************************** */
-
- public:
-
-  // At the point of calling the method, this graph
-  // is linked to some 'orig_trace', graph's nodes
-  // point to the events of 'orig_trace'
-  // Argument: 'trace' - extension of 'orig_trace'
-  // The method links this graph with 'trace' as follows:
-  // 1) events of 'trace' that already happened in 'orig_trace'
-  //    replace their corresponding 'orig_trace' pointers
-  // 2) new events of 'trace' extend existing threads / create new threads
-  // 3) partial order is extended to accomodate new
-  //    threads+events while keeping all the original info
-  // Special case: initial trace extends an empty graph
-  void trace_to_po(const std::vector<std::unique_ptr<ZEvent>>& trace,
-                   ZPartialOrder& po, const ZAnnotation *annotation_ptr);
-
-
-  /* *************************** */
   /* MAIN ALGORITHM              */
   /* *************************** */
 
