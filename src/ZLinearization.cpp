@@ -197,6 +197,16 @@ bool ZLinearization::State::finished() const {
   return true;
 }
 
+bool ZLinearization::State::is_failed_cas_read(unsigned thr) {
+	 const ZEvent *ev = currEvent(thr);
+	  if (!ev) {
+	    end_err("0: null");
+	    return false;
+	  }
+	  return (ev->is_read_of_cas() && par.an.ann(ev->id()).value != ev->cas_compare_val());
+}
+
+
 bool ZLinearization::State::canForce(unsigned thr) const {
   // start_err("canForce...");
   const ZEvent *ev = currEvent(thr);
@@ -275,7 +285,7 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
     for (unsigned thr = 0; thr < par.gr.size(); thr++) {
 
         while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE &&
-         !currEvent(thr)->is_read_of_atomic_event() && canForce(thr)) {
+         (!currEvent(thr)->is_read_of_atomic_event() || is_failed_cas_read(thr)) && canForce(thr)) {
           advance(thr, res);
           done = false;
         }
@@ -316,7 +326,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
       end_err("0: null");
       continue;
     }
-    else if(ev->kind!=ZEvent::Kind::WRITE && !ev->is_read_of_atomic_event()){
+    else if(ev->kind!=ZEvent::Kind::WRITE && (!ev->is_read_of_atomic_event() || curr.is_failed_cas_read(thr) ) ){
       continue;
     }
     if (!curr.canForce(thr)) {
