@@ -55,9 +55,6 @@ class ZTrace {
   // is possible (i.e. deadlocked). We'll count it as full
   mutable bool deadlocked;
 
-  std::map<const ZEvent *, std::map<int, std::unique_ptr<ZTrace>>> children_read;
-  std::map<const ZEvent *, std::unique_ptr<ZTrace>> children_lock;
-
   bool empty() const;
   std::string to_string(unsigned depth) const;
   void dump() const;

@@ -74,17 +74,20 @@ class ZExplorer {
   bool explore_rec(ZTrace& ann_trace);
 
   bool mutate_read
-  (ZTrace& ann_trace, const ZEvent *read);
+  (ZTrace& ann_trace, const ZEvent *read, const ZAnn& mutation);
+
+  const ZEvent * collect_lock_mutation
+  (const ZTrace& ann_trace, const ZEvent *lock);
 
   bool mutate_lock
-  (ZTrace& ann_trace, const ZEvent *lock);
+  (ZTrace& ann_trace, const ZEvent *lock, const ZEvent *unlock);
 
-  std::pair<bool, std::unique_ptr<ZTrace>> close_po
+  bool close_po
   (const ZTrace& ann_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
    bool mutation_follows_current_trace);
 
-  std::pair<bool, std::unique_ptr<ZTrace>> realize_mutation
+  bool realize_mutation
   (const ZTrace& parent_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
    bool mutation_follows_current_trace);
@@ -96,7 +99,10 @@ class ZExplorer {
   TraceExtension extend_trace
   (std::vector<ZEvent>&& tr, ZPartialOrder&& mutated_po);
 
-  bool early_stopping(const ZTrace& ann_trace) const;
+  bool early_stopping
+  (const ZTrace& ann_trace,
+   const std::map<const ZEvent *, std::set<ZAnn>>& read_mutations,
+   const std::map<const ZEvent *, const ZEvent *>& lock_mutations);
 
   bool extension_respects_annotation
   (const std::vector<std::unique_ptr<ZEvent>>& trace, const ZAnnotation& annotation,

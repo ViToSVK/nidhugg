@@ -55,7 +55,7 @@ ZTrace::ZTrace
   : _parent(&parentTrace),
     _trace(new_trace),
     _annotation(std::move(new_annotation)),
-    _negative(),
+    _negative(parentTrace.negative()),
     _graph(new_graph),
     _po_full(new_po_full),
     _po_part(new_po_part),
