@@ -75,8 +75,16 @@ class ZGraph {
     // Read -> its local buffer-write
     std::unordered_map
       <const ZEvent *, const ZEvent *> local_write;
+    // CPid -> last spawn of that thread
+    std::map<CPid, const ZEvent *> last_spawn;
+    // ML -> CPid -> last unlock of that ml in that thread
+    std::unordered_map
+      <SymAddrSize, std::map<CPid, const ZEvent *>> last_unlock;
+    // CPid -> last lock of that thread (and any ML)
+    std::map<CPid, const ZEvent *> last_lock;
     bool empty() const {
-      return (writes.empty() && local_write.empty());
+      return (writes.empty() && local_write.empty() &&
+              last_spawn.empty() && last_unlock.empty() && last_lock.empty());
     }
   };
  private:
@@ -138,17 +146,24 @@ class ZGraph {
   // Collect all write events visible to the read
   std::set<const ZEvent *> mutation_candidates_collect
   (const ZPartialOrder& po, const ZEvent *read,
-   const std::set<ZEventID>& check_if_any_is_visible) const;
+   const std::set<ZEventID>& check_if_any_is_visible,
+   const ZPartialOrder * stricter_po) const;
 
   // Filter out candidates forbidden to read by negative annotation
   void mutation_candidates_filter_by_negative
   (const ZEvent *read, std::set<const ZEvent *>& candidates,
    const ZAnnotationNeg& negative) const;
 
+  // Filter out candidates spanned by stricter_po
+  void mutation_candidates_filter_by_stricter
+  (std::set<const ZEvent *>& candidates,
+   const ZPartialOrder& stricter_po) const;
+
   // Returns mutation candidates for a read node grouped by value
   std::set<ZAnn> mutation_candidates_grouped
   (const ZPartialOrder& po, const ZEvent *read,
-   const ZAnnotationNeg& negative) const;
+   const ZAnnotationNeg& negative,
+   const ZPartialOrder * stricter_po) const;
 };
 
 #endif // __Z_GRAPH_H__

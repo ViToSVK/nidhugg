@@ -402,10 +402,13 @@ std::list<const ZEvent *> ZGraph::events_to_mutate
 
 std::set<const ZEvent *> ZGraph::mutation_candidates_collect
 (const ZPartialOrder& po, const ZEvent *read,
- const std::set<ZEventID>& check_if_any_is_visible) const
+ const std::set<ZEventID>& check_if_any_is_visible,
+ const ZPartialOrder * stricter_po) const
 {
   assert(is_read(read));
   assert(has_event(read));
+  assert(po.spans_event(read));
+  assert(!stricter_po || !stricter_po->spans_event(read));
 
   std::set<const ZEvent *> obs_events;
 
@@ -612,16 +615,47 @@ void ZGraph::mutation_candidates_filter_by_negative
 }
 
 
+void ZGraph::mutation_candidates_filter_by_stricter
+(std::set<const ZEvent *>& candidates,
+ const ZPartialOrder& stricter_po) const
+{
+  auto it = candidates.begin();
+  while (it != candidates.end()) {
+    const ZEvent * cand = *it;
+    if (is_initial(cand)) {
+      it = candidates.erase(it);
+      continue;
+    }
+    assert(is_write(cand));
+    if (stricter_po.spans_event(cand))
+      it = candidates.erase(it);
+    else
+      ++it;
+  }
+}
+
+
 std::set<ZAnn> ZGraph::mutation_candidates_grouped
 (const ZPartialOrder& po, const ZEvent *read,
- const ZAnnotationNeg& negative) const
+ const ZAnnotationNeg& negative,
+ const ZPartialOrder * stricter_po) const
 {
+  // Do not use stricter_po to collect, in case it spans read
+  bool stricter_spans_read = (stricter_po && stricter_po->spans_event(read));
+  const ZPartialOrder * stricter_to_collect = (
+  stricter_spans_read ? nullptr : stricter_po);
+
   // Collect the candidates
   std::set<const ZEvent *> obs_events = mutation_candidates_collect
-  (po, read, std::set<ZEventID>());
+  (po, read, std::set<ZEventID>(), stricter_to_collect);
 
   // Filter by negative annotation
   mutation_candidates_filter_by_negative(read, obs_events, negative);
+
+  // If stricter_spans_read, delete all events spanned by stricter_po
+  if (stricter_spans_read) {
+    mutation_candidates_filter_by_stricter(obs_events, *stricter_po);
+  }
 
   // Group by value
   std::map<int, std::set<ZEventID>> anns;

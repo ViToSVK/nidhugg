@@ -208,7 +208,8 @@ bool ZClosure::close_finish
     assert(read_ann.second.goodwrites.size() >= 2);
     assert(read_ann.first && is_read(read_ann.first));
     std::set<const ZEvent *> any_good_write_visible = (
-      gr.mutation_candidates_collect(po, read_ann.first, read_ann.second.goodwrites));
+      gr.mutation_candidates_collect
+      (po, read_ann.first, read_ann.second.goodwrites, nullptr));
     if (any_good_write_visible.empty())
       return false;
     else {

@@ -936,6 +936,8 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
       assert(!threads_past_annotated_region.count(ev->childs_cpid()));
       threads_past_annotated_region.insert(ev->childs_cpid());
     }
+    // Cache - last spawn
+    graph->_cache.last_spawn[ev->cpid()] = ev;
   }
 
   if (is_join(ev)) {
@@ -978,6 +980,21 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
     }
     else
       local_write.emplace(ev, nullptr);
+  }
+
+  if (is_lock(ev)) {
+    // Cache - last lock
+    graph->_cache.last_lock[ev->cpid()] = ev;
+  }
+
+  if (is_unlock(ev)) {
+    // Cache - last unlock
+    auto& last_unlock = graph->_cache.last_unlock;
+    if (!last_unlock.count(ev->ml())) {
+      last_unlock.emplace(ev->ml(), std::map<CPid, const ZEvent *>());
+    }
+    last_unlock[ev->ml()][ev->cpid()] = ev;
+    assert(last_unlock.at(ev->ml()).at(ev->cpid()) == ev);
   }
 
   // Add to po_part if not past annotated region

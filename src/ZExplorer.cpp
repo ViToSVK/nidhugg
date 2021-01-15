@@ -612,13 +612,182 @@ bool ZExplorer::early_stopping
  const std::map<const ZEvent *, std::set<ZAnn>>& read_mutations,
  const std::map<const ZEvent *, const ZEvent *>& lock_mutations)
 {
+  // If there is a read with multiple values to see, no early stopping
+  bool read_with_more = false;
+  std::set<const ZEvent *> maybe_reads;
   for (const auto& r_mut : read_mutations) {
+    assert(is_read(r_mut.first));
     if (r_mut.second.empty()) {
       // All mutation candidates are ruled out by negative annotation
       ++no_mut_choices;
+      maybe_reads.insert(r_mut.first);
+    } else if (r_mut.second.size() > 1) {
+      // Read can see different values, no early stopping
+      read_with_more = true;
     }
   }
-  return false;
+  if (read_with_more) {
+    return false;
+  }
+
+  // DEADLOCK-DETECTION-COMPLETENESS
+  // If there is a lock that we are about to mutate, no early stopping
+  if (!lock_mutations.empty()) {
+    return false;
+  }
+  // Below is hence unreachable
+  /*
+  std::set<const ZEvent *> maybe_locks;
+  for (const auto& l_mut : lock_mutations) {
+    assert(is_lock(l_mut.first));
+    if (!l_mut.second) {
+      // Lock unable to be mutated at this point
+      maybe_locks.emplace(l_mut.first);
+    } else {
+      // Lock with an unlock to mutate to, no early stopping
+      return false;
+    }
+  }
+  */
+
+  // If there is a spawn in full and not in part, no early stopping
+  for (const auto& cpid_lastspawn : ann_trace.graph().cache().last_spawn) {
+    assert(is_spawn(cpid_lastspawn.second));
+    assert(ann_trace.graph().has_event(cpid_lastspawn.second));
+    assert(ann_trace.po_full().spans_event(cpid_lastspawn.second));
+    if (!ann_trace.po_part().spans_event(cpid_lastspawn.second)) {
+      return false;
+    }
+  }
+
+  // DEADLOCK-DETECTION-COMPLETENESS
+  // If there is a lock in full and not in part, no early stopping
+  for (const auto& cpid_lastlock : ann_trace.graph().cache().last_lock) {
+    assert(is_lock(cpid_lastlock.second));
+    assert(ann_trace.graph().has_event(cpid_lastlock.second));
+    assert(ann_trace.po_full().spans_event(cpid_lastlock.second));
+    if (!ann_trace.po_part().spans_event(cpid_lastlock.second)) {
+      return false;
+    }
+  }
+
+  // Consider early stopping
+
+  // Collect threads with a read as the next unannotated event in po_part,
+  // such that the read has no negative-allowed mutation even in po_full
+  std::set<CPid> blocked_threads;
+  for (const ZEvent * read : maybe_reads) {
+    assert(is_read(read));
+    assert(read_mutations.at(read).empty());
+    assert(ann_trace.po_part().spans_event(read));
+    assert(!blocked_threads.count(read->cpid()));
+    std::set<ZAnn> on_full = ann_trace.graph().mutation_candidates_grouped
+    (ann_trace.po_full(), read, ann_trace.negative(), &ann_trace.po_part());
+    if (on_full.empty()) {
+      // This read has nothing allowed to see in entire full trace
+      blocked_threads.insert(read->cpid());
+    } else if (on_full.size() > 1) {
+      // This read will be able to see different values, no early stopping
+      ++early_failed;
+      return false;
+    }
+  }
+
+  // DEADLOCK-DETECTION-COMPLETENESS: this becomes unreachable
+  /*
+  for (const ZEvent * lock : maybe_locks) {
+    assert(is_lock(lock));
+    assert(!blocked_threads.count(lock->cpid()));
+    const auto& last_unlock = ann_trace.graph().cache().last_unlock;
+    if (!last_unlock.count(lock->ml())) {
+      blocked_threads.insert(lock->cpid());
+      continue;
+    }
+    assert(last_unlock.count(lock->ml()));
+    for (const auto& cpid_lastunlock : last_unlock.at(lock->ml())) {
+      assert(is_unlock(cpid_lastunlock.second));
+      assert(same_ml(lock, cpid_lastunlock.second));
+      assert(ann_trace.po_full().spans_event(cpid_lastunlock.second));
+      if (cpid_lastunlock.first == lock->cpid())
+        continue;
+      if (!ann_trace.po_part().spans_event(cpid_lastunlock.second)) {
+        // There will be an unlock to mutate to later on
+        // DEADLOCK-DETECTION-COMPLETENESS -- no early stopping
+        ++early_failed;
+        return false;
+      }
+    }
+    // There will be no unlock to mutate to later on
+    blocked_threads.insert(lock->cpid());
+  }
+  */
+
+  // Blocked threads collected, check all reads of the full trace
+  for (const auto& read_localwrite : ann_trace.graph().cache().local_write) {
+    const ZEvent * read = read_localwrite.first;
+    assert(is_read(read));
+    assert(ann_trace.po_full().spans_event(read));
+    if (ann_trace.annotation().defines(read)) {
+      // This read is already annotated
+      assert(ann_trace.po_part().spans_event(read));
+      continue;
+    }
+    if (maybe_reads.count(read)) {
+      // This read has already been checked wrt full trace
+      continue;
+    }
+    if (blocked_threads.count(read->cpid())) {
+      // This read is preceded by a 'blocked' read/lock, unless that one
+      // gets a chance to get 'unblocked', this read will not be reached
+      continue;
+    }
+    assert(read_mutations.count(read) ||
+           !ann_trace.po_part().spans_event(read));
+    assert(read_mutations.count(read) ||
+           !ann_trace.negative().forbids_initial(read));
+    std::set<ZAnn> on_full = ann_trace.graph().mutation_candidates_grouped
+    (ann_trace.po_full(), read, ann_trace.negative(), &ann_trace.po_part());
+    // Separate cases by read in po_part or not
+    assert(read_mutations.count(read) || !on_full.empty());
+    if (on_full.size() > 1) {
+      // This read will be able to see different values, no early stopping
+      ++early_failed;
+      return false;
+    }
+    if (!read_mutations.count(read)) {
+      // Read outside of po_part with 1 value to see, keep checking
+      assert(!ann_trace.po_part().spans_event(read));
+      assert(on_full.size() == 1);
+      continue;
+    }
+    // Read on the edge of po_part with one value to see there
+    assert(ann_trace.po_part().spans_event(read));
+    assert(read_mutations.at(read).size() == 1);
+    if (on_full.empty()) {
+      // Read has nothing to see in not-in-po_part, keep checking
+      continue;
+    }
+    // One value to see in the not-in-po_part events
+    // If that value is different from the one in po_part, no early stopping
+    assert(on_full.size() == 1);
+    int value_on_part = read_mutations.at(read).begin()->value;
+    int value_on_full = on_full.begin()->value;
+    if (value_on_part != value_on_full) {
+      // This read will be able to see different values, no early stopping
+      ++early_failed;
+      return false;
+    }
+  }
+
+  // Early stopping succeeded
+  if (blocked_threads.empty()) {
+    // We count a full trace since nothing is blocked, i.e.,
+    // everything will be negative-allowed to see exactly one value
+    ++executed_traces_full;
+  }
+
+  ++early_succeeded;
+  return true;
 }
 
 
