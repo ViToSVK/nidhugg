@@ -409,6 +409,13 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
   assert(has_event(read));
   assert(po.spans_event(read));
   assert(!stricter_po || !stricter_po->spans_event(read));
+  const ZEvent *last_of_readthr_in_stricter = nullptr;
+  if (stricter_po && stricter_po->spans_thread(read->cpid())) {
+    int thrsize = stricter_po->thread_size(read->cpid());
+    assert(thrsize > 0);
+    last_of_readthr_in_stricter = event(read->cpid(), thrsize - 1);
+    assert(stricter_po->spans_event(last_of_readthr_in_stricter));
+  }
 
   std::set<const ZEvent *> obs_events;
 
@@ -438,9 +445,11 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
       assert(rem && is_write(rem) && same_ml(read, rem) && rem->cpid() == cpid);
       assert(po.spans_event(rem));
       assert(!po.has_edge(read, rem));
-      if (po.has_edge(rem, read)) {
+      if (po.has_edge(rem, read) ||
+          (last_of_readthr_in_stricter && stricter_po->spans_event(rem)
+           && stricter_po->has_edge(rem, last_of_readthr_in_stricter))) {
         // Others in this thread are covered from read by rem
-        assert(rem->event_id() <= po.pred(read, cpid).second);
+        assert(stricter_po || rem->event_id() <= po.pred(read, cpid).second);
         // rem may be covered by some conflicting write rem -> x -> read
         mayBeCovered.emplace(rem);
         // Update cover
@@ -448,6 +457,11 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
           if (covcpid == rem->cpid())
             continue;
           int newcov = po.pred(rem, covcpid).second;
+          if (stricter_po && stricter_po->spans_event(rem) &&
+              stricter_po->spans_thread(covcpid)) {
+            assert(newcov <= stricter_po->pred(rem, covcpid).second);
+            newcov = stricter_po->pred(rem, covcpid).second;
+          }
           assert(covered.count(covcpid));
           if (newcov > covered[covcpid])
             covered[covcpid] = newcov;
@@ -480,6 +494,11 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
       if (covcpid == local->cpid())
         continue;
       int newcov = po.pred(local, covcpid).second;
+      if (stricter_po && stricter_po->spans_event(local) &&
+          stricter_po->spans_thread(covcpid)) {
+        assert(newcov <= stricter_po->pred(local, covcpid).second);
+        newcov = stricter_po->pred(local, covcpid).second;
+      }
       assert(covered.count(covcpid));
       if (newcov > covered[covcpid])
         covered[covcpid] = newcov;
@@ -490,13 +509,15 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
   #ifndef NDEBUG
     bool loc = false;
     for (const auto& rem : mayBeCovered) {
-      assert(is_write(rem) && same_ml(rem, read) && po.has_edge(rem, read));
+      assert(is_write(rem) && same_ml(rem, read));
+      assert(last_of_readthr_in_stricter || po.has_edge(rem, read));
       if (po.has_edge(local, rem)) {
         loc = true;
         break;
       }
     }
-    assert((!localCovered || loc) && (localCovered || !loc));
+    assert(stricter_po ||
+           ((!localCovered || loc) && (localCovered || !loc)));
   #endif
     if (!localCovered) {
       // Local write not covered, add obs
@@ -537,8 +558,8 @@ std::set<const ZEvent *> ZGraph::mutation_candidates_collect
 
   // Take candidates that happen before read
   for (const auto& rem : mayBeCovered) {
-    assert(is_write(rem) && same_ml(rem, read) &&
-           po.has_edge(rem, read));
+    assert(is_write(rem) && same_ml(rem, read));
+    assert(last_of_readthr_in_stricter || po.has_edge(rem, read));
     assert(covered.count(rem->cpid()));
     if (rem->event_id() > covered[rem->cpid()]) {
       // Not covered, add
