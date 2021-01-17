@@ -170,7 +170,8 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
-  // Early stopping
+  // Early stopping, disabled until its TODO is solved
+  /*
   auto init = std::clock();
   bool stop_early = early_stopping(ann_trace, read_mutations, lock_mutations);
   time_early += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -179,6 +180,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     end_err("0-early");
     return false;
   }
+  */
 
   // Recursive calls - locks
   for (const auto& lock : locks_to_mutate) {
@@ -625,6 +627,8 @@ bool ZExplorer::early_stopping
       // Read can see different values, no early stopping
       read_with_more = true;
     }
+    // TODO: no early stopping if the one mutation for the read is
+    // to a different value than what read saw in ann_trace
   }
   if (read_with_more) {
     return false;
@@ -784,7 +788,10 @@ bool ZExplorer::early_stopping
     // We count a full trace since nothing is blocked, i.e.,
     // everything will be negative-allowed to see exactly one value
     ++executed_traces_full;
+    // TODO: count full trace only when each of the mutations of
+    // read_mutations is realizable
   }
+  // TODO: collect backtrack points for all events not in po_part
 
   ++early_succeeded;
   return true;
