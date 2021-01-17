@@ -55,6 +55,11 @@ class ZTrace {
   // is possible (i.e. deadlocked). We'll count it as full
   mutable bool deadlocked;
 
+  // Backtrack points
+  std::set<CPid> backtrack_possible;
+  std::set<CPid> backtrack_considered;
+  std::list<CPid> backtrack;
+
   bool empty() const;
   std::string to_string(unsigned depth) const;
   void dump() const;

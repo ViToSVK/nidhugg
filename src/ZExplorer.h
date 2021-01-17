@@ -65,6 +65,9 @@ class ZExplorer {
 
  public:
 
+  std::unordered_map<SymAddrSize,
+                     std::map<ZEventID, ZTrace *>> parents;
+
   bool explore();
 
   void print_stats() const;
@@ -83,12 +86,12 @@ class ZExplorer {
   (ZTrace& ann_trace, const ZEvent *lock, const ZEvent *unlock);
 
   bool close_po
-  (const ZTrace& ann_trace, const ZEvent *read_lock,
+  (ZTrace& ann_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
    bool mutation_follows_current_trace);
 
   bool realize_mutation
-  (const ZTrace& parent_trace, const ZEvent *read_lock,
+  (ZTrace& parent_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
    bool mutation_follows_current_trace);
 

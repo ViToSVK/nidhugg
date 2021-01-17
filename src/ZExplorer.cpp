@@ -144,19 +144,30 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   std::map<const ZEvent *, std::set<ZAnn>> read_mutations;
   std::map<const ZEvent *, const ZEvent *> lock_mutations;
   std::list<const ZEvent *> locks_to_mutate, reads_to_mutate;
+  std::map<CPid, const ZEvent *> thread_to_mutate_event;
   for (const auto& ev : events_to_mutate) {
     assert(!read_mutations.count(ev) && !lock_mutations.count(ev));
     if (is_read(ev)) {
       ann_trace.deadlocked = false;
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
       if (!read_mutations[ev].empty()) {
+        // This read has mutation(s) to consider
         reads_to_mutate.push_back(ev);
+        assert(!thread_to_mutate_event.count(ev->cpid()));
+        thread_to_mutate_event.emplace(ev->cpid(), ev);
+        assert(!ann_trace.backtrack_possible.count(ev->cpid()));
+        ann_trace.backtrack_possible.insert(ev->cpid());
       }
     } else {
       assert(is_lock(ev));
       lock_mutations.emplace(ev, collect_lock_mutation(ann_trace, ev));
       if (lock_mutations[ev]) {
+        // This lock has mutation to consider
         locks_to_mutate.push_back(ev);
+        assert(!thread_to_mutate_event.count(ev->cpid()));
+        thread_to_mutate_event.emplace(ev->cpid(), ev);
+        assert(!ann_trace.backtrack_possible.count(ev->cpid()));
+        ann_trace.backtrack_possible.insert(ev->cpid());
       }
     }
   }
@@ -171,7 +182,6 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   }
 
   // Early stopping, disabled until its TODO is solved
-  /*
   auto init = std::clock();
   bool stop_early = early_stopping(ann_trace, read_mutations, lock_mutations);
   time_early += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -180,34 +190,50 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     end_err("0-early");
     return false;
   }
-  */
 
-  // Recursive calls - locks
+  assert(ann_trace.backtrack.empty());
   for (const auto& lock : locks_to_mutate) {
     assert(is_lock(lock));
-    assert(lock_mutations.count(lock) && lock_mutations[lock]);
-    bool error = mutate_lock(ann_trace, lock, lock_mutations[lock]);
-    if (error) {
-      assert(original_TB && original_TB->error_trace);
-      end_err("1-lock");
-      return error;
-    }
-    ann_trace.negative().update(lock, negative_update);
+    ann_trace.backtrack.push_back(lock->cpid());
+    ann_trace.backtrack_considered.insert(lock->cpid());
   }
-
-  // Recursive calls - reads
   for (const auto& read : reads_to_mutate) {
     assert(is_read(read));
-    assert(read_mutations.count(read) && !read_mutations[read].empty());
-    for (const ZAnn& mutation : read_mutations[read]) {
-      bool error = mutate_read(ann_trace, read, mutation);
+    ann_trace.backtrack.push_back(read->cpid());
+    ann_trace.backtrack_considered.insert(read->cpid());
+  }
+
+  // Recursive calls through backtrack points
+  for (auto it = ann_trace.backtrack.begin();
+       it != ann_trace.backtrack.end(); ++it) {
+    assert(ann_trace.backtrack_considered.count(*it));
+    assert(ann_trace.backtrack_considered.size() == ann_trace.backtrack.size());
+    assert(thread_to_mutate_event.count(*it));
+    const ZEvent * read_lock = thread_to_mutate_event[*it];
+    assert(is_read(read_lock) || is_lock(read_lock));
+    if (is_read(read_lock)) {
+      // Recursive call - read
+      assert(read_mutations.count(read_lock) && !read_mutations[read_lock].empty());
+      for (const ZAnn& mutation : read_mutations[read_lock]) {
+        bool error = mutate_read(ann_trace, read_lock, mutation);
+        if (error) {
+          assert(original_TB && original_TB->error_trace);
+          end_err("1-read");
+          return error;
+        }
+      }
+      ann_trace.negative().update(read_lock, negative_update);
+    } else {
+      // Recursive call - lock
+      assert(lock_mutations.count(read_lock) && lock_mutations[read_lock]);
+      bool error = mutate_lock(ann_trace, read_lock, lock_mutations[read_lock]);
       if (error) {
         assert(original_TB && original_TB->error_trace);
-        end_err("1-read");
+        end_err("1-lock");
         return error;
       }
+      ann_trace.negative().update(read_lock, negative_update);
     }
-    ann_trace.negative().update(read, negative_update);
   }
 
   // Done with this recursion node
@@ -387,7 +413,7 @@ bool ZExplorer::mutate_lock
 /* *************************** */
 
 bool ZExplorer::close_po
-(const ZTrace& ann_trace, const ZEvent *read_lock,
+(ZTrace& ann_trace, const ZEvent *read_lock,
  ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
  bool mutation_follows_current_trace)
 {
@@ -426,7 +452,7 @@ bool ZExplorer::close_po
 /* *************************** */
 
 bool ZExplorer::realize_mutation
-(const ZTrace& parent_trace, const ZEvent *read_lock,
+(ZTrace& parent_trace, const ZEvent *read_lock,
  ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
  bool mutation_follows_current_trace)
 {
@@ -501,8 +527,25 @@ bool ZExplorer::realize_mutation
   assert(mutated_annotation.empty() && mutated_po.empty());
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
+  // Record as parent, recursive call, unrecord as parent
+  if (!parents.count(read_lock->ml())) {
+    parents.emplace(read_lock->ml(), std::map<ZEventID, ZTrace *>());
+  }
+  assert(parent_trace.backtrack_considered.size() <= parent_trace.backtrack_possible.size());
+  if (parent_trace.backtrack_considered.size() < parent_trace.backtrack_possible.size()) {
+    // More backtrack points might get added
+    parents[read_lock->ml()].emplace(read_lock->id(), &parent_trace);
+  }
+  bool error = explore_rec(mutated_ZTrace);
+  assert(parents.count(read_lock->ml()));
+  if (parents[read_lock->ml()].count(read_lock->id())) {
+    parents[read_lock->ml()].erase(read_lock->id());
+  } else {
+    assert(parent_trace.backtrack_considered.size() == parent_trace.backtrack_possible.size());
+  }
+
   end_err("?-realized");
-  return explore_rec(mutated_ZTrace);
+  return error;
 }
 
 
@@ -630,6 +673,8 @@ bool ZExplorer::early_stopping
     // TODO: no early stopping if the one mutation for the read is
     // to a different value than what read saw in ann_trace
   }
+  // DISABLED UNTIL TODO IS SOLVED
+  return false;
   if (read_with_more) {
     return false;
   }
