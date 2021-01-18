@@ -36,9 +36,11 @@
 #include "Trace.h"
 #include "ZGraph.h"
 
+class ZExplorer;
 
 class ZBuilderSC : public TSOTraceBuilder {
   friend class ZExplorer;
+  const ZExplorer * const explorer;
 
   /* *************************** */
   /* SCHEDULING                  */
@@ -137,7 +139,8 @@ class ZBuilderSC : public TSOTraceBuilder {
   // (step2) get a maximal extension
   ZBuilderSC(const Configuration &conf, llvm::Module *m,
              std::vector<ZEvent>&& tr,
-             ZPartialOrder&& mutated_po);
+             ZPartialOrder&& mutated_po,
+             const ZExplorer * const our_explorer);
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */

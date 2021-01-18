@@ -20,6 +20,7 @@
 
 #include "ZPartialOrder.h"
 #include "ZGraph.h"
+#include "ZExplorer.h"
 
 
 ZGraph ZPartialOrder::graphDummy = ZGraph();
@@ -543,7 +544,9 @@ void ZPartialOrder::shrink()
 }
 
 
-void ZPartialOrder::extend(const ZEvent *read_lock, const ZAnnotation& mutated_annotation)
+void ZPartialOrder::extend
+(const ZEvent *read_lock, const ZAnnotation& mutated_annotation,
+ const ZExplorer& explorer, const ZPartialOrder& po_full)
 {
   assert((is_read(read_lock) && mutated_annotation.defines(read_lock)) ||
          (is_lock(read_lock) && mutated_annotation.is_last_lock(read_lock)));
@@ -609,8 +612,13 @@ void ZPartialOrder::extend(const ZEvent *read_lock, const ZAnnotation& mutated_a
       }
 
       // Handle specific event types
+      if ((is_write(ev) || is_lock(ev)) &&
+          explorer.parents.count(ev->ml())) {
+        // Process backtrack points
+        explorer.process_backtrack_points(po_full, ev);
+      }
       if (is_read(ev) || is_lock(ev)) {
-        // We reached new unannotated event, break
+        // We reached new unannotated event, break extending in curr_cpid
         break;
       }
       if (is_spawn(ev)) {
@@ -622,30 +630,50 @@ void ZPartialOrder::extend(const ZEvent *read_lock, const ZAnnotation& mutated_a
       }
     }
     // We finished extending in curr_cpid
-    if (thread_size(curr_cpid) == full_size) {
-      // We extended until the complete end of curr_cpid
-      // Locate threads waiting to join curr_cpid
-      for (const CPid& jn_cpid : threads_spanned()) {
-        int jn_line_size = thread_size(jn_cpid);
-        assert(jn_line_size > 0);
-        if (jn_line_size >= graph(jn_cpid).size()) {
-          // jn_cpid is already fully extended
-          assert(jn_line_size == graph(jn_cpid).size());
-          continue;
-        }
-        const ZEvent * jn_ev = graph.event(jn_cpid, jn_line_size - 1);
-        assert(spans_event(jn_ev));
-        if ((is_read(jn_ev) && !mutated_annotation.defines(jn_ev)) ||
-            (is_lock(jn_ev) && !mutated_annotation.is_last_lock(jn_ev))) {
-          // Do not extend jn_cpid if our last event of it is unannotated
-          continue;
-        }
-        jn_ev = graph.event(jn_cpid, jn_line_size);
-        assert(!spans_event(jn_ev));
-        if (is_join(jn_ev) && jn_ev->childs_cpid() == curr_cpid) {
-          // Located: next event of jn_cpid wants to join curr_cpid
-          todo.push_back(jn_cpid);
-        }
+    if (thread_size(curr_cpid) < full_size)
+      continue;
+    assert(thread_size(curr_cpid) == full_size);
+    // We extended until the complete end of curr_cpid
+    // Locate threads waiting to join curr_cpid
+    for (const CPid& jn_cpid : threads_spanned()) {
+      int jn_line_size = thread_size(jn_cpid);
+      assert(jn_line_size > 0);
+      if (jn_line_size >= graph(jn_cpid).size()) {
+        // jn_cpid is already fully extended
+        assert(jn_line_size == graph(jn_cpid).size());
+        continue;
+      }
+      const ZEvent * jn_ev = graph.event(jn_cpid, jn_line_size - 1);
+      assert(spans_event(jn_ev));
+      if ((is_read(jn_ev) && !mutated_annotation.defines(jn_ev)) ||
+          (is_lock(jn_ev) && !mutated_annotation.is_last_lock(jn_ev))) {
+        // Do not extend jn_cpid if our last event of it is unannotated
+        continue;
+      }
+      jn_ev = graph.event(jn_cpid, jn_line_size);
+      assert(!spans_event(jn_ev));
+      if (is_join(jn_ev) && jn_ev->childs_cpid() == curr_cpid) {
+        // Located: next event of jn_cpid wants to join curr_cpid
+        todo.push_back(jn_cpid);
+      }
+    }
+  }
+}
+
+
+void ZPartialOrder::process_remaining_events_for_backtrack_points
+(const ZExplorer& explorer, const ZPartialOrder& po_full) const
+{
+  for (const auto& cpid_lineid : graph.threads()) {
+    const CPid& cpid = cpid_lineid.first;
+    int start = spans_thread(cpid) ? thread_size(cpid) : 0;
+    for (int evidx = start; evidx < graph(cpid).size(); ++evidx) {
+      assert(graph.has_event(cpid, evidx));
+      const ZEvent * ev = graph.event(cpid, evidx);
+      if ((is_write(ev) || is_lock(ev)) &&
+          explorer.parents.count(ev->ml())) {
+        // Process backtrack points
+        explorer.process_backtrack_points(po_full, ev);
       }
     }
   }

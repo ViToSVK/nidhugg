@@ -25,6 +25,7 @@
 
 #include "ZAnnotationNeg.h"
 
+class ZExplorer;
 
 class ZGraph;
 class ZPartialOrder {
@@ -95,7 +96,11 @@ class ZPartialOrder {
   void add_event(const ZEvent * ev);
   void shrink();
   // Extending when reusing trace and graph
-  void extend(const ZEvent *read_lock, const ZAnnotation& mutated_annotation);
+  void extend(const ZEvent *read_lock, const ZAnnotation& mutated_annotation,
+              const ZExplorer& explorer, const ZPartialOrder& po_full);
+  // Extending but nothing more to annotate, only check backtrack points
+  void process_remaining_events_for_backtrack_points
+  (const ZExplorer& explorer, const ZPartialOrder& po_full) const;
 
   // Empty
   ZPartialOrder();
@@ -116,6 +121,12 @@ class ZPartialOrder {
   size_t size() const {
     assert(_succ.size() == _pred.size());
     return _succ.size();
+  }
+  size_t events_size() const {
+    size_t res = 0;
+    for (const CPid& cpid : threads_spanned())
+      res += thread_size(cpid);
+    return res;
   }
 
   std::string to_string() const;

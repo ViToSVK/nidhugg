@@ -30,7 +30,7 @@ static const bool DEBUG = false;
 // Use at the very beginning to get an initial trace
 ZBuilderSC::ZBuilderSC
 (const Configuration &conf, llvm::Module *m, bool init_only)
-  : TSOTraceBuilder(conf),
+  : TSOTraceBuilder(conf), explorer(nullptr),
     sch_replay(false), sch_extend(true),
     prefix(new std::vector<std::unique_ptr<ZEvent>>()),
     initial_trace_only(init_only),
@@ -49,8 +49,8 @@ ZBuilderSC::ZBuilderSC
 // (step2) get a maximal extension
 ZBuilderSC::ZBuilderSC
 (const Configuration &conf, llvm::Module *m, std::vector<ZEvent>&& tr,
- ZPartialOrder&& mutated_po)
-  : TSOTraceBuilder(conf),
+ ZPartialOrder&& mutated_po, const ZExplorer * const our_explorer)
+  : TSOTraceBuilder(conf), explorer(our_explorer),
     sch_replay(true), sch_extend(false),
     prefix(new std::vector<std::unique_ptr<ZEvent>>()),
     replay_trace(std::move(tr)),
@@ -1015,6 +1015,12 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
       assert(is_read(ev) || is_lock(ev));
       threads_past_annotated_region.insert(ev->cpid());
     }
+
+    // Adding to po_part, time to process backtrack points
+    if ((is_write(ev) || is_lock(ev)) &&
+        explorer && explorer->parents.count(ev->ml())) {
+      explorer->process_backtrack_points(*po_full, ev);
+    }
   }
 
   if (!take_last_event) {
@@ -1064,6 +1070,10 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
 
   #ifndef NDEBUG
   graph_po_constructed = true;
+  assert(graph->events_size() == po_full->events_size());
+  assert(graph->events_size() >= po_part->events_size());
+  assert(!somethingToAnnotate.empty() ||
+         graph->events_size() == po_part->events_size());
   #endif
   end_err("last");
 }

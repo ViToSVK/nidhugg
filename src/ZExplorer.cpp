@@ -590,7 +590,11 @@ ZExplorer::reuse_trace
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (something_to_annotate) {
-    mutated_po_ptr->extend(read_lock, mutated_annotation);
+    mutated_po_ptr->extend(read_lock, mutated_annotation,
+                           *this, parent_trace.po_full());
+  } else {
+    mutated_po_ptr->process_remaining_events_for_backtrack_points(
+                    *this, parent_trace.po_full());
   }
 
   init = std::clock();
@@ -621,7 +625,7 @@ ZExplorer::extend_trace
   assert(!tr.empty() && !mutated_po.empty());
   clock_t init = std::clock();
   ZBuilderSC TB(*(original_TB->config), original_TB->M,
-                std::move(tr), std::move(mutated_po));
+                std::move(tr), std::move(mutated_po), this);
   assert(tr.empty() && mutated_po.empty());
   TB.extendGivenTrace();
   time_interpreter += (double)(clock() - init)/CLOCKS_PER_SEC;
@@ -645,6 +649,64 @@ ZExplorer::extend_trace
 
   end_err("?a");
   return trace_extension;
+}
+
+
+/* *************************** */
+/* PROCESS BACKTRACK POINTS    */
+/* *************************** */
+
+void ZExplorer::process_backtrack_points
+(const ZPartialOrder& po_full, const ZEvent * write_lock) const
+{
+  assert(is_write(write_lock) || is_lock(write_lock));
+  assert(po_full.graph.has_event(write_lock));
+  assert(po_full.spans_event(write_lock));
+  assert(parents.count(write_lock->ml()));
+  for (auto it = parents[write_lock->ml()].begin();
+            it != parents[write_lock->ml()].end(); ) {
+    const ZEventID& parentid = it->first;
+    assert(po_full.graph.has_event(parentid));
+    // Disregard if same thread
+    if (parentid.cpid() == write_lock->cpid()) {
+      assert(parentid.event_id() < write_lock->event_id());
+      ++it;
+      continue;
+    }
+    ZTrace * parenttrace = it->second;
+    assert(parenttrace);
+    // Disregard if thread not possible / already considered
+    if (!parenttrace->backtrack_possible.count(write_lock->cpid()) ||
+        parenttrace->backtrack_considered.count(write_lock->cpid())) {
+      assert(parenttrace->backtrack_considered.size() < parenttrace->backtrack_possible.size());
+      ++it;
+      continue;
+    }
+    const ZEvent * parentev = po_full.graph.event(parentid);
+    assert(same_ml(parentev, write_lock));
+    assert((is_read(parentev) && is_write(write_lock)) ||
+           (is_lock(parentev) && is_lock(write_lock)));
+    assert(po_full.spans_event(parentev));
+    // Disregard if parentev --thread_order--> write_lock
+    assert(!po_full.has_edge(write_lock, parentev));
+    if (po_full.has_edge(parentev, write_lock)) {
+      ++it;
+      continue;
+    }
+    // There might exist a behavior where parentev observes write_lock
+    // Hence to preserve completeness, we need to add a backtrack point
+    assert(parenttrace->backtrack.size() == parenttrace->backtrack_considered.size());
+    assert(!parenttrace->backtrack_considered.count(write_lock->cpid()));
+    parenttrace->backtrack_considered.insert(write_lock->cpid());
+    parenttrace->backtrack.push_back(write_lock->cpid());
+    // Remove from parents if all backtrack_possible are already considered
+    assert(parenttrace->backtrack_considered.size() <= parenttrace->backtrack_possible.size());
+    if (parenttrace->backtrack_considered.size() == parenttrace->backtrack_possible.size()) {
+      it = parents[write_lock->ml()].erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 

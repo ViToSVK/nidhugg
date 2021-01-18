@@ -58,15 +58,17 @@ class ZExplorer {
     bool has_error;
   };
 
-
   /* *************************** */
   /* ALGORITHM                   */
   /* *************************** */
 
  public:
 
-  std::unordered_map<SymAddrSize,
-                     std::map<ZEventID, ZTrace *>> parents;
+  mutable std::unordered_map<SymAddrSize,
+                             std::map<ZEventID, ZTrace *>> parents;
+
+  void process_backtrack_points
+  (const ZPartialOrder& po_full, const ZEvent * write_lock) const;
 
   bool explore();
 
