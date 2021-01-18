@@ -101,6 +101,8 @@ class ZPartialOrder {
   // Extending but nothing more to annotate, only check backtrack points
   void process_remaining_events_for_backtrack_points
   (const ZExplorer& explorer, const ZPartialOrder& po_full) const;
+  // Is there something remaining to annotate?
+  bool something_to_annotate(const ZAnnotation& annotation) const;
 
   // Empty
   ZPartialOrder();

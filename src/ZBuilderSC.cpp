@@ -978,17 +978,20 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
       assert(is_write(last_write_of_thread.at(ev->cpid()).at(ev->ml())));
       local_write.emplace(ev, last_write_of_thread[ev->cpid()][ev->ml()]);
     }
-    else
+    else {
       local_write.emplace(ev, nullptr);
+    }
+    // Cache - last_read
+    graph->_cache.last_read[ev->cpid()] = ev;
   }
 
   if (is_lock(ev)) {
-    // Cache - last lock
+    // Cache - last_lock
     graph->_cache.last_lock[ev->cpid()] = ev;
   }
 
   if (is_unlock(ev)) {
-    // Cache - last unlock
+    // Cache - last_unlock
     auto& last_unlock = graph->_cache.last_unlock;
     if (!last_unlock.count(ev->ml())) {
       last_unlock.emplace(ev->ml(), std::map<CPid, const ZEvent *>());

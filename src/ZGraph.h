@@ -83,9 +83,12 @@ class ZGraph {
       <SymAddrSize, std::map<CPid, const ZEvent *>> last_unlock;
     // CPid -> last lock of that thread (and any ML)
     std::map<CPid, const ZEvent *> last_lock;
+    // CPid -> last read of that thread (and any ML)
+    std::map<CPid, const ZEvent *> last_read;
     bool empty() const {
       return (writes.empty() && local_write.empty() &&
-              last_spawn.empty() && last_unlock.empty() && last_lock.empty());
+              last_spawn.empty() && last_unlock.empty() &&
+              last_lock.empty() && last_read.empty());
     }
   };
  private:

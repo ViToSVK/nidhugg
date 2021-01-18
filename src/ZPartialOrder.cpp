@@ -680,6 +680,40 @@ void ZPartialOrder::process_remaining_events_for_backtrack_points
 }
 
 
+bool ZPartialOrder::something_to_annotate(const ZAnnotation& annotation) const
+{
+  for (const auto& cpid_lastread : graph.cache().last_read) {
+    const CPid& cpid = cpid_lastread.first;
+    const ZEvent * lastread = cpid_lastread.second;
+    assert(is_read(lastread));
+    assert(cpid == lastread->cpid());
+    assert(graph.has_event(lastread));
+    if (!annotation.defines(lastread)) {
+      // Unannotated read
+      return true;
+    }
+    assert(spans_event(lastread));
+  }
+  for (const auto& cpid_lastlock : graph.cache().last_lock) {
+    const CPid& cpid = cpid_lastlock.first;
+    const ZEvent * lastlock = cpid_lastlock.second;
+    assert(is_lock(lastlock));
+    assert(cpid == lastlock->cpid());
+    assert(graph.has_event(lastlock));
+    if (!spans_event(lastlock)) {
+      // Lock outside of po_part
+      return true;
+    }
+    if (lastlock->event_id() == thread_size(cpid) - 1 &&
+        !annotation.is_last_lock(lastlock)) {
+      // Lock last in its thread in po_part, and not annotated
+      return true;
+    }
+  }
+  return false;
+}
+
+
 std::string ZPartialOrder::to_string() const
 {
   std::stringstream res;

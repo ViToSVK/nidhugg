@@ -448,7 +448,7 @@ bool ZExplorer::close_po
 
 
 /* *************************** */
-/* EXTEND AND RECUR            */
+/* REALIZE MUTATION            */
 /* *************************** */
 
 bool ZExplorer::realize_mutation
@@ -559,35 +559,17 @@ ZExplorer::reuse_trace
  const ZAnnotation& mutated_annotation, ZPartialOrder&& mutated_po)
 {
   start_err("reuse_trace...");
-  bool something_to_annotate = false;
-  for (int i = parent_trace.trace().size() - 1; i >= 0; --i) {
-    const ZEvent& ev = *(parent_trace.trace().at(i));
-    assert(parent_trace.graph().has_event(&ev));
-    assert(!something_to_annotate);
-    if (is_read(ev) && (!mutated_annotation.defines(&ev))) {
-      something_to_annotate = true;
-      break;
-    }
-    if (is_lock(ev)) {
-      if (!parent_trace.po_part().spans_event(&ev)) {
-        something_to_annotate = true;
-        break;
-      }
-      else if (ev.event_id() == // last in its thread
-               parent_trace.po_part().thread_size(ev.cpid()) - 1
-               && !mutated_annotation.is_last_lock(&ev)) {
-        something_to_annotate = true;
-        break;
-      }
-    }
-  }
+  assert((is_read(read_lock) && mutated_annotation.defines(read_lock)) ||
+         (is_lock(read_lock) && mutated_annotation.is_last_lock(read_lock)));
 
   clock_t init = std::clock();
+  bool something_to_annotate = (
+    parent_trace.po_part().something_to_annotate(mutated_annotation));
+
   assert(!mutated_po.empty());
   std::shared_ptr<ZPartialOrder> mutated_po_ptr(new ZPartialOrder
   (std::move(mutated_po), parent_trace.graph()));
   assert(mutated_po.empty());
-  time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
   if (something_to_annotate) {
     mutated_po_ptr->extend(read_lock, mutated_annotation,
@@ -597,7 +579,6 @@ ZExplorer::reuse_trace
                     *this, parent_trace.po_full());
   }
 
-  init = std::clock();
   auto res = TraceExtension
   (parent_trace.trace_ptr(),
    parent_trace.graph_ptr(),
