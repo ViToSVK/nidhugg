@@ -51,6 +51,7 @@ class ZGraph {
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const CPid& cpid, int event_id) const;
+  bool has_event(const ZEventID& id) const;
   bool has_event(const ZEvent *ev) const;
   void shrink();
 

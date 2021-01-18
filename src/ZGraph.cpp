@@ -177,6 +177,13 @@ bool ZGraph::has_event(const CPid& cpid, int event_id) const
 }
 
 
+bool ZGraph::has_event(const ZEventID& id) const
+{
+  assert(id.event_id() >= 0 && "Called for initial event");
+  return has_event(id.cpid(), id.event_id());
+}
+
+
 bool ZGraph::has_event(const ZEvent *ev) const
 {
   assert(ev);
