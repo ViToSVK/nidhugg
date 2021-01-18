@@ -181,6 +181,12 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
+  if (reads_to_mutate.empty() && locks_to_mutate.empty()) {
+    // All mutations forbidden by negative annotation
+    end_err("0-allforbidden");
+    return false;
+  }
+
   // Early stopping, disabled until its TODO is solved
   auto init = std::clock();
   bool stop_early = early_stopping(ann_trace, read_mutations, lock_mutations);
@@ -191,17 +197,28 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
+  // Initial backtrack point(s)
   assert(ann_trace.backtrack.empty());
-  for (const auto& lock : locks_to_mutate) {
-    assert(is_lock(lock));
-    ann_trace.backtrack.push_back(lock->cpid());
-    ann_trace.backtrack_considered.insert(lock->cpid());
+  if (!locks_to_mutate.empty()) {
+    // All locks of one fixed memory location
+    const SymAddrSize& chosen_ml = (*locks_to_mutate.begin())->ml();
+    for (const auto& lock : locks_to_mutate) {
+      assert(is_lock(lock));
+      if (lock->ml() == chosen_ml) {
+        ann_trace.backtrack.push_back(lock->cpid());
+        ann_trace.backtrack_considered.insert(lock->cpid());
+      }
+    }
+  } else {
+    // A single read
+    assert(!reads_to_mutate.empty());
+    const ZEvent * chosen_read = *reads_to_mutate.begin();
+    assert(is_read(chosen_read));
+    ann_trace.backtrack.push_back(chosen_read->cpid());
+    ann_trace.backtrack_considered.insert(chosen_read->cpid());
   }
-  for (const auto& read : reads_to_mutate) {
-    assert(is_read(read));
-    ann_trace.backtrack.push_back(read->cpid());
-    ann_trace.backtrack_considered.insert(read->cpid());
-  }
+  assert(!ann_trace.backtrack.empty());
+
 
   // Recursive calls through backtrack points
   for (auto it = ann_trace.backtrack.begin();
@@ -211,6 +228,8 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     assert(thread_to_mutate_event.count(*it));
     const ZEvent * read_lock = thread_to_mutate_event[*it];
     assert(is_read(read_lock) || is_lock(read_lock));
+    // New backtrack points may get added during the subrecursion below,
+    // but that does not invalidate 'it', we process those in further iterations
     if (is_read(read_lock)) {
       // Recursive call - read
       assert(read_mutations.count(read_lock) && !read_mutations[read_lock].empty());
