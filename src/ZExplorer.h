@@ -79,6 +79,12 @@ class ZExplorer {
   void add_backtrack_point
   (ZTrace * parent_trace, const CPid& cpid) const;
 
+  bool try_add_backtrack_blocker
+  (ZTrace * parent_trace, const CPid& cpid) const;
+
+  bool try_add_backtrack_point
+  (ZTrace * parent_trace, const CPid& cpid) const;
+
   bool explore_rec(ZTrace& ann_trace);
 
   bool mutate_read

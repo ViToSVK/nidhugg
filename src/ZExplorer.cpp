@@ -684,6 +684,72 @@ void ZExplorer::add_backtrack_point
 }
 
 
+bool ZExplorer::try_add_backtrack_blocker
+(ZTrace * parent_trace, const CPid& cpid) const
+{
+  assert(parent_trace);
+  assert(!parent_trace->backtrack_possible.count(cpid));
+  std::set<CPid> all_blocked;
+  all_blocked.insert(cpid);
+  assert(parent_trace->thread_waiting_for.count(cpid));
+  CPid blocker = parent_trace->thread_waiting_for[cpid];
+  // There might be a waiting sequence (blocker waiting etcetc)
+  while (parent_trace->thread_waiting_for.count(blocker)) {
+    assert(!parent_trace->backtrack_possible.count(blocker));
+    if (all_blocked.count(blocker)) {
+      // Stuck in a waiting loop thr1 -> thr2 -> ... -> thr1
+      // Disregard backtrack point, deadlock is imminent
+      assert(all_blocked.size() >= 2);
+      return false;
+    }
+    assert(!all_blocked.count(blocker));
+    all_blocked.insert(blocker);
+    assert(parent_trace->thread_waiting_for.count(blocker));
+    blocker = parent_trace->thread_waiting_for[blocker];
+  }
+  // Thread (or thread-sequence) waiting for blocker to move
+  assert(!parent_trace->thread_waiting_for.count(blocker));
+  // Add blocker if possible and not yet considered
+  if (parent_trace->backtrack_possible.count(blocker) &&
+      !parent_trace->backtrack_considered.count(blocker)) {
+    add_backtrack_point(parent_trace, blocker);
+    return true;
+  }
+  // Found blocker, but it is either impossible (eg because of
+  // negative annotation) or it is already considered
+  assert(!parent_trace->backtrack_possible.count(blocker) ||
+         parent_trace->backtrack_considered.count(blocker));
+  return false;
+}
+
+
+bool ZExplorer::try_add_backtrack_point
+(ZTrace * parent_trace, const CPid& cpid) const
+{
+  assert(parent_trace);
+  assert(parent_trace->po_part().spans_thread(cpid));
+  // Disregard if thread already considered
+  if (parent_trace->backtrack_considered.count(cpid)) {
+    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
+    return false;
+  }
+  // Check if thread is waiting for another thread
+  if (parent_trace->thread_waiting_for.count(cpid)) {
+    return try_add_backtrack_blocker(parent_trace, cpid);
+  }
+  // Disregard if thread not possible, since it is not waiting
+  assert(!parent_trace->thread_waiting_for.count(cpid));
+  if (!parent_trace->backtrack_possible.count(cpid)) {
+    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
+    return false;
+  }
+  // There might exist a behavior where parentev observes write_lock
+  // Hence to preserve completeness, we need to add a backtrack point
+  add_backtrack_point(parent_trace, cpid);
+  return true;
+}
+
+
 void ZExplorer::process_backtrack_points
 (const ZPartialOrder& po_full, const ZEvent * write_lock) const
 {
@@ -701,14 +767,6 @@ void ZExplorer::process_backtrack_points
       ++it;
       continue;
     }
-    // Disregard if thread already considered
-    ZTrace * parent_trace = it->second;
-    assert(parent_trace);
-    if (parent_trace->backtrack_considered.count(write_lock->cpid())) {
-      assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
-      ++it;
-      continue;
-    }
     // Disregard if parentev --thread_order--> write_lock
     const ZEvent * parentev = po_full.graph.event(parentid);
     assert(same_ml(parentev, write_lock));
@@ -720,65 +778,43 @@ void ZExplorer::process_backtrack_points
       ++it;
       continue;
     }
-    // Check if thread is waiting for another thread
-    if (parent_trace->thread_waiting_for.count(write_lock->cpid())) {
-      assert(!parent_trace->backtrack_possible.count(write_lock->cpid()));
-      bool circular = false;
-      std::set<CPid> all_blocked;
-      all_blocked.insert(write_lock->cpid());
-      CPid blocker = parent_trace->thread_waiting_for[write_lock->cpid()];
-      // There might be a waiting sequence (blocker waiting etcetc)
-      while (parent_trace->thread_waiting_for.count(blocker)) {
-        assert(!parent_trace->backtrack_possible.count(blocker));
-        if (all_blocked.count(blocker)) {
-          assert(all_blocked.size() >= 2);
-          circular = true;
+    // Check if thread is not spanned yet
+    ZTrace * parent_trace = it->second;
+    assert(parent_trace);
+    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
+    if (!parent_trace->po_part().spans_thread(write_lock->cpid())) {
+      bool added = false;
+      // Add all thread-order predecessors
+      for (const CPid& cpid : parent_trace->po_part().threads_spanned()) {
+        int thr_size = parent_trace->po_part().thread_size(cpid);
+        assert(thr_size > 0);
+        const ZEvent * his_last = po_full.graph.event(cpid, thr_size - 1);
+        assert(!po_full.has_edge(write_lock, his_last));
+        if (!po_full.has_edge(his_last, write_lock)) {
+          continue;
+        }
+        assert(!po_full.has_edge(parentev, his_last) &&
+               "parentev -> his_last -> write_lock");
+        // Try to add thread-order predecessor
+        added |= try_add_backtrack_point(parent_trace, cpid);
+        if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
+          assert(added);
           break;
         }
-        assert(!all_blocked.count(blocker));
-        all_blocked.insert(blocker);
-        assert(parent_trace->thread_waiting_for.count(blocker));
-        blocker = parent_trace->thread_waiting_for[blocker];
       }
-      if (circular) {
-        // Stuck in a waiting loop thr1 -> thr2 -> ... -> thr1
-        // Disregard backtrack point, deadlock is imminent
+      if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
+        assert(added);
+        it = parents[write_lock->ml()].erase(it);
+      } else {
         ++it;
-        continue;
       }
-      // Thread (or thread-sequence) waiting for blocker to move
-      assert(!parent_trace->thread_waiting_for.count(blocker));
-      // Add blocker if possible and not yet considered
-      if (parent_trace->backtrack_possible.count(blocker) &&
-          !parent_trace->backtrack_considered.count(blocker)) {
-        add_backtrack_point(parent_trace, blocker); // ADDING blocker
-        // Remove from parents if all backtrack_possible are already considered
-        if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
-          it = parents[write_lock->ml()].erase(it);
-        } else {
-          ++it;
-        }
-        continue;
-      }
-      // Found blocker, but it is either impossible (eg because of
-      // negative annotation) or it is already considered
-      assert(!parent_trace->backtrack_possible.count(blocker) ||
-             parent_trace->backtrack_considered.count(blocker));
-      ++it;
       continue;
     }
-    // Disregard if thread not possible, since it is not waiting
-    assert(!parent_trace->thread_waiting_for.count(write_lock->cpid()));
-    if (!parent_trace->backtrack_possible.count(write_lock->cpid())) {
-      assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
-      ++it;
-      continue;
-    }
-    // There might exist a behavior where parentev observes write_lock
-    // Hence to preserve completeness, we need to add a backtrack point
-    add_backtrack_point(parent_trace, write_lock->cpid()); // ADDING write_lock->cpid()
+    // Try to add
+    bool added = try_add_backtrack_point(parent_trace, write_lock->cpid());
     // Remove from parents if all backtrack_possible are already considered
     if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
+      assert(added);
       it = parents[write_lock->ml()].erase(it);
     } else {
       ++it;
