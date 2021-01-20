@@ -200,17 +200,13 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   // Initial backtrack point(s)
   assert(ann_trace.backtrack.empty());
   if (!locks_to_mutate.empty()) {
-    // All locks of one fixed memory location
-    const SymAddrSize& chosen_ml = (*locks_to_mutate.begin())->ml();
-    for (const auto& lock : locks_to_mutate) {
-      assert(is_lock(lock));
-      if (lock->ml() == chosen_ml) {
-        ann_trace.backtrack.push_back(lock->cpid());
-        ann_trace.backtrack_considered.insert(lock->cpid());
-      }
-    }
+    // A lock, all others of its ml get added below
+    const ZEvent * chosen_lock = *locks_to_mutate.begin();
+    assert(is_lock(chosen_lock));
+    ann_trace.backtrack.push_back(chosen_lock->cpid());
+    ann_trace.backtrack_considered.insert(chosen_lock->cpid());
   } else {
-    // A single read
+    // A read is the initial backtrack point
     assert(!reads_to_mutate.empty());
     const ZEvent * chosen_read = *reads_to_mutate.begin();
     assert(is_read(chosen_read));
@@ -243,6 +239,15 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
       }
       ann_trace.negative().update(read_lock, negative_update);
     } else {
+      // Add all locks of this memory location as backtrack points
+      for (const auto& lock : locks_to_mutate) {
+        assert(is_lock(lock));
+        if (lock->ml() == read_lock->ml() &&
+            !ann_trace.backtrack_considered.count(lock->cpid())) {
+          ann_trace.backtrack.push_back(lock->cpid());
+          ann_trace.backtrack_considered.insert(lock->cpid());
+        }
+      }
       // Recursive call - lock
       assert(lock_mutations.count(read_lock) && lock_mutations[read_lock]);
       bool error = mutate_lock(ann_trace, read_lock, lock_mutations[read_lock]);
