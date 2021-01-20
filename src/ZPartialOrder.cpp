@@ -607,8 +607,10 @@ void ZPartialOrder::extend
         assert(lastev_idx >= 0);
         const ZEvent *wthr = graph.event(ev->childs_cpid(), lastev_idx);
         assert(spans_event(wthr));
-        assert(!are_ordered(wthr, ev));
-        add_edge(wthr, ev);
+        assert(!has_edge(ev, wthr));
+        if (!has_edge(wthr, ev)) {
+          add_edge(wthr, ev);
+        }
       }
 
       // Handle specific event types
