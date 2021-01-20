@@ -59,6 +59,7 @@ class ZTrace {
   std::set<CPid> backtrack_possible;
   std::set<CPid> backtrack_considered;
   std::list<CPid> backtrack;
+  std::map<CPid, CPid> thread_waiting_for;
 
   bool empty() const;
   std::string to_string(unsigned depth) const;

@@ -148,6 +148,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   for (const auto& ev : events_to_mutate) {
     assert(!read_mutations.count(ev) && !lock_mutations.count(ev));
     if (is_read(ev)) {
+      // Collect read mutations
       ann_trace.deadlocked = false;
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
       if (!read_mutations[ev].empty()) {
@@ -159,8 +160,18 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
         ann_trace.backtrack_possible.insert(ev->cpid());
       }
     } else {
+      // Collect lock mutation resp. which thread blocks it
       assert(is_lock(ev));
-      lock_mutations.emplace(ev, collect_lock_mutation(ann_trace, ev));
+      const ZEvent * mut = collect_lock_mutation(ann_trace, ev);
+      if (mut && is_lock(mut)) {
+        // We cannot mutate ev because lock event mut holds the lock
+        assert(!ann_trace.thread_waiting_for.count(ev->cpid()));
+        ann_trace.thread_waiting_for.emplace(ev->cpid(), mut->cpid());
+        lock_mutations.emplace(ev, nullptr);
+      } else {
+        assert(!mut || is_initial(mut) || is_unlock(mut));
+        lock_mutations.emplace(ev, mut);
+      }
       if (lock_mutations[ev]) {
         // This lock has mutation to consider
         locks_to_mutate.push_back(ev);
@@ -200,7 +211,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   // Initial backtrack point(s)
   assert(ann_trace.backtrack.empty());
   if (!locks_to_mutate.empty()) {
-    // A lock, all others of its ml get added below
+    // A lock, all others of its memory location get added later below
     const ZEvent * chosen_lock = *locks_to_mutate.begin();
     assert(is_lock(chosen_lock));
     ann_trace.backtrack.push_back(chosen_lock->cpid());
@@ -214,7 +225,6 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     ann_trace.backtrack_considered.insert(chosen_read->cpid());
   }
   assert(!ann_trace.backtrack.empty());
-
 
   // Recursive calls through backtrack points
   for (auto it = ann_trace.backtrack.begin();
@@ -353,8 +363,10 @@ const ZEvent * ZExplorer::collect_lock_mutation
   if (!last_unlock || !ann_trace.po_part().spans_event(last_unlock)) {
     // This lock is currently locked
     // Trivially unrealizable
+    const ZEvent * holds_lock = ann_trace.graph().event(last_lock_obs);
+    assert(is_lock(holds_lock) && ann_trace.po_part().spans_event(holds_lock));
     end_err("0b");
-    return nullptr;
+    return holds_lock;
   }
 
   // This lock is currently unlocked by last_unlock
@@ -678,28 +690,87 @@ void ZExplorer::process_backtrack_points
       ++it;
       continue;
     }
+    // Disregard if thread already considered
     ZTrace * parenttrace = it->second;
     assert(parenttrace);
-    // Disregard if thread not possible / already considered
-    if (!parenttrace->backtrack_possible.count(write_lock->cpid()) ||
-        parenttrace->backtrack_considered.count(write_lock->cpid())) {
+    if (parenttrace->backtrack_considered.count(write_lock->cpid())) {
       assert(parenttrace->backtrack_considered.size() < parenttrace->backtrack_possible.size());
       ++it;
       continue;
     }
+    // Disregard if parentev --thread_order--> write_lock
     const ZEvent * parentev = po_full.graph.event(parentid);
     assert(same_ml(parentev, write_lock));
     assert((is_read(parentev) && is_write(write_lock)) ||
            (is_lock(parentev) && is_lock(write_lock)));
     assert(po_full.spans_event(parentev));
-    // Disregard if parentev --thread_order--> write_lock
     assert(!po_full.has_edge(write_lock, parentev));
     if (po_full.has_edge(parentev, write_lock)) {
       ++it;
       continue;
     }
+    // Check if thread is waiting for another thread
+    if (parenttrace->thread_waiting_for.count(write_lock->cpid())) {
+      assert(!parenttrace->backtrack_possible.count(write_lock->cpid()));
+      bool circular = false;
+      std::set<CPid> all_blocked;
+      all_blocked.insert(write_lock->cpid());
+      CPid blocker = parenttrace->thread_waiting_for[write_lock->cpid()];
+      // There might be a waiting sequence (blocker waiting etcetc)
+      while (parenttrace->thread_waiting_for.count(blocker)) {
+        assert(!parenttrace->backtrack_possible.count(blocker));
+        if (all_blocked.count(blocker)) {
+          assert(all_blocked.size() >= 2);
+          circular = true;
+          break;
+        }
+        assert(!all_blocked.count(blocker));
+        all_blocked.insert(blocker);
+        assert(parenttrace->thread_waiting_for.count(blocker));
+        blocker = parenttrace->thread_waiting_for[blocker];
+      }
+      if (circular) {
+        // Stuck in a waiting loop thr1 -> thr2 -> ... -> thr1
+        // Disregard backtrack point, deadlock is imminent
+        ++it;
+        continue;
+      }
+      // Thread (or thread-sequence) waiting for blocker to move
+      assert(!parenttrace->thread_waiting_for.count(blocker));
+      // Add blocker if possible and not yet considered
+      if (parenttrace->backtrack_possible.count(blocker) &&
+          !parenttrace->backtrack_considered.count(blocker)) {
+        // ADDING blocker
+        assert(parenttrace->backtrack.size() == parenttrace->backtrack_considered.size());
+        assert(!parenttrace->backtrack_considered.count(blocker));
+        parenttrace->backtrack_considered.insert(blocker);
+        parenttrace->backtrack.push_back(blocker);
+        // Remove from parents if all backtrack_possible are already considered
+        assert(parenttrace->backtrack_considered.size() <= parenttrace->backtrack_possible.size());
+        if (parenttrace->backtrack_considered.size() == parenttrace->backtrack_possible.size()) {
+          it = parents[write_lock->ml()].erase(it);
+        } else {
+          ++it;
+        }
+        continue;
+      }
+      // Found blocker, but it is either impossible (eg because of
+      // negative annotation) or it is already considered
+      assert(!parenttrace->backtrack_possible.count(blocker) ||
+             parenttrace->backtrack_considered.count(blocker));
+      ++it;
+      continue;
+    }
+    // Disregard if thread not possible, since it is not waiting
+    assert(!parenttrace->thread_waiting_for.count(write_lock->cpid()));
+    if (!parenttrace->backtrack_possible.count(write_lock->cpid())) {
+      assert(parenttrace->backtrack_considered.size() < parenttrace->backtrack_possible.size());
+      ++it;
+      continue;
+    }
     // There might exist a behavior where parentev observes write_lock
     // Hence to preserve completeness, we need to add a backtrack point
+    // ADDING write_lock->cpid()
     assert(parenttrace->backtrack.size() == parenttrace->backtrack_considered.size());
     assert(!parenttrace->backtrack_considered.count(write_lock->cpid()));
     parenttrace->backtrack_considered.insert(write_lock->cpid());
