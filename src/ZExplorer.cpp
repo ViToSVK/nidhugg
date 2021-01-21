@@ -154,10 +154,8 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
       if (read_mutations[ev].empty()) {
         // We cannot mutate because negative annotation forbids
-        if (ev->is_read_of_atomic_event()) {
-          assert(!events_waiting_for_negallowed.count(ev));
-          events_waiting_for_negallowed.insert(ev);
-        }
+        assert(!events_waiting_for_negallowed.count(ev));
+        events_waiting_for_negallowed.insert(ev);
       } else {
         // This read has mutation(s) to consider
         reads_to_mutate.push_back(ev);
