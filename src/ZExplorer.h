@@ -92,6 +92,10 @@ class ZExplorer {
   bool try_add_backtrack_point
   (ZTrace * parent_trace, const CPid& cpid) const;
 
+  bool backtrack_handle_cases
+  (const ZPartialOrder& po_full, const ZEvent * write_lock,
+   ZTrace * parent_trace, const ZEventID& parentid) const;
+
   bool explore_rec(ZTrace& ann_trace);
 
   bool mutate_read

@@ -154,8 +154,10 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
       if (read_mutations[ev].empty()) {
         // We cannot mutate because negative annotation forbids
-        assert(!events_waiting_for_negallowed.count(ev));
-        events_waiting_for_negallowed.insert(ev);
+        if (ev->is_read_of_atomic_event()) {
+          assert(!events_waiting_for_negallowed.count(ev));
+          events_waiting_for_negallowed.insert(ev);
+        }
       } else {
         // This read has mutation(s) to consider
         reads_to_mutate.push_back(ev);
@@ -801,6 +803,74 @@ bool ZExplorer::try_add_backtrack_point
 }
 
 
+bool ZExplorer::backtrack_handle_cases
+(const ZPartialOrder& po_full, const ZEvent * write_lock,
+ ZTrace * parent_trace, const ZEventID& parentid) const
+{
+  // Clean up if all backtrack points have been added already
+  if (parent_trace->backtrack_considered.size() ==
+      parent_trace->backtrack_possible.size()) {
+    return true;
+  }
+  // Disregard if same thread
+  if (parentid.cpid() == write_lock->cpid()) {
+    assert(parentid.event_id() < write_lock->event_id());
+    assert(parent_trace->backtrack_considered.size() <
+           parent_trace->backtrack_possible.size());
+    return false;
+  }
+  // Disregard if parentev --thread_order--> write_lock
+  const ZEvent * parentev = po_full.graph.event(parentid);
+  assert(same_ml(parentev, write_lock));
+  assert((is_read(parentev) && is_write(write_lock)) ||
+         (is_lock(parentev) && is_lock(write_lock)));
+  assert(po_full.spans_event(parentev));
+  assert(!po_full.has_edge(write_lock, parentev));
+  if (po_full.has_edge(parentev, write_lock)) {
+    assert(parent_trace->backtrack_considered.size() <
+           parent_trace->backtrack_possible.size());
+    return false;
+  }
+  // Check if thread is not spanned yet
+  assert(parent_trace->backtrack_considered.size() <
+         parent_trace->backtrack_possible.size());
+  if (!parent_trace->po_part().spans_thread(write_lock->cpid())) {
+    bool added = false;
+    // Add all thread-order predecessors
+    for (const CPid& cpid : parent_trace->po_part().threads_spanned()) {
+      int thr_size = parent_trace->po_part().thread_size(cpid);
+      assert(thr_size > 0);
+      const ZEvent * his_last = po_full.graph.event(cpid, thr_size - 1);
+      assert(!po_full.has_edge(write_lock, his_last));
+      if (!po_full.has_edge(his_last, write_lock)) {
+        continue;
+      }
+      assert(!po_full.has_edge(parentev, his_last) &&
+             "parentev -> his_last -> write_lock");
+      // Try to add thread-order predecessor
+      added |= try_add_backtrack_point(parent_trace, cpid);
+      if (parent_trace->backtrack_considered.size() ==
+          parent_trace->backtrack_possible.size()) {
+        assert(added);
+        return true;
+      }
+    }
+    bool all = (parent_trace->backtrack_considered.size() ==
+                parent_trace->backtrack_possible.size());
+    assert(!all || added);
+    return all;
+  }
+  assert(parent_trace->po_part().spans_thread(write_lock->cpid()));
+  // Try to add
+  bool added = try_add_backtrack_point(parent_trace, write_lock->cpid());
+  // Remove from parents if all backtrack_possible are already considered
+  bool all = (parent_trace->backtrack_considered.size() ==
+            parent_trace->backtrack_possible.size());
+  assert(!all || added);
+  return all;
+}
+
+
 void ZExplorer::process_backtrack_points
 (const ZPartialOrder& po_full, const ZEvent * write_lock) const
 {
@@ -814,63 +884,9 @@ void ZExplorer::process_backtrack_points
     assert(po_full.graph.has_event(parentid));
     ZTrace * parent_trace = it->second;
     assert(parent_trace);
-    // Clean up if all backtrack points have been added already
-    if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
-      it = parents[write_lock->ml()].erase(it);
-      continue;
-    }
-    // Disregard if same thread
-    if (parentid.cpid() == write_lock->cpid()) {
-      assert(parentid.event_id() < write_lock->event_id());
-      ++it;
-      continue;
-    }
-    // Disregard if parentev --thread_order--> write_lock
-    const ZEvent * parentev = po_full.graph.event(parentid);
-    assert(same_ml(parentev, write_lock));
-    assert((is_read(parentev) && is_write(write_lock)) ||
-           (is_lock(parentev) && is_lock(write_lock)));
-    assert(po_full.spans_event(parentev));
-    assert(!po_full.has_edge(write_lock, parentev));
-    if (po_full.has_edge(parentev, write_lock)) {
-      ++it;
-      continue;
-    }
-    // Check if thread is not spanned yet
-    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
-    if (!parent_trace->po_part().spans_thread(write_lock->cpid())) {
-      bool added = false;
-      // Add all thread-order predecessors
-      for (const CPid& cpid : parent_trace->po_part().threads_spanned()) {
-        int thr_size = parent_trace->po_part().thread_size(cpid);
-        assert(thr_size > 0);
-        const ZEvent * his_last = po_full.graph.event(cpid, thr_size - 1);
-        assert(!po_full.has_edge(write_lock, his_last));
-        if (!po_full.has_edge(his_last, write_lock)) {
-          continue;
-        }
-        assert(!po_full.has_edge(parentev, his_last) &&
-               "parentev -> his_last -> write_lock");
-        // Try to add thread-order predecessor
-        added |= try_add_backtrack_point(parent_trace, cpid);
-        if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
-          assert(added);
-          break;
-        }
-      }
-      if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
-        assert(added);
-        it = parents[write_lock->ml()].erase(it);
-      } else {
-        ++it;
-      }
-      continue;
-    }
-    // Try to add
-    bool added = try_add_backtrack_point(parent_trace, write_lock->cpid());
-    // Remove from parents if all backtrack_possible are already considered
-    if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
-      assert(added);
+    bool all_points_added = backtrack_handle_cases(
+      po_full, write_lock, parent_trace, parentid);
+    if (all_points_added) {
       it = parents[write_lock->ml()].erase(it);
     } else {
       ++it;
@@ -894,9 +910,19 @@ void ZExplorer::process_backtrack_points_negallowed
               ittrace != itml->second.end(); ) {
       ZTrace * parent_trace = *ittrace;
       assert(parent_trace);
-      ++ittrace;
+      bool all_points_added = backtrack_handle_cases(
+        po_full, write_lock, parent_trace, waitingid);
+      if (all_points_added) {
+        ittrace = itml->second.erase(ittrace);
+      } else {
+        ++ittrace;
+      }
     }
-    ++itml;
+    if (itml->second.empty()) {
+      itml = waitfor_negallowed[write_lock->ml()].erase(itml);
+    } else {
+      ++itml;
+    }
   }
 }
 
