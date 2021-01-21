@@ -74,6 +74,9 @@ class ZExplorer {
   void process_backtrack_points
   (const ZPartialOrder& po_full, const ZEvent * write_lock) const;
 
+  void process_backtrack_points_negallowed
+  (const ZPartialOrder& po_full, const ZEvent * write_lock) const;
+
   bool explore();
 
   void print_stats() const;

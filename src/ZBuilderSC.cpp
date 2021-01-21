@@ -1011,9 +1011,13 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
       po_part->add_event(ev);
 
       // Adding to po_part, time to process backtrack points
-      if ((is_write(ev) || is_lock(ev)) &&
-          explorer && explorer->parents.count(ev->ml())) {
-        events_to_process_backtrack_points.push_back(ev);
+      if ((is_write(ev) || is_lock(ev)) && explorer) {
+        if (explorer->parents.count(ev->ml())) {
+          events_to_process_backtrack_points.push_back(ev);
+        }
+        if (explorer->waitfor_negallowed.count(ev->ml())) {
+          events_to_process_backtrack_points_negallowed.push_back(ev);
+        }
       }
     }
     assert(po_part->spans_event(ev));
@@ -1075,6 +1079,9 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
   if (explorer) {
     for (const auto& backtrack_ev : events_to_process_backtrack_points) {
       explorer->process_backtrack_points(*po_full, backtrack_ev);
+    }
+    for (const auto& backtrack_ev : events_to_process_backtrack_points_negallowed) {
+      explorer->process_backtrack_points_negallowed(*po_full, backtrack_ev);
     }
   }
 

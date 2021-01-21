@@ -303,14 +303,17 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   // Waiting for negallowed: CLEANUP
   for (const ZEvent * ev : events_waiting_for_negallowed) {
     // We are past exploration in this node, clean up ev
-    assert(waitfor_negallowed.count(ev->ml()));
-    if (!waitfor_negallowed[ev->ml()].count(ev->id()) ||
+    if (!waitfor_negallowed.count(ev->ml()) ||
+        !waitfor_negallowed[ev->ml()].count(ev->id()) ||
         !waitfor_negallowed[ev->ml()][ev->id()].count(&ann_trace)) {
       continue;
     }
     waitfor_negallowed[ev->ml()][ev->id()].erase(&ann_trace);
     if (waitfor_negallowed[ev->ml()][ev->id()].empty()) {
       waitfor_negallowed[ev->ml()].erase(ev->id());
+      if (waitfor_negallowed[ev->ml()].empty()) {
+        waitfor_negallowed.erase(ev->ml());
+      }
     }
   }
 
@@ -872,6 +875,28 @@ void ZExplorer::process_backtrack_points
     } else {
       ++it;
     }
+  }
+}
+
+
+void ZExplorer::process_backtrack_points_negallowed
+(const ZPartialOrder& po_full, const ZEvent * write_lock) const
+{
+  assert(is_write(write_lock) || is_lock(write_lock));
+  assert(po_full.graph.has_event(write_lock));
+  assert(po_full.spans_event(write_lock));
+  assert(waitfor_negallowed.count(write_lock->ml()));
+  for (auto itml = waitfor_negallowed[write_lock->ml()].begin();
+            itml != waitfor_negallowed[write_lock->ml()].end(); ) {
+    const ZEventID& waitingid = itml->first;
+    assert(po_full.graph.has_event(waitingid));
+    for (auto ittrace = itml->second.begin();
+              ittrace != itml->second.end(); ) {
+      ZTrace * parent_trace = *ittrace;
+      assert(parent_trace);
+      ++ittrace;
+    }
+    ++itml;
   }
 }
 
