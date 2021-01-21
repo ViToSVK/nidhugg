@@ -37,6 +37,8 @@ class ZExplorer {
 
   std::unique_ptr<ZTrace> initial;
 
+  bool info = false;
+
   class TraceExtension {
    public:
     TraceExtension() = default;
@@ -66,6 +68,8 @@ class ZExplorer {
 
   mutable std::unordered_map<SymAddrSize,
                              std::map<ZEventID, ZTrace *>> parents;
+  mutable std::unordered_map<
+    SymAddrSize, std::map<ZEventID, std::set<ZTrace *>>> waitfor_negallowed;
 
   void process_backtrack_points
   (const ZPartialOrder& po_full, const ZEvent * write_lock) const;

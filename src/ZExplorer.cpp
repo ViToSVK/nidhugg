@@ -145,13 +145,18 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   std::map<const ZEvent *, const ZEvent *> lock_mutations;
   std::list<const ZEvent *> locks_to_mutate, reads_to_mutate;
   std::map<CPid, const ZEvent *> thread_to_mutate_event;
+  std::set<const ZEvent *> events_waiting_for_negallowed;
   for (const auto& ev : events_to_mutate) {
     assert(!read_mutations.count(ev) && !lock_mutations.count(ev));
     if (is_read(ev)) {
       // Collect read mutations
       ann_trace.deadlocked = false;
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
-      if (!read_mutations[ev].empty()) {
+      if (read_mutations[ev].empty()) {
+        // We cannot mutate because negative annotation forbids
+        assert(!events_waiting_for_negallowed.count(ev));
+        events_waiting_for_negallowed.insert(ev);
+      } else {
         // This read has mutation(s) to consider
         reads_to_mutate.push_back(ev);
         assert(!thread_to_mutate_event.count(ev->cpid()));
@@ -159,28 +164,37 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
         assert(!ann_trace.backtrack_possible.count(ev->cpid()));
         ann_trace.backtrack_possible.insert(ev->cpid());
       }
-    } else {
-      // Collect lock mutation resp. which thread blocks it
-      assert(is_lock(ev));
-      const ZEvent * mut = collect_lock_mutation(ann_trace, ev);
-      if (mut && is_lock(mut)) {
-        // We cannot mutate ev because lock event mut holds the lock
-        assert(!ann_trace.thread_waiting_for.count(ev->cpid()));
-        ann_trace.thread_waiting_for.emplace(ev->cpid(), mut->cpid());
-        lock_mutations.emplace(ev, nullptr);
-      } else {
-        assert(!mut || is_initial(mut) || is_unlock(mut));
-        lock_mutations.emplace(ev, mut);
-      }
-      if (lock_mutations[ev]) {
-        // This lock has mutation to consider
-        locks_to_mutate.push_back(ev);
-        assert(!thread_to_mutate_event.count(ev->cpid()));
-        thread_to_mutate_event.emplace(ev->cpid(), ev);
-        assert(!ann_trace.backtrack_possible.count(ev->cpid()));
-        ann_trace.backtrack_possible.insert(ev->cpid());
-      }
+      continue;
     }
+    // Collect lock mutation resp. which thread blocks it
+    assert(is_lock(ev));
+    const ZEvent * mut = collect_lock_mutation(ann_trace, ev);
+    if (!mut) {
+      // We cannot mutate because negative annotation forbids
+      assert(!events_waiting_for_negallowed.count(ev));
+      events_waiting_for_negallowed.insert(ev);
+      lock_mutations.emplace(ev, nullptr);
+    } else if (is_lock(mut)) {
+      // We cannot mutate ev because lock event mut holds the lock
+      assert(!ann_trace.thread_waiting_for.count(ev->cpid()));
+      ann_trace.thread_waiting_for.emplace(ev->cpid(), mut->cpid());
+      lock_mutations.emplace(ev, nullptr);
+    } else {
+      assert(is_initial(mut) || is_unlock(mut));
+      lock_mutations.emplace(ev, mut);
+    }
+    if (lock_mutations[ev]) {
+      // This lock has mutation to consider
+      locks_to_mutate.push_back(ev);
+      assert(!thread_to_mutate_event.count(ev->cpid()));
+      thread_to_mutate_event.emplace(ev->cpid(), ev);
+      assert(!ann_trace.backtrack_possible.count(ev->cpid()));
+      ann_trace.backtrack_possible.insert(ev->cpid());
+    }
+  }
+
+  if (info) {
+    ann_trace.annotation().dump();
   }
 
   if (ann_trace.deadlocked) {
@@ -208,6 +222,23 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
+  // Waiting for negallowed: SETUP
+  for (const ZEvent * ev : events_waiting_for_negallowed) {
+    // Currently we cannot mutate ev because all possibilities are
+    // forbidden by negative annotation. New possibility might appear
+    // from the other threads, and then we add those backtrack points
+    if (!waitfor_negallowed.count(ev->ml())) {
+      waitfor_negallowed.emplace(
+        ev->ml(), std::map<ZEventID, std::set<ZTrace *>>());
+    }
+    if (!waitfor_negallowed[ev->ml()].count(ev->id())) {
+      waitfor_negallowed[ev->ml()].emplace(
+        ev->id(), std::set<ZTrace *>());
+    }
+    assert(!waitfor_negallowed[ev->ml()][ev->id()].count(&ann_trace));
+    waitfor_negallowed[ev->ml()][ev->id()].insert(&ann_trace);
+  }
+
   // Initial backtrack point(s)
   assert(ann_trace.backtrack.empty());
   if (!locks_to_mutate.empty()) {
@@ -232,6 +263,7 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     assert(thread_to_mutate_event.count(*it));
     const ZEvent * read_lock = thread_to_mutate_event[*it];
     assert(is_read(read_lock) || is_lock(read_lock));
+
     // New backtrack points may get added during the subrecursion below,
     // but that does not invalidate 'it', we process those in further iterations
     if (is_read(read_lock)) {
@@ -265,6 +297,20 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
         return error;
       }
       ann_trace.negative().update(read_lock, negative_update);
+    }
+  }
+
+  // Waiting for negallowed: CLEANUP
+  for (const ZEvent * ev : events_waiting_for_negallowed) {
+    // We are past exploration in this node, clean up ev
+    assert(waitfor_negallowed.count(ev->ml()));
+    if (!waitfor_negallowed[ev->ml()].count(ev->id()) ||
+        !waitfor_negallowed[ev->ml()][ev->id()].count(&ann_trace)) {
+      continue;
+    }
+    waitfor_negallowed[ev->ml()][ev->id()].erase(&ann_trace);
+    if (waitfor_negallowed[ev->ml()][ev->id()].empty()) {
+      waitfor_negallowed[ev->ml()].erase(ev->id());
     }
   }
 
@@ -541,7 +587,9 @@ bool ZExplorer::realize_mutation
   }
   if (!mutated_trace.something_to_annotate) {
     // Maximal trace
-    // mutated_annotation.dump();
+    if (info) {
+      mutated_annotation.dump();
+    }
     executed_traces_full++;
     end_err("0-full");
     return false;
@@ -761,6 +809,13 @@ void ZExplorer::process_backtrack_points
             it != parents[write_lock->ml()].end(); ) {
     const ZEventID& parentid = it->first;
     assert(po_full.graph.has_event(parentid));
+    ZTrace * parent_trace = it->second;
+    assert(parent_trace);
+    // Clean up if all backtrack points have been added already
+    if (parent_trace->backtrack_considered.size() == parent_trace->backtrack_possible.size()) {
+      it = parents[write_lock->ml()].erase(it);
+      continue;
+    }
     // Disregard if same thread
     if (parentid.cpid() == write_lock->cpid()) {
       assert(parentid.event_id() < write_lock->event_id());
@@ -779,8 +834,6 @@ void ZExplorer::process_backtrack_points
       continue;
     }
     // Check if thread is not spanned yet
-    ZTrace * parent_trace = it->second;
-    assert(parent_trace);
     assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
     if (!parent_trace->po_part().spans_thread(write_lock->cpid())) {
       bool added = false;
