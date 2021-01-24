@@ -1011,7 +1011,8 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
       po_part->add_event(ev);
 
       // Adding to po_part, time to process backtrack points
-      if ((is_write(ev) || is_lock(ev)) && explorer) {
+      if ((is_write(ev) || is_lock(ev) || ev->is_read_of_cas())
+          && explorer) {
         if (explorer->ancestors.count(ev->ml())) {
           events_to_process_backtrack_points.push_back(ev);
         }

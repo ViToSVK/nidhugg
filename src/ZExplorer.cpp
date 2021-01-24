@@ -723,7 +723,8 @@ bool ZExplorer::try_add_backtrack_point
   const ZEvent * ancev = po_full.graph.event(ancid);
   assert(same_ml(ancev, new_src));
   assert((is_read(ancev) && is_write(new_src)) ||
-         (is_lock(ancev) && is_lock(new_src)));
+         (is_lock(ancev) && is_lock(new_src)) ||
+         (is_read(ancev) && new_src->is_read_of_cas()));
   assert(po_full.spans_event(ancev));
   assert(!po_full.has_edge(new_src, ancev));
   if (po_full.has_edge(ancev, new_src)) {
@@ -740,7 +741,7 @@ bool ZExplorer::try_add_backtrack_point
 void ZExplorer::process_backtrack_points
 (const ZPartialOrder& po_full, const ZEvent * new_src) const
 {
-  assert(is_write(new_src) || is_lock(new_src));
+  assert(is_write(new_src) || is_lock(new_src) || new_src->is_read_of_cas());
   assert(po_full.graph.has_event(new_src));
   assert(po_full.spans_event(new_src));
   assert(ancestors.count(new_src->ml()));
