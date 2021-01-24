@@ -110,6 +110,38 @@ void ZExplorer::print_stats() const
   assert(true && "RUN ON RELEASE");
 }
 
+/* *************************** */
+/* ORDER TO MUTATE             */
+/* *************************** */
+
+std::vector<const ZEvent *> ZExplorer::get_order_to_mutate
+(const ZTrace& ann_trace,
+ const std::list<const ZEvent *>& locks_to_mutate,
+ const std::list<const ZEvent *>& reads_to_mutate_noneg,
+ const std::list<const ZEvent *>& reads_to_mutate_withneg) const
+{
+  std::vector<const ZEvent *> result;
+  result.reserve(locks_to_mutate.size() + reads_to_mutate_noneg.size() +
+                 reads_to_mutate_withneg.size());
+
+  for (const auto& lock : locks_to_mutate) {
+    assert(is_lock(lock));
+    result.push_back(lock);
+  }
+
+  for (const auto& read : reads_to_mutate_noneg) {
+    assert(is_read(read));
+    result.push_back(read);
+  }
+
+  for (const auto& read : reads_to_mutate_withneg) {
+    assert(is_read(read));
+    result.push_back(read);
+  }
+
+  return result;
+}
+
 
 /* *************************** */
 /* EXPLORE                     */
@@ -143,26 +175,22 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
   // Collect mutations
   std::map<const ZEvent *, std::set<ZAnn>> read_mutations;
   std::map<const ZEvent *, const ZEvent *> lock_mutations;
-  std::list<const ZEvent *> locks_to_mutate, reads_to_mutate;
-  std::map<CPid, const ZEvent *> thread_to_mutate_event;
-  std::set<const ZEvent *> events_waiting_for_negallowed;
+  std::list<const ZEvent *> locks_to_mutate;
+  std::list<const ZEvent *> reads_to_mutate_noneg;
+  std::list<const ZEvent *> reads_to_mutate_withneg;
   for (const auto& ev : events_to_mutate) {
     assert(!read_mutations.count(ev) && !lock_mutations.count(ev));
     if (is_read(ev)) {
       // Collect read mutations
       ann_trace.deadlocked = false;
       read_mutations.emplace(ev, ann_trace.mutation_candidates(ev));
-      if (read_mutations[ev].empty()) {
-        // We cannot mutate because negative annotation forbids
-        assert(!events_waiting_for_negallowed.count(ev));
-        events_waiting_for_negallowed.insert(ev);
-      } else {
+      if (!read_mutations[ev].empty()) {
         // This read has mutation(s) to consider
-        reads_to_mutate.push_back(ev);
-        assert(!thread_to_mutate_event.count(ev->cpid()));
-        thread_to_mutate_event.emplace(ev->cpid(), ev);
-        assert(!ann_trace.backtrack_possible.count(ev->cpid()));
-        ann_trace.backtrack_possible.insert(ev->cpid());
+        if (ann_trace.negative().forbids_initial(ev)) {
+          reads_to_mutate_withneg.push_back(ev);
+        } else {
+          reads_to_mutate_noneg.push_back(ev);
+        }
       }
       continue;
     }
@@ -171,26 +199,12 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     const ZEvent * mut = collect_lock_mutation(ann_trace, ev);
     if (!mut) {
       // We cannot mutate because negative annotation forbids
-      assert(!events_waiting_for_negallowed.count(ev));
-      events_waiting_for_negallowed.insert(ev);
-      lock_mutations.emplace(ev, nullptr);
-    } else if (is_lock(mut)) {
-      // We cannot mutate ev because lock event mut holds the lock
-      assert(!ann_trace.thread_waiting_for.count(ev->cpid()));
-      ann_trace.thread_waiting_for.emplace(ev->cpid(), mut->cpid());
-      lock_mutations.emplace(ev, nullptr);
-    } else {
-      assert(is_initial(mut) || is_unlock(mut));
-      lock_mutations.emplace(ev, mut);
+      continue;
     }
-    if (lock_mutations[ev]) {
-      // This lock has mutation to consider
-      locks_to_mutate.push_back(ev);
-      assert(!thread_to_mutate_event.count(ev->cpid()));
-      thread_to_mutate_event.emplace(ev->cpid(), ev);
-      assert(!ann_trace.backtrack_possible.count(ev->cpid()));
-      ann_trace.backtrack_possible.insert(ev->cpid());
-    }
+    // This lock has mutation to consider
+    assert(is_initial(mut) || is_unlock(mut));
+    lock_mutations.emplace(ev, mut);
+    locks_to_mutate.push_back(ev);
   }
 
   if (info) {
@@ -206,7 +220,8 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
-  if (reads_to_mutate.empty() && locks_to_mutate.empty()) {
+  if (reads_to_mutate_noneg.empty() && reads_to_mutate_withneg.empty() &&
+      locks_to_mutate.empty()) {
     // All mutations forbidden by negative annotation
     end_err("0-allforbidden");
     return false;
@@ -222,52 +237,41 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
     return false;
   }
 
-  // Waiting for negallowed: SETUP
-  for (const ZEvent * ev : events_waiting_for_negallowed) {
-    // Currently we cannot mutate ev because all possibilities are
-    // forbidden by negative annotation. New possibility might appear
-    // from the other threads, and then we add those backtrack points
-    if (!waitfor_negallowed.count(ev->ml())) {
-      waitfor_negallowed.emplace(
-        ev->ml(), std::map<ZEventID, std::set<ZTrace *>>());
-    }
-    if (!waitfor_negallowed[ev->ml()].count(ev->id())) {
-      waitfor_negallowed[ev->ml()].emplace(
-        ev->id(), std::set<ZTrace *>());
-    }
-    assert(!waitfor_negallowed[ev->ml()][ev->id()].count(&ann_trace));
-    waitfor_negallowed[ev->ml()][ev->id()].insert(&ann_trace);
-  }
+  std::vector<const ZEvent *> order_to_mutate = get_order_to_mutate(
+    ann_trace, locks_to_mutate, reads_to_mutate_noneg, reads_to_mutate_withneg);
 
-  // Initial backtrack point(s)
-  assert(ann_trace.backtrack.empty());
-  if (!locks_to_mutate.empty()) {
-    // A lock, all others of its memory location get added later below
-    const ZEvent * chosen_lock = *locks_to_mutate.begin();
-    assert(is_lock(chosen_lock));
-    add_backtrack_point(&ann_trace, chosen_lock->cpid());
-  } else {
-    // A read is the initial backtrack point
-    assert(!reads_to_mutate.empty());
-    const ZEvent * chosen_read = *reads_to_mutate.begin();
-    assert(is_read(chosen_read));
-    add_backtrack_point(&ann_trace, chosen_read->cpid());
-  }
-  assert(!ann_trace.backtrack.empty());
-
-  // Recursive calls through backtrack points
-  for (auto it = ann_trace.backtrack.begin();
-       it != ann_trace.backtrack.end(); ++it) {
-    assert(ann_trace.backtrack_considered.count(*it));
-    assert(ann_trace.backtrack_considered.size() == ann_trace.backtrack.size());
-    assert(thread_to_mutate_event.count(*it));
-    const ZEvent * read_lock = thread_to_mutate_event[*it];
+  // Recursive calls, check for backtrack signal
+  for (int idx = 0; idx < order_to_mutate.size(); ++idx) {
+    const ZEvent * read_lock = order_to_mutate[idx];
     assert(is_read(read_lock) || is_lock(read_lock));
-
-    // New backtrack points may get added during the subrecursion below,
-    // but that does not invalidate 'it', we process those in further iterations
+    // Initialize backtrack signal
     if (is_read(read_lock)) {
-      // Recursive call - read
+      ann_trace.backtrack = (idx >= locks_to_mutate.size() + reads_to_mutate_noneg.size());
+      assert(ann_trace.backtrack || !ann_trace.negative().forbids_initial(read_lock));
+      assert(!ann_trace.backtrack || ann_trace.negative().forbids_initial(read_lock));
+    } else {
+      assert(is_lock(read_lock));
+      ann_trace.backtrack = false;
+      for (int l_idx = idx + 1; l_idx < order_to_mutate.size(); ++l_idx) {
+        if (is_read(order_to_mutate[l_idx])) {
+          // Remaining are reads
+          #ifndef NDEBUG
+          for (int rem = l_idx + 1; rem < order_to_mutate.size(); ++rem) {
+            assert(is_read(order_to_mutate[rem]));
+          }
+          #endif
+          break;
+        }
+        assert(is_lock(order_to_mutate[l_idx]));
+        if (same_ml(read_lock, order_to_mutate[l_idx])) {
+          // His unlock will be a new source for read_lock
+          ann_trace.backtrack = true;
+          break;
+        }
+      }
+    }
+    // Recursive calls
+    if (is_read(read_lock)) {
       assert(read_mutations.count(read_lock) && !read_mutations[read_lock].empty());
       for (const ZAnn& mutation : read_mutations[read_lock]) {
         bool error = mutate_read(ann_trace, read_lock, mutation);
@@ -279,16 +283,6 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
       }
       ann_trace.negative().update(read_lock, negative_update);
     } else {
-      // Add all locks of this memory location as backtrack points
-      for (const auto& lock : locks_to_mutate) {
-        assert(is_lock(lock));
-        if (lock->ml() == read_lock->ml() &&
-            !ann_trace.backtrack_considered.count(lock->cpid())) {
-          ann_trace.backtrack.push_back(lock->cpid());
-          ann_trace.backtrack_considered.insert(lock->cpid());
-        }
-      }
-      // Recursive call - lock
       assert(lock_mutations.count(read_lock) && lock_mutations[read_lock]);
       bool error = mutate_lock(ann_trace, read_lock, lock_mutations[read_lock]);
       if (error) {
@@ -298,22 +292,9 @@ bool ZExplorer::explore_rec(ZTrace& ann_trace)
       }
       ann_trace.negative().update(read_lock, negative_update);
     }
-  }
-
-  // Waiting for negallowed: CLEANUP
-  for (const ZEvent * ev : events_waiting_for_negallowed) {
-    // We are past exploration in this node, clean up ev
-    if (!waitfor_negallowed.count(ev->ml()) ||
-        !waitfor_negallowed[ev->ml()].count(ev->id()) ||
-        !waitfor_negallowed[ev->ml()][ev->id()].count(&ann_trace)) {
-      continue;
-    }
-    waitfor_negallowed[ev->ml()][ev->id()].erase(&ann_trace);
-    if (waitfor_negallowed[ev->ml()][ev->id()].empty()) {
-      waitfor_negallowed[ev->ml()].erase(ev->id());
-      if (waitfor_negallowed[ev->ml()].empty()) {
-        waitfor_negallowed.erase(ev->ml());
-      }
+    // Done if no backtrack signal
+    if (!ann_trace.backtrack) {
+      break;
     }
   }
 
@@ -413,7 +394,7 @@ const ZEvent * ZExplorer::collect_lock_mutation
     const ZEvent * holds_lock = ann_trace.graph().event(last_lock_obs);
     assert(is_lock(holds_lock) && ann_trace.po_part().spans_event(holds_lock));
     end_err("0b");
-    return holds_lock;
+    return nullptr;
   }
 
   // This lock is currently unlocked by last_unlock
@@ -613,21 +594,24 @@ bool ZExplorer::realize_mutation
   assert(mutated_annotation.empty() && mutated_po.empty());
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
 
-  // Record as parent, recursive call, unrecord as parent
-  if (!parents.count(read_lock->ml())) {
-    parents.emplace(read_lock->ml(), std::map<ZEventID, ZTrace *>());
+  if (!parent_trace.backtrack) {
+    // Record as ancestor to look for backtrack signal
+    if (!ancestors.count(read_lock->ml())) {
+      ancestors.emplace(read_lock->ml(), std::map<ZEventID, ZTrace *>());
+    }
+    assert(!ancestors[read_lock->ml()].count(read_lock->id()));
+    ancestors[read_lock->ml()].emplace(read_lock->id(), &parent_trace);
   }
-  assert(parent_trace.backtrack_considered.size() <= parent_trace.backtrack_possible.size());
-  if (parent_trace.backtrack_considered.size() < parent_trace.backtrack_possible.size()) {
-    // More backtrack points might get added
-    parents[read_lock->ml()].emplace(read_lock->id(), &parent_trace);
-  }
+  // Recursive call
   bool error = explore_rec(mutated_ZTrace);
-  assert(parents.count(read_lock->ml()));
-  if (parents[read_lock->ml()].count(read_lock->id())) {
-    parents[read_lock->ml()].erase(read_lock->id());
-  } else {
-    assert(parent_trace.backtrack_considered.size() == parent_trace.backtrack_possible.size());
+  if (ancestors.count(read_lock->ml()) &&
+      ancestors[read_lock->ml()].count(read_lock->id())) {
+    // Unrecord as ancestor
+    assert(ancestors[read_lock->ml()][read_lock->id()] == &parent_trace);
+    ancestors[read_lock->ml()].erase(read_lock->id());
+    if (ancestors[read_lock->ml()].empty()) {
+      ancestors.erase(read_lock->ml());
+    }
   }
 
   end_err("?-realized");
@@ -723,204 +707,61 @@ ZExplorer::extend_trace
 /* BACKTRACK POINTS            */
 /* *************************** */
 
-void ZExplorer::add_backtrack_point
-(ZTrace * parent_trace, const CPid& cpid) const
-{
-  assert(parent_trace);
-  assert(parent_trace->backtrack.size() == parent_trace->backtrack_considered.size());
-  assert(!parent_trace->backtrack_considered.count(cpid));
-  parent_trace->backtrack_considered.insert(cpid);
-  parent_trace->backtrack.push_back(cpid);
-  assert(parent_trace->backtrack_considered.size() <= parent_trace->backtrack_possible.size());
-}
-
-
-bool ZExplorer::try_add_backtrack_blocker
-(ZTrace * parent_trace, const CPid& cpid) const
-{
-  assert(parent_trace);
-  assert(!parent_trace->backtrack_possible.count(cpid));
-  std::set<CPid> all_blocked;
-  all_blocked.insert(cpid);
-  assert(parent_trace->thread_waiting_for.count(cpid));
-  CPid blocker = parent_trace->thread_waiting_for[cpid];
-  // There might be a waiting sequence (blocker waiting etcetc)
-  while (parent_trace->thread_waiting_for.count(blocker)) {
-    assert(!parent_trace->backtrack_possible.count(blocker));
-    if (all_blocked.count(blocker)) {
-      // Stuck in a waiting loop thr1 -> thr2 -> ... -> thr1
-      // Disregard backtrack point, deadlock is imminent
-      assert(all_blocked.size() >= 2);
-      return false;
-    }
-    assert(!all_blocked.count(blocker));
-    all_blocked.insert(blocker);
-    assert(parent_trace->thread_waiting_for.count(blocker));
-    blocker = parent_trace->thread_waiting_for[blocker];
-  }
-  // Thread (or thread-sequence) waiting for blocker to move
-  assert(!parent_trace->thread_waiting_for.count(blocker));
-  // Add blocker if possible and not yet considered
-  if (parent_trace->backtrack_possible.count(blocker) &&
-      !parent_trace->backtrack_considered.count(blocker)) {
-    add_backtrack_point(parent_trace, blocker);
-    return true;
-  }
-  // Found blocker, but it is either impossible (eg because of
-  // negative annotation) or it is already considered
-  assert(!parent_trace->backtrack_possible.count(blocker) ||
-         parent_trace->backtrack_considered.count(blocker));
-  return false;
-}
-
 
 bool ZExplorer::try_add_backtrack_point
-(ZTrace * parent_trace, const CPid& cpid) const
+(const ZPartialOrder& po_full, const ZEvent * new_src,
+ ZTrace * anc_trace, const ZEventID& ancid) const
 {
-  assert(parent_trace);
-  assert(parent_trace->po_part().spans_thread(cpid));
-  // Disregard if thread already considered
-  if (parent_trace->backtrack_considered.count(cpid)) {
-    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
+  assert(anc_trace);
+  assert(!anc_trace->backtrack);
+  // Disregard if same thread
+  if (ancid.cpid() == new_src->cpid()) {
+    assert(ancid.event_id() < new_src->event_id());
     return false;
   }
-  // Check if thread is waiting for another thread
-  if (parent_trace->thread_waiting_for.count(cpid)) {
-    return try_add_backtrack_blocker(parent_trace, cpid);
-  }
-  // Disregard if thread not possible, since it is not waiting
-  assert(!parent_trace->thread_waiting_for.count(cpid));
-  if (!parent_trace->backtrack_possible.count(cpid)) {
-    assert(parent_trace->backtrack_considered.size() < parent_trace->backtrack_possible.size());
+  // Disregard if ancev --thread_order--> new_src
+  const ZEvent * ancev = po_full.graph.event(ancid);
+  assert(same_ml(ancev, new_src));
+  assert((is_read(ancev) && is_write(new_src)) ||
+         (is_lock(ancev) && is_lock(new_src)));
+  assert(po_full.spans_event(ancev));
+  assert(!po_full.has_edge(new_src, ancev));
+  if (po_full.has_edge(ancev, new_src)) {
     return false;
   }
-  // There might exist a behavior where parentev observes write_lock
-  // Hence to preserve completeness, we need to add a backtrack point
-  add_backtrack_point(parent_trace, cpid);
+  // TODO: Disregard if given the closure edges so far in anc_trace->po_part,
+  // new_src will surely not be observable (e.g. ancev -> new_src will happen)
+  // Add backtrack point
+  anc_trace->backtrack = true;
   return true;
 }
 
 
-bool ZExplorer::backtrack_handle_cases
-(const ZPartialOrder& po_full, const ZEvent * write_lock,
- ZTrace * parent_trace, const ZEventID& parentid) const
-{
-  // Clean up if all backtrack points have been added already
-  if (parent_trace->backtrack_considered.size() ==
-      parent_trace->backtrack_possible.size()) {
-    return true;
-  }
-  // Disregard if same thread
-  if (parentid.cpid() == write_lock->cpid()) {
-    assert(parentid.event_id() < write_lock->event_id());
-    assert(parent_trace->backtrack_considered.size() <
-           parent_trace->backtrack_possible.size());
-    return false;
-  }
-  // Disregard if parentev --thread_order--> write_lock
-  const ZEvent * parentev = po_full.graph.event(parentid);
-  assert(same_ml(parentev, write_lock));
-  assert((is_read(parentev) && is_write(write_lock)) ||
-         (is_lock(parentev) && is_lock(write_lock)));
-  assert(po_full.spans_event(parentev));
-  assert(!po_full.has_edge(write_lock, parentev));
-  if (po_full.has_edge(parentev, write_lock)) {
-    assert(parent_trace->backtrack_considered.size() <
-           parent_trace->backtrack_possible.size());
-    return false;
-  }
-  // Check if thread is not spanned yet
-  assert(parent_trace->backtrack_considered.size() <
-         parent_trace->backtrack_possible.size());
-  if (!parent_trace->po_part().spans_thread(write_lock->cpid())) {
-    bool added = false;
-    // Add all thread-order predecessors
-    for (const CPid& cpid : parent_trace->po_part().threads_spanned()) {
-      int thr_size = parent_trace->po_part().thread_size(cpid);
-      assert(thr_size > 0);
-      const ZEvent * his_last = po_full.graph.event(cpid, thr_size - 1);
-      assert(!po_full.has_edge(write_lock, his_last));
-      if (!po_full.has_edge(his_last, write_lock)) {
-        continue;
-      }
-      assert(!po_full.has_edge(parentev, his_last) &&
-             "parentev -> his_last -> write_lock");
-      // Try to add thread-order predecessor
-      added |= try_add_backtrack_point(parent_trace, cpid);
-      if (parent_trace->backtrack_considered.size() ==
-          parent_trace->backtrack_possible.size()) {
-        assert(added);
-        return true;
-      }
-    }
-    bool all = (parent_trace->backtrack_considered.size() ==
-                parent_trace->backtrack_possible.size());
-    assert(!all || added);
-    return all;
-  }
-  assert(parent_trace->po_part().spans_thread(write_lock->cpid()));
-  // Try to add
-  bool added = try_add_backtrack_point(parent_trace, write_lock->cpid());
-  // Remove from parents if all backtrack_possible are already considered
-  bool all = (parent_trace->backtrack_considered.size() ==
-            parent_trace->backtrack_possible.size());
-  assert(!all || added);
-  return all;
-}
-
-
 void ZExplorer::process_backtrack_points
-(const ZPartialOrder& po_full, const ZEvent * write_lock) const
+(const ZPartialOrder& po_full, const ZEvent * new_src) const
 {
-  assert(is_write(write_lock) || is_lock(write_lock));
-  assert(po_full.graph.has_event(write_lock));
-  assert(po_full.spans_event(write_lock));
-  assert(parents.count(write_lock->ml()));
-  for (auto it = parents[write_lock->ml()].begin();
-            it != parents[write_lock->ml()].end(); ) {
-    const ZEventID& parentid = it->first;
-    assert(po_full.graph.has_event(parentid));
-    ZTrace * parent_trace = it->second;
-    assert(parent_trace);
-    bool all_points_added = backtrack_handle_cases(
-      po_full, write_lock, parent_trace, parentid);
-    if (all_points_added) {
-      it = parents[write_lock->ml()].erase(it);
+  assert(is_write(new_src) || is_lock(new_src));
+  assert(po_full.graph.has_event(new_src));
+  assert(po_full.spans_event(new_src));
+  assert(ancestors.count(new_src->ml()));
+  for (auto it = ancestors[new_src->ml()].begin();
+            it != ancestors[new_src->ml()].end(); ) {
+    const ZEventID& ancid = it->first;
+    assert(po_full.graph.has_event(ancid));
+    ZTrace * anc_trace = it->second;
+    assert(anc_trace);
+    bool added = try_add_backtrack_point(
+      po_full, new_src, anc_trace, ancid);
+    if (added) {
+      assert(anc_trace->backtrack);
+      it = ancestors[new_src->ml()].erase(it);
     } else {
+      assert(!anc_trace->backtrack);
       ++it;
     }
   }
-}
-
-
-void ZExplorer::process_backtrack_points_negallowed
-(const ZPartialOrder& po_full, const ZEvent * write_lock) const
-{
-  assert(is_write(write_lock) || is_lock(write_lock));
-  assert(po_full.graph.has_event(write_lock));
-  assert(po_full.spans_event(write_lock));
-  assert(waitfor_negallowed.count(write_lock->ml()));
-  for (auto itml = waitfor_negallowed[write_lock->ml()].begin();
-            itml != waitfor_negallowed[write_lock->ml()].end(); ) {
-    const ZEventID& waitingid = itml->first;
-    assert(po_full.graph.has_event(waitingid));
-    for (auto ittrace = itml->second.begin();
-              ittrace != itml->second.end(); ) {
-      ZTrace * parent_trace = *ittrace;
-      assert(parent_trace);
-      bool all_points_added = backtrack_handle_cases(
-        po_full, write_lock, parent_trace, waitingid);
-      if (all_points_added) {
-        ittrace = itml->second.erase(ittrace);
-      } else {
-        ++ittrace;
-      }
-    }
-    if (itml->second.empty()) {
-      itml = waitfor_negallowed[write_lock->ml()].erase(itml);
-    } else {
-      ++itml;
-    }
+  if (ancestors[new_src->ml()].empty()) {
+    ancestors.erase(new_src->ml());
   }
 }
 

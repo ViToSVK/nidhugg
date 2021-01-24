@@ -615,13 +615,9 @@ void ZPartialOrder::extend
 
       // Handle specific event types
       if (is_write(ev) || is_lock(ev)) {
-        if (explorer.parents.count(ev->ml())) {
+        if (explorer.ancestors.count(ev->ml())) {
           // Process backtrack points
           explorer.process_backtrack_points(po_full, ev);
-        }
-        if (explorer.waitfor_negallowed.count(ev->ml())) {
-          // Process backtrack points
-          explorer.process_backtrack_points_negallowed(po_full, ev);
         }
       }
       if (is_read(ev) || is_lock(ev)) {
@@ -678,13 +674,9 @@ void ZPartialOrder::process_remaining_events_for_backtrack_points
       assert(graph.has_event(cpid, evidx));
       const ZEvent * ev = graph.event(cpid, evidx);
       if (is_write(ev) || is_lock(ev)) {
-        if (explorer.parents.count(ev->ml())) {
+        if (explorer.ancestors.count(ev->ml())) {
           // Process backtrack points
           explorer.process_backtrack_points(po_full, ev);
-        }
-        if (explorer.waitfor_negallowed.count(ev->ml())) {
-          // Process backtrack points
-          explorer.process_backtrack_points_negallowed(po_full, ev);
         }
       }
     }

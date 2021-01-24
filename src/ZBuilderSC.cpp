@@ -1012,11 +1012,8 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
 
       // Adding to po_part, time to process backtrack points
       if ((is_write(ev) || is_lock(ev)) && explorer) {
-        if (explorer->parents.count(ev->ml())) {
+        if (explorer->ancestors.count(ev->ml())) {
           events_to_process_backtrack_points.push_back(ev);
-        }
-        if (explorer->waitfor_negallowed.count(ev->ml())) {
-          events_to_process_backtrack_points_negallowed.push_back(ev);
         }
       }
     }
@@ -1078,19 +1075,22 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
   // Process backtrack points only now that the graph is full
   if (explorer) {
     for (const auto& backtrack_ev : events_to_process_backtrack_points) {
-      explorer->process_backtrack_points(*po_full, backtrack_ev);
-    }
-    for (const auto& backtrack_ev : events_to_process_backtrack_points_negallowed) {
-      explorer->process_backtrack_points_negallowed(*po_full, backtrack_ev);
+      // Need to check below again, previous iteration of the
+      // for-loop might have deleted the ml from ancestors
+      if (explorer->ancestors.count(backtrack_ev->ml())) {
+        explorer->process_backtrack_points(*po_full, backtrack_ev);
+      }
     }
   }
 
   #ifndef NDEBUG
   graph_po_constructed = true;
-  assert(graph->events_size() == po_full->events_size());
-  assert(graph->events_size() >= po_part->events_size());
-  assert(!somethingToAnnotate.empty() ||
-         graph->events_size() == po_part->events_size());
+  if (!has_error()) {
+    assert(graph->events_size() == po_full->events_size());
+    assert(graph->events_size() >= po_part->events_size());
+    assert(!somethingToAnnotate.empty() ||
+           graph->events_size() == po_part->events_size());
+  }
   #endif
   end_err("last");
 }

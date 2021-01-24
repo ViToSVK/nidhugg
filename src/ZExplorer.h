@@ -67,15 +67,10 @@ class ZExplorer {
  public:
 
   mutable std::unordered_map<SymAddrSize,
-                             std::map<ZEventID, ZTrace *>> parents;
-  mutable std::unordered_map<
-    SymAddrSize, std::map<ZEventID, std::set<ZTrace *>>> waitfor_negallowed;
+                             std::map<ZEventID, ZTrace *>> ancestors;
 
   void process_backtrack_points
-  (const ZPartialOrder& po_full, const ZEvent * write_lock) const;
-
-  void process_backtrack_points_negallowed
-  (const ZPartialOrder& po_full, const ZEvent * write_lock) const;
+  (const ZPartialOrder& po_full, const ZEvent * new_src) const;
 
   bool explore();
 
@@ -83,18 +78,15 @@ class ZExplorer {
 
  private:
 
-  void add_backtrack_point
-  (ZTrace * parent_trace, const CPid& cpid) const;
-
-  bool try_add_backtrack_blocker
-  (ZTrace * parent_trace, const CPid& cpid) const;
-
   bool try_add_backtrack_point
-  (ZTrace * parent_trace, const CPid& cpid) const;
+  (const ZPartialOrder& po_full, const ZEvent * new_src,
+   ZTrace * anc_trace, const ZEventID& ancid) const;
 
-  bool backtrack_handle_cases
-  (const ZPartialOrder& po_full, const ZEvent * write_lock,
-   ZTrace * parent_trace, const ZEventID& parentid) const;
+  std::vector<const ZEvent *> get_order_to_mutate
+  (const ZTrace& ann_trace,
+   const std::list<const ZEvent *>& locks_to_mutate,
+   const std::list<const ZEvent *>& reads_to_mutate_noneg,
+   const std::list<const ZEvent *>& reads_to_mutate_withneg) const;
 
   bool explore_rec(ZTrace& ann_trace);
 

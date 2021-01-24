@@ -119,7 +119,6 @@ class ZBuilderSC : public TSOTraceBuilder {
   std::vector<const ZEvent *> spawns;
   std::vector<const ZEvent *> joins;
   std::vector<const ZEvent *> events_to_process_backtrack_points;
-  std::vector<const ZEvent *> events_to_process_backtrack_points_negallowed;
   #ifndef NDEBUG
   bool graph_po_constructed = false;
   #endif

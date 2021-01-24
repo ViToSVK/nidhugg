@@ -56,10 +56,7 @@ class ZTrace {
   mutable bool deadlocked;
 
   // Backtrack points
-  std::set<CPid> backtrack_possible;
-  std::set<CPid> backtrack_considered;
-  std::list<CPid> backtrack;
-  std::map<CPid, CPid> thread_waiting_for;
+  bool backtrack;
 
   bool empty() const;
   std::string to_string(unsigned depth) const;
