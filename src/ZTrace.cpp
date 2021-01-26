@@ -140,9 +140,10 @@ void ZTrace::set_negative(const ZAnnotationNeg& oth)
 }
 
 
-std::string ZTrace::to_string(unsigned depth = 2) const
+std::string ZTrace::to_string(int depth = 2) const
 {
   std::stringstream res;
+  assert(depth >= 0);
 
   if (!_parent) {
     res << "########################\n"

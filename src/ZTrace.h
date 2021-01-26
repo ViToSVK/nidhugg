@@ -59,7 +59,7 @@ class ZTrace {
   bool backtrack;
 
   bool empty() const;
-  std::string to_string(unsigned depth) const;
+  std::string to_string(int depth) const;
   void dump() const;
 
   /* *************************** */

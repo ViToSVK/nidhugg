@@ -210,8 +210,9 @@ bool ZClosure::close_finish
     std::set<const ZEvent *> any_good_write_visible = (
       gr.mutation_candidates_collect
       (po, read_ann.first, read_ann.second.goodwrites, nullptr));
-    if (any_good_write_visible.empty())
+    if (any_good_write_visible.empty()) {
       return false;
+    }
     else {
       assert(any_good_write_visible.size() == 1);
       assert(*(any_good_write_visible.begin()));
@@ -346,8 +347,9 @@ void ZClosure::rule_one_multi_good(const ZEvent *read, const ZAnn& ann)
     assert(candidate == write || po.has_edge(candidate, write));
   }
   #endif
-  if (!po.has_edge(candidate, read))
+  if (!po.has_edge(candidate, read)) {
     po.add_edge(candidate, read);
+  }
 }
 
 void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
@@ -356,7 +358,9 @@ void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
   if (ann.goodwrites.size() != 1) {
     assert(ann.goodwrites.size() >= 2);
     rule_one_multi_good(read, ann);
+    return;
   }
+  assert(ann.goodwrites.size() == 1);
   const ZEvent * write = gr.event(*ann.goodwrites.begin());
   assert(po.spans_event(write));
   if (is_initial(write)) {
@@ -378,6 +382,7 @@ void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
       if (!po.has_edge(local, write))
         po.add_edge(local, write);
     }
-  } else
+  } else {
     assert(write == gr.get_local_write(read));
+  }
 }
