@@ -962,6 +962,14 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
     if (!writes[ev->ml()].count(ev->cpid()))
       writes[ev->ml()].emplace(ev->cpid(), std::vector<const ZEvent *>());
     writes[ev->ml()][ev->cpid()].push_back(ev);
+    // Cache - read_uncovers_mls - add ml of ev to the last_read
+    if (graph->_cache.last_read.count(ev->cpid())) {
+      const ZEvent * lread = graph->_cache.last_read[ev->cpid()];
+      assert(lread->cpid() == ev->cpid() &&
+             lread->event_id() < ev->event_id());
+      assert(graph->_cache.read_uncovers_mls.count(lread));
+      graph->_cache.read_uncovers_mls[lread].insert(ev->ml());
+    }
   }
 
   if (is_read(ev)) {
@@ -983,6 +991,9 @@ void ZBuilderSC::graph_po_process_event(bool take_last_event)
     }
     // Cache - last_read
     graph->_cache.last_read[ev->cpid()] = ev;
+    // Cache - read_uncovers_mls
+    assert(!graph->_cache.read_uncovers_mls.count(ev));
+    graph->_cache.read_uncovers_mls.emplace(ev, std::unordered_set<SymAddrSize>());
   }
 
   if (is_lock(ev)) {

@@ -76,6 +76,9 @@ class ZGraph {
     // Read -> its local buffer-write
     std::unordered_map
       <const ZEvent *, const ZEvent *> local_write;
+    // Read -> mls with writes after it in its thread
+    std::unordered_map
+      <const ZEvent *, std::unordered_set<SymAddrSize>> read_uncovers_mls;
     // CPid -> last spawn of that thread
     std::map<CPid, const ZEvent *> last_spawn;
     // ML -> CPid -> last unlock of that ml in that thread
@@ -86,7 +89,8 @@ class ZGraph {
     // CPid -> last read of that thread (and any ML)
     std::map<CPid, const ZEvent *> last_read;
     bool empty() const {
-      return (writes.empty() && local_write.empty() &&
+      return (writes.empty() &&
+              local_write.empty() && read_uncovers_mls.empty() &&
               last_spawn.empty() && last_unlock.empty() &&
               last_lock.empty() && last_read.empty());
     }

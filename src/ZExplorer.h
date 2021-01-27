@@ -88,6 +88,11 @@ class ZExplorer {
    const std::list<const ZEvent *>& reads_to_mutate_noneg,
    const std::list<const ZEvent *>& reads_to_mutate_withneg) const;
 
+  void get_order_to_mutate_help
+  (const ZTrace& ann_trace,
+   const std::list<const ZEvent *>& reads_to_mutate_noneg,
+   std::vector<const ZEvent *>& order) const;
+
   bool explore_rec(ZTrace& ann_trace);
 
   bool mutate_read

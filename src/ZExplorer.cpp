@@ -129,17 +129,89 @@ std::vector<const ZEvent *> ZExplorer::get_order_to_mutate
     result.push_back(lock);
   }
 
-  for (const auto& read : reads_to_mutate_noneg) {
-    assert(is_read(read));
-    result.push_back(read);
-  }
+  get_order_to_mutate_help(ann_trace, reads_to_mutate_noneg, result);
 
   for (const auto& read : reads_to_mutate_withneg) {
     assert(is_read(read));
     result.push_back(read);
   }
 
+  assert(result.size() == locks_to_mutate.size() +
+         reads_to_mutate_noneg.size() + reads_to_mutate_withneg.size());
   return result;
+}
+
+
+void ZExplorer::get_order_to_mutate_help
+(const ZTrace& ann_trace,
+ const std::list<const ZEvent *>& reads_to_mutate_noneg,
+ std::vector<const ZEvent *>& order) const
+{
+  const std::unordered_map
+  <const ZEvent *, std::unordered_set<SymAddrSize>>& unc = (
+    ann_trace.graph().cache().read_uncovers_mls);
+  std::list<const ZEvent *> uncovers_nothing;
+  std::set<const ZEvent *, ZEventPtrComp> greedy;
+  std::unordered_map<SymAddrSize, int> how_many_reads_of_ml;
+  for (const auto& read : reads_to_mutate_noneg) {
+    assert(is_read(read));
+    assert(unc.count(read));
+    if (unc.at(read).empty()) {
+      uncovers_nothing.push_front(read);
+      continue;
+    }
+    assert(!unc.at(read).empty());
+    greedy.insert(read);
+    if (!how_many_reads_of_ml.count(read->ml())) {
+      how_many_reads_of_ml.emplace(read->ml(), 1);
+    } else {
+      how_many_reads_of_ml[read->ml()]++;
+    }
+  }
+#ifndef NDEBUG
+  int total = 0;
+  for (const auto& ml_howmany : how_many_reads_of_ml) {
+    total += ml_howmany.second;
+  }
+  assert(total == greedy.size());
+#endif
+
+  while (!greedy.empty()) {
+    // Select the read that uncovers the most mls for the others.
+    // That means: for each ml with >=1 write to that ml after read,
+    // bump the score by how many other reads of greedy read from that ml.
+    const ZEvent * best = nullptr;
+    int bestscore = -1;
+    //
+    for (const auto& read : greedy) {
+      int score = (unc.at(read).count(read->ml())) ? -1 : 0;
+      for (const SymAddrSize& write_ml_after : unc.at(read)) {
+        if (how_many_reads_of_ml.count(write_ml_after)) {
+          score += how_many_reads_of_ml[write_ml_after];
+        }
+      }
+      assert(score >= 0);
+      if (score > bestscore) {
+        best = read;
+        bestscore = score;
+      }
+    }
+    //
+    assert(is_read(best));
+    order.push_back(best);
+    how_many_reads_of_ml[best->ml()]--;
+    greedy.erase(best);
+  }
+#ifndef NDEBUG
+  for (const auto& ml_howmany : how_many_reads_of_ml) {
+    assert(ml_howmany.second == 0);
+  }
+#endif
+
+  for (const auto& read : uncovers_nothing) {
+    assert(is_read(read));
+    order.push_back(read);
+  }
 }
 
 
