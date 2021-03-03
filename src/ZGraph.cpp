@@ -658,7 +658,6 @@ std::set<int> ZGraph::construct
     if (!proc_seq_to_thread_id.count(jn->childs_cpid.get_proc_seq()))
       continue;
     unsigned child_thr = proc_seq_to_thread_id.at(jn->childs_cpid.get_proc_seq());
-    assert(child_thr < proc_seq_to_thread_id.size());
     for (int aux : auxes(child_thr)) {
       assert(hasThreadAux(child_thr, aux));
       assert(!(*this)(child_thr, aux).empty());
