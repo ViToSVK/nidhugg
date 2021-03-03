@@ -1037,9 +1037,9 @@ ZGraph::get_causes_after
       assert(i >= 0 && i < tau.size());
       const ZEvent * const ev = tau[i].get();
       assert(hasEvent(ev));
-      assert(!spawn || *spawn != *ev);
       if ((obs_before && *ev == *obs_before) ||
           (obs_before && po.hasEdge(ev, obs_before)) ||
+          (spawn && *spawn == *ev) ||
           (spawn && po.hasEdge(ev, spawn))) {
         assert(!causes_all_idx.count(ev->trace_id()));
         causes_all_idx.emplace(ev->trace_id());
