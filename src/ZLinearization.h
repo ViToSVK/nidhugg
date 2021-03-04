@@ -337,6 +337,7 @@ class ZLinearization {
   /* MAIN STUFF */
   /* ********** */
 
+  mutable double start_time;
  public:
   ZLinearization(const ZAnnotation& annotation,
                  const ZPartialOrder& partialOrder,
@@ -364,6 +365,9 @@ class ZLinearization {
   // stats
   mutable unsigned num_parents = 0;
   mutable unsigned num_children = 0;
+  mutable double elapsed_time;
+  double time_limit = 60;
+  mutable bool exceeded_limit = false;
 };
 
 #endif // __Z_LINEARIZATION_H__

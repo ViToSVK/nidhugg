@@ -45,12 +45,28 @@ void ZExplorer::print_stats() const
 {
   std::cout << std::setprecision(2) << std::fixed;
   std::cout << "\n";
-  std::cout << "events_lower_bound_to_check:       " << lin_event_lower_bound << "\n";
+  std::cout << "reads_lower_bound_to_check:        " << lin_read_lower_bound << "\n";
   std::cout << "number_of_failed_linearizations:   " << linearization_failed << "\n";
   std::cout << "number_of_cases_below_bound:       " << lin_below_bound << "\n";
   std::cout << "number_of_cases_to_check:          " << lin_goal << "\n";
   std::cout << "number_of_cases_checked:           " << lin_performed << "\n";
+  std::cout << "latest_idx_some_algo_spurious_lin: " << latest_problematic_lin << "\n";
   assert(lin_performed + lin_below_bound + linearization_failed == total_lin);
+  std::cout << "number_of_events:                 ";
+  for (const int& i : no_allevents) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "number_of_reads:                  ";
+  for (const int& i : no_reads) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "number_of_writes:                 ";
+  for (const int& i : no_writes) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "number_of_threads:                ";
+  for (const int& i : no_threads) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "number_of_variables:              ";
+  for (const int& i : no_variables) { std::cout << " " << i; }
+  std::cout << "\n";
   // TODO number of events reads writes threads variables
   std::cout << "times_our_yesclosure_yesauxtrace: ";
   for (const double& d : t_our_yescl_yesaux) { std::cout << " " << d; }
@@ -58,7 +74,7 @@ void ZExplorer::print_stats() const
   std::cout << "times_our_yesclosure_noauxtrace:  ";
   for (const double& d : t_our_yescl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_our_noclosure_noauxtrace:   ";
+  std::cout << "times_our_noclosure_yesauxtrace:  ";
   for (const double& d : t_our_nocl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
   std::cout << "times_our_noclosure_noauxtrace:   ";
@@ -70,7 +86,7 @@ void ZExplorer::print_stats() const
   std::cout << "times_base_yesclosure_noauxtrace: ";
   for (const double& d : t_base_yescl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_base_noclosure_noauxtrace:  ";
+  std::cout << "times_base_noclosure_yesauxtrace:  ";
   for (const double& d : t_base_nocl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
   std::cout << "times_base_noclosure_noauxtrace:  ";
@@ -317,10 +333,14 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
   start_err("explore...");
   ZGraph graph(model);
   int mut_start_of_this_explore = mutations_considered;
-  for (const auto& tauidx_sch : schedules) {
-    assert(tauidx_sch.first >= 0 && tauidx_sch.first < ann_trace.tau.size());
-    const ZEvent * ev = ann_trace.tau[tauidx_sch.first].get();
-    assert(ev->trace_id() == tauidx_sch.first);
+  for (std::map<int, std::map<ZAnnotation, ZTrace>>::reverse_iterator it = schedules.rbegin();
+        it != schedules.rend(); ++it ) {
+  //for (const auto& tauidx_sch : schedules) {
+    int tauidx = it->first;
+    assert(tauidx >= schedules.begin()->first);
+    assert(tauidx >= 0 && tauidx < ann_trace.tau.size());
+    const ZEvent * ev = ann_trace.tau[tauidx].get();
+    assert(ev->trace_id() == tauidx);
     assert(isRead(ev) || isLock(ev));
     if (ann_trace.committed.count(ev->id()))
       continue;
@@ -472,6 +492,9 @@ void ZExplorer::mutate
   ZGraph mutated_graph(model);
   auto missing_memory_writes = mutated_graph.construct(ann_trace.tau,
     pre_tau_limit, causes_all_idx, readlock->trace_id());
+  ZPartialOrder thread_order(mutated_graph.getPo());
+  // We add reads-from edges to the thread order
+  thread_order.add_reads_from_edges(mutated_annotation);
   for (int idx : missing_memory_writes) {
     assert(!causes_all_idx.count(idx));
     causes_all_idx.emplace(idx);
@@ -501,13 +524,11 @@ void ZExplorer::mutate
   // Linearize
   // if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
   err_msg("attempt-linearization");
-  init = std::clock();
   ZLinearization linearizer(
     mutated_annotation, mutated_graph.getPo(), ann_trace.exec);
   auto linear = (model != MemoryModel::PSO) ? linearizer.linearizeTSO()
                                             : linearizer.linearizePSO();
-  double time_this_lin = (double)(clock() - init)/CLOCKS_PER_SEC;
-  time_linearization += time_this_lin;
+  time_linearization += linearizer.elapsed_time;
   ++total_lin;
   total_parents += linearizer.num_parents;
   total_children += linearizer.num_children;
@@ -525,10 +546,13 @@ void ZExplorer::mutate
     return;
   }
   ++linearization_succeeded;
-  if (linear.size() >= lin_event_lower_bound) {
+  if (mutated_annotation.read_size() >= lin_read_lower_bound) {
     // PERFORM LINEARIZATION EXPERIMENTS
-    ++lin_performed;
-    t_our_yescl_yesaux.push_back(time_this_lin);
+    t_our_yescl_yesaux.push_back(linearizer.elapsed_time);
+    collect_linearization_stats(linear, mutated_graph);
+    linearization_experiments(
+      ann_trace, mutated_annotation, mutated_graph.getPo(),
+      thread_order);
   } else {
     ++lin_below_bound;
   }
@@ -725,6 +749,111 @@ bool ZExplorer::get_extension(ZTrace& ann_trace)
 
 
 /* *************************** */
+/* LINEARIZATION EXPERIMENTS   */
+/* *************************** */
+
+void ZExplorer::collect_linearization_stats(
+const std::vector<ZEvent>& linearization, const ZGraph& graph)
+{
+  ++lin_performed;
+  if (lin_performed == 1) {
+    std::cout << "There are large-enough linearization instances to consider\n";
+  }
+  no_allevents.push_back(linearization.size());
+  no_threads.push_back(int(graph.number_of_threads()));
+  std::unordered_set<SymAddrSize> variables;
+  int reads = 0;
+  int writes = 0;
+  for (const ZEvent& ev : linearization) {
+    if (isRead(ev)) {
+      ++reads;
+      if (!variables.count(ev.ml)) {
+        variables.insert(ev.ml);
+      }
+    } else if (isWriteM(ev)) {
+      ++writes;
+      if (!variables.count(ev.ml)) {
+        variables.insert(ev.ml);
+      }
+    }
+  }
+  no_reads.push_back(reads);
+  no_writes.push_back(writes);
+  no_variables.push_back(variables.size());
+}
+
+
+void ZExplorer::linearization_experiments(
+const ZTrace& ann_trace, const ZAnnotation& annotation,
+const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
+{
+  // OUR, YESclosure, NOauxtrace
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinearization zlin_our_yescl_noaux(
+    annotation, closed_po, emptyaux);
+  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+    zlin_our_yescl_noaux.linearizeTSO() : zlin_our_yescl_noaux.linearizePSO();
+  if (!linear.empty()) {
+    assert(!zlin_our_yescl_noaux.exceeded_limit);
+    assert(zlin_our_yescl_noaux.elapsed_time <= zlin_our_yescl_noaux.time_limit);
+    t_our_yescl_noaux.push_back(zlin_our_yescl_noaux.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(zlin_our_yescl_noaux.exceeded_limit);
+    assert(zlin_our_yescl_noaux.elapsed_time > zlin_our_yescl_noaux.time_limit);
+    t_our_yescl_noaux.push_back(zlin_our_yescl_noaux.time_limit);
+  }
+  }
+
+  // OUR, NOclosure, YESauxtrace
+  {
+  ZLinearization zlin_our_nocl_yesaux(
+    annotation, thread_order, ann_trace.exec);
+  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+    zlin_our_nocl_yesaux.linearizeTSO() : zlin_our_nocl_yesaux.linearizePSO();
+  if (!linear.empty()) {
+    assert(!zlin_our_nocl_yesaux.exceeded_limit);
+    assert(zlin_our_nocl_yesaux.elapsed_time <= zlin_our_nocl_yesaux.time_limit);
+    t_our_nocl_yesaux.push_back(zlin_our_nocl_yesaux.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(zlin_our_nocl_yesaux.exceeded_limit);
+    assert(zlin_our_nocl_yesaux.elapsed_time > zlin_our_nocl_yesaux.time_limit);
+    t_our_nocl_yesaux.push_back(zlin_our_nocl_yesaux.time_limit);
+  }
+  }
+
+  // OUR, NOclosure, NOauxtrace
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinearization zlin_our_nocl_noaux(
+    annotation, thread_order, emptyaux);
+  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+    zlin_our_nocl_noaux.linearizeTSO() : zlin_our_nocl_noaux.linearizePSO();
+  if (!linear.empty()) {
+    assert(!zlin_our_nocl_noaux.exceeded_limit);
+    assert(zlin_our_nocl_noaux.elapsed_time <= zlin_our_nocl_noaux.time_limit);
+    t_our_nocl_noaux.push_back(zlin_our_nocl_noaux.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(zlin_our_nocl_noaux.exceeded_limit);
+    assert(zlin_our_nocl_noaux.elapsed_time > zlin_our_nocl_noaux.time_limit);
+    t_our_nocl_noaux.push_back(zlin_our_nocl_noaux.time_limit);
+  }
+  }
+}
+
+
+/* *************************** */
 /* RESPECTS ANNOTATION         */
 /* *************************** */
 
@@ -750,6 +879,8 @@ bool ZExplorer::linearization_respects_ann
   std::unordered_map<ZEventID, unsigned> bw_pos;
   // BufferWrite -> MemoryWrite
   std::unordered_map<int, int> buf_mem;
+  // Number of annotated reads/locks
+  int annotated_readlocks = 0;
 
   for (unsigned i=0; i<trace.size(); ++i) {
     const ZEvent * ev = &(trace.at(i));
@@ -778,6 +909,8 @@ bool ZExplorer::linearization_respects_ann
     }
 
     if (isRead(ev)) {
+      assert(annotation.defines(ev->id()));
+      ++annotated_readlocks;
       if (storeQueue.count(ev->thread_id()) &&
           storeQueue.at(ev->thread_id()).count(ev->ml) &&
           !storeQueue.at(ev->thread_id()).at(ev->ml).empty()) {
@@ -798,6 +931,8 @@ bool ZExplorer::linearization_respects_ann
     }
 
     if (isLock(ev)) {
+      assert(annotation.lock_defines(ev->id()));
+      ++annotated_readlocks;
       if (locked.count(ev->ml)) {
         llvm::errs() << "Partial order\n";
         graph.dump();
@@ -828,6 +963,17 @@ bool ZExplorer::linearization_respects_ann
       locked.erase(ev->ml);
       lastUnlock[ev->ml] = i;
     }
+  }
+  if (annotated_readlocks != annotation.size()) {
+    llvm::errs() << "Partial order\n";
+    graph.dump();
+    llvm::errs() << "Linearization\n";
+    dump_trace(trace);
+    llvm::errs() << "Annotation that should be respected\n";
+    annotation.dump();
+    llvm::errs() << "Annotation has " << annotation.size() <<
+      "read/locks, linearization has " << annotated_readlocks << "\n";
+    return false;
   }
 
   for (unsigned i=0; i<trace.size(); ++i) {

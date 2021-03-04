@@ -23,7 +23,6 @@
 
 #include <list>
 #include <memory>
-#include <time.h>
 
 #include "ZBuilderSC.h"
 #include "ZBuilderTSO.h"
@@ -112,11 +111,17 @@ class ZExplorer {
   //
   //
   //
-  int lin_event_lower_bound = 1000;
+  int lin_read_lower_bound = 50;
   int lin_goal = 5;
   int lin_below_bound = 0;
   int lin_performed = 0;
+  int latest_problematic_lin = -1;
   //
+  std::vector<int> no_allevents;
+  std::vector<int> no_reads;
+  std::vector<int> no_writes;
+  std::vector<int> no_threads;
+  std::vector<int> no_variables;
   std::vector<double> t_our_yescl_yesaux;
   std::vector<double> t_our_yescl_noaux;
   std::vector<double> t_our_nocl_yesaux;
@@ -159,6 +164,16 @@ class ZExplorer {
   bool linearization_respects_ann(
     const std::vector<ZEvent>& trace, const ZAnnotation& annotation,
     const ZGraph& graph, const ZTrace& parent_trace) const;
+
+  void collect_linearization_stats(
+    const std::vector<ZEvent>& linearization,
+    const ZGraph& graph);
+
+  void linearization_experiments(
+    const ZTrace& ann_trace,
+    const ZAnnotation& annotation,
+    const ZPartialOrder& closed_po,
+    const ZPartialOrder& thread_order);
 };
 
 #endif // __Z_EXPLORER_H__

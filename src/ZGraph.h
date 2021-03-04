@@ -22,6 +22,7 @@
 #define __Z_GRAPH_H__
 
 #include <list>
+#include <ctime>
 
 #include "ZPartialOrder.h"
 

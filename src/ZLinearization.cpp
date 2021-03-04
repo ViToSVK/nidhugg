@@ -445,6 +445,10 @@ bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
 
 unsigned ZLinearization::trHintTSO(const State& state) const {
   start_err("trHintTSO...");
+  if (tr.empty()) {
+    end_err("0");
+    return 0;
+  }
   if (state.tr_pos == tr.size()) {
     end_err("0a");
     return 0;
@@ -465,6 +469,12 @@ unsigned ZLinearization::trHintTSO(const State& state) const {
 template<class T>
 bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const {
   start_err("linearizeTSO/3...");
+  if (((double)(std::clock() - start_time)/CLOCKS_PER_SEC)
+      > time_limit) {
+    exceeded_limit = true;
+    res.clear();
+    return false;
+  }
 
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
@@ -511,6 +521,7 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
 template<class T>
 std::vector<ZEvent> ZLinearization::linearizeTSO() const
 {
+  start_time = std::clock();
   start_err("linearizeTSO/0...");
   // po.dump();
   assert(gr.size() > 0);
@@ -520,6 +531,8 @@ std::vector<ZEvent> ZLinearization::linearizeTSO() const
   linearizeTSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
+  elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  assert(!exceeded_limit || res.empty());
   return res;
 }
 
@@ -737,6 +750,7 @@ void ZLinearization::calculateTrNextMain() {
   start_err("calculateTrNextMain...");
   int n = tr.size();
   tr_next_main.clear();
+  if (tr.empty()) { return; }
   tr_next_main.resize(n+1, UINT_MAX);
   for (int i = n-1; i >= 0; i--) {
     tr_next_main.at(i) = (
@@ -750,6 +764,12 @@ void ZLinearization::calculateTrNextMain() {
 
 unsigned ZLinearization::trHintPSO(const State& state) const {
   start_err("trHintPSO...");
+  if (tr.empty()) {
+    end_err("0");
+    return 0;
+  }
+  assert(!tr.empty());
+  assert(state.tr_pos < tr_next_main.size());
   unsigned pos = tr_next_main.at(state.tr_pos);
   if (pos == UINT_MAX) {
     end_err("0");
@@ -768,6 +788,12 @@ unsigned ZLinearization::trHintPSO(const State& state) const {
 template<class T>
 bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<ZEvent>& res) const {
   start_err("linearizePSO/3...");
+  if (((double)(std::clock() - start_time)/CLOCKS_PER_SEC)
+      > time_limit) {
+    exceeded_limit = true;
+    res.clear();
+    return false;
+  }
 
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
@@ -814,6 +840,7 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
 template<class T>
 std::vector<ZEvent> ZLinearization::linearizePSO() const
 {
+  start_time = std::clock();
   start_err("linearizePSO/0...");
   // po.dump();
   assert(gr.size() > 0);
@@ -823,6 +850,8 @@ std::vector<ZEvent> ZLinearization::linearizePSO() const
   linearizePSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
+  elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  assert(!exceeded_limit || res.empty());
   return res;
 }
 
