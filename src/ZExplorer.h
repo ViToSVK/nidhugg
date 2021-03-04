@@ -110,6 +110,24 @@ class ZExplorer {
   // max branching factor
   double max_branch = 1.0;
   //
+  //
+  //
+  int lin_event_lower_bound = 1000;
+  int lin_goal = 5;
+  int lin_below_bound = 0;
+  int lin_performed = 0;
+  //
+  std::vector<double> t_our_yescl_yesaux;
+  std::vector<double> t_our_yescl_noaux;
+  std::vector<double> t_our_nocl_yesaux;
+  std::vector<double> t_our_nocl_noaux;
+  std::vector<double> t_base_yescl_yesaux;
+  std::vector<double> t_base_yescl_noaux;
+  std::vector<double> t_base_nocl_yesaux;
+  std::vector<double> t_base_nocl_noaux;
+  //
+  //
+  //
  public:
   void print_stats() const;
 

@@ -290,7 +290,7 @@ void ZBuilderPSO::curnode_set_thread_id()
   } else
     thr_idx = it->second;
 
-  assert(thr_idx < 100);
+  assert(thr_idx < 10000);
   curnode()._thread_id = (int) thr_idx;
 }
 

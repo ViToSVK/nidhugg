@@ -141,10 +141,12 @@ int CPid::compare(const CPid &c) const{
 
   auto bad_hash = [&]()
   {
+    /*
     llvm::errs() << "CPID hash clash: ";
     llvm::errs() << to_string() << " :: " << get_hash() << " --- ";
     llvm::errs() << c.to_string() << " :: " << c.get_hash() << "\n";
     assert(false && "CPID hash clash");
+    */
   };
 
   unsigned i = 0;

@@ -248,7 +248,7 @@ void ZPartialOrder::addLine(const ZEvent * ev)
   // This should be called right after line is added to graph
   assert(ev && "Null pointer event");
   assert(ev->event_id() == 0);
-  assert(ev->thread_id() < 100);
+  assert(ev->thread_id() < 10000);
   assert(graph.size() == _succ.size() + 1 &&
          graph.size() == _pred.size() + 1);
   assert(graph.lineID(ev) == _succ.size());

@@ -43,6 +43,41 @@ ZExplorer::ZExplorer(ZBuilderPSO& tb)
 
 void ZExplorer::print_stats() const
 {
+  std::cout << std::setprecision(2) << std::fixed;
+  std::cout << "\n";
+  std::cout << "events_lower_bound_to_check:       " << lin_event_lower_bound << "\n";
+  std::cout << "number_of_failed_linearizations:   " << linearization_failed << "\n";
+  std::cout << "number_of_cases_below_bound:       " << lin_below_bound << "\n";
+  std::cout << "number_of_cases_to_check:          " << lin_goal << "\n";
+  std::cout << "number_of_cases_checked:           " << lin_performed << "\n";
+  assert(lin_performed + lin_below_bound + linearization_failed == total_lin);
+  // TODO number of events reads writes threads variables
+  std::cout << "times_our_yesclosure_yesauxtrace: ";
+  for (const double& d : t_our_yescl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_our_yesclosure_noauxtrace:  ";
+  for (const double& d : t_our_yescl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_our_noclosure_noauxtrace:   ";
+  for (const double& d : t_our_nocl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_our_noclosure_noauxtrace:   ";
+  for (const double& d : t_our_nocl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_base_yesclosure_yesauxtrace:";
+  for (const double& d : t_base_yescl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_base_yesclosure_noauxtrace: ";
+  for (const double& d : t_base_yescl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_base_noclosure_noauxtrace:  ";
+  for (const double& d : t_base_nocl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_base_noclosure_noauxtrace:  ";
+  for (const double& d : t_base_nocl_noaux) { std::cout << " " << d; }
+  std::cout << "\n\n";
+  return;
+
   std::cout << "\n";
   std::cout << "Fully executed traces:             " << executed_traces_full << "\n";
   std::cout << "Fully+partially executed traces:   " << executed_traces << "\n";
@@ -136,6 +171,9 @@ void ZExplorer::maintain_buffers
 bool ZExplorer::extend_and_explore
 (ZTrace& ann_trace, ZTraceExtension&& ext)
 {
+  if (lin_performed >= lin_goal) {
+    return false;
+  }
   start_err("extend...");
   executed_traces++;
   executed_traces_full++;
@@ -320,8 +358,11 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
       graph.get_read_mutations(ev, ann_trace.annotation.obs(ev), mutations_only_from_idx) :
       graph.get_lock_mutation(ev, previous_lock_id, ann_trace.tau);
     // Perform the mutations
-    for (const ZEventID& mutation : mutations)
-      mutate(ann_trace, graph, ev, mutation);
+    for (const ZEventID& mutation : mutations) {
+      if (lin_performed < lin_goal) {
+        mutate(ann_trace, graph, ev, mutation);
+      }
+    }
   }
   assert(mut_start_of_this_explore <= mutations_considered);
   no_mut_choices += (mut_start_of_this_explore == mutations_considered);
@@ -465,7 +506,8 @@ void ZExplorer::mutate
     mutated_annotation, mutated_graph.getPo(), ann_trace.exec);
   auto linear = (model != MemoryModel::PSO) ? linearizer.linearizeTSO()
                                             : linearizer.linearizePSO();
-  time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
+  double time_this_lin = (double)(clock() - init)/CLOCKS_PER_SEC;
+  time_linearization += time_this_lin;
   ++total_lin;
   total_parents += linearizer.num_parents;
   total_children += linearizer.num_children;
@@ -483,6 +525,13 @@ void ZExplorer::mutate
     return;
   }
   ++linearization_succeeded;
+  if (linear.size() >= lin_event_lower_bound) {
+    // PERFORM LINEARIZATION EXPERIMENTS
+    ++lin_performed;
+    t_our_yescl_yesaux.push_back(time_this_lin);
+  } else {
+    ++lin_below_bound;
+  }
   assert(total_lin==linearization_succeeded+linearization_failed);
   assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));
   // Construct tau
@@ -582,8 +631,12 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
       for (auto& key_trace : sch) {
         start_err(std::string("schedule-on-") + std::to_string(i) +
                 "-(idx-is-" + std::to_string(idx) + ")...");
-        if (get_extension(key_trace.second))
+        if (lin_performed >= lin_goal) {
+          return false;
+        }
+        if (get_extension(key_trace.second)) {
           return true;
+        }
         end_err(std::string("schedule-on-") + std::to_string(i) +
                 "-(idx-is-" + std::to_string(idx) + ")-done");
       }

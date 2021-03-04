@@ -69,10 +69,12 @@ int ZEventID::compare(const ZEventID &c) const
 
   auto bad_hash = [&]()
   {
+    /*
     llvm::errs() << "EventID hash clash: ";
     llvm::errs() << to_string() << " :: " << hash() << " --- ";
     llvm::errs() << c.to_string() << " :: " << c.hash() << "\n";
     assert(false && "EventID hash clash");
+    */
   };
 
   int cp = cpid().compare(c.cpid());

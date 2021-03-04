@@ -145,7 +145,7 @@ void ZLinearization::calculateWrMapping() {
   for (auto it = an.begin(); it != an.end(); it++) {
     assert(it->first.event_id() >= 0); // read cannot be initial event
     unsigned thr = gr.getThreadIDnoAdd(it->first.cpid().get_proc_seq());
-    assert(thr < 100 && gr.thr_to_lin_id.count(thr));
+    assert(thr < 10000 && gr.thr_to_lin_id.count(thr));
     thr = gr.thr_to_lin_id.at(thr);
     assert(thr < gr.number_of_threads());
     unsigned ev = (unsigned) it->first.event_id();
@@ -156,7 +156,7 @@ void ZLinearization::calculateWrMapping() {
     if (it->second.event_id() >= 0) {
       // not initial
       thr = gr.getThreadIDnoAdd(it->second.cpid().get_proc_seq());
-      assert(thr < 100 && gr.thr_to_lin_id.count(thr));
+      assert(thr < 10000 && gr.thr_to_lin_id.count(thr));
       thr = gr.thr_to_lin_id.at(thr);
       assert(thr < gr.number_of_threads());
       ev = (unsigned) it->second.event_id();

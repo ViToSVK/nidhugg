@@ -327,7 +327,7 @@ void ZBuilderTSO::curnode_set_thread_id()
       std::pair<unsigned, int>(thr_idx, curnode().aux_id()));
   }
 
-  assert(thr_idx < 100);
+  assert(thr_idx < 10000);
   curnode()._thread_id = (int) thr_idx;
 }
 

@@ -443,7 +443,7 @@ std::set<int> ZGraph::construct
       addThreadID(ev);
 
       // Set linearization_thr_id
-      assert(ev->thread_id() < 100);
+      assert(ev->thread_id() < 10000);
       assert(thr_to_lin_id.size() == lin_to_thr_id.size());
       if (!thr_to_lin_id.count(ev->thread_id())) {
         unsigned lin_id = lin_to_thr_id.size();
