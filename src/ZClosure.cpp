@@ -23,10 +23,10 @@
 
 
 ZClosure::ZClosure
-(const ZAnnotation& annotation, ZGraph& graph)
+(const ZAnnotation& annotation, ZGraph& graph, ZPartialOrder& partial)
   : an(annotation),
     gr(graph),
-    po(graph.po) {}
+    po(partial) { assert(&(po.graph) == &graph); }
 
 
 // return writeBuffer, writeMemory for obs

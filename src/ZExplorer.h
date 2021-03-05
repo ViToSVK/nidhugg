@@ -112,7 +112,7 @@ class ZExplorer {
   //
   //
   int lin_read_lower_bound = 50;
-  int lin_goal = 5;
+  int lin_goal = 10;
   int lin_below_bound = 0;
   int lin_performed = 0;
   int latest_problematic_lin = -1;
@@ -122,6 +122,9 @@ class ZExplorer {
   std::vector<int> no_writes;
   std::vector<int> no_threads;
   std::vector<int> no_variables;
+  std::vector<int> no_closure_rule23_edges;
+  // times
+  std::vector<double> t_closure;
   std::vector<double> t_our_yescl_yesaux;
   std::vector<double> t_our_yescl_noaux;
   std::vector<double> t_our_nocl_yesaux;
@@ -130,6 +133,31 @@ class ZExplorer {
   std::vector<double> t_base_yescl_noaux;
   std::vector<double> t_base_nocl_yesaux;
   std::vector<double> t_base_nocl_noaux;
+  // branching factors
+  std::vector<double> br_our_yescl_yesaux;
+  std::vector<double> br_our_yescl_noaux;
+  std::vector<double> br_our_nocl_yesaux;
+  std::vector<double> br_our_nocl_noaux;
+  std::vector<double> br_base_yescl_yesaux;
+  std::vector<double> br_base_yescl_noaux;
+  std::vector<double> br_base_nocl_yesaux;
+  std::vector<double> br_base_nocl_noaux;
+  std::vector<int> par_our_yescl_yesaux;
+  std::vector<int> par_our_yescl_noaux;
+  std::vector<int> par_our_nocl_yesaux;
+  std::vector<int> par_our_nocl_noaux;
+  std::vector<int> par_base_yescl_yesaux;
+  std::vector<int> par_base_yescl_noaux;
+  std::vector<int> par_base_nocl_yesaux;
+  std::vector<int> par_base_nocl_noaux;
+  std::vector<int> ch_our_yescl_yesaux;
+  std::vector<int> ch_our_yescl_noaux;
+  std::vector<int> ch_our_nocl_yesaux;
+  std::vector<int> ch_our_nocl_noaux;
+  std::vector<int> ch_base_yescl_yesaux;
+  std::vector<int> ch_base_yescl_noaux;
+  std::vector<int> ch_base_nocl_yesaux;
+  std::vector<int> ch_base_nocl_noaux;
   //
   //
   //

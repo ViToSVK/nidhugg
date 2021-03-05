@@ -26,7 +26,7 @@
 
 class ZClosure {
  public:
-  ZClosure(const ZAnnotation& annotation, ZGraph& graph);
+  ZClosure(const ZAnnotation& annotation, ZGraph& graph, ZPartialOrder& partial);
   ZClosure(const ZClosure& oth) = delete;
   ZClosure& operator=(ZClosure& oth) = delete;
   ZClosure(ZClosure&& oth) = delete;

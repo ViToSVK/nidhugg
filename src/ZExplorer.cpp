@@ -45,53 +45,136 @@ void ZExplorer::print_stats() const
 {
   std::cout << std::setprecision(2) << std::fixed;
   std::cout << "\n";
-  std::cout << "reads_lower_bound_to_check:        " << lin_read_lower_bound << "\n";
-  std::cout << "number_of_failed_linearizations:   " << linearization_failed << "\n";
-  std::cout << "number_of_cases_below_bound:       " << lin_below_bound << "\n";
-  std::cout << "number_of_cases_to_check:          " << lin_goal << "\n";
-  std::cout << "number_of_cases_checked:           " << lin_performed << "\n";
-  std::cout << "latest_idx_some_algo_spurious_lin: " << latest_problematic_lin << "\n";
+  std::cout << "reads_lower_bound_to_check:            " << lin_read_lower_bound << "\n";
+  std::cout << "number_of_failed_linearizations:       " << linearization_failed << "\n";
+  std::cout << "number_of_cases_below_bound:           " << lin_below_bound << "\n";
+  std::cout << "number_of_cases_to_check:              " << lin_goal << "\n";
+  std::cout << "number_of_cases_checked:               " << lin_performed << "\n";
+  std::cout << "latest_idx_some_algo_spurious_lin:     " << latest_problematic_lin << "\n";
   assert(lin_performed + lin_below_bound + linearization_failed == total_lin);
-  std::cout << "number_of_events:                 ";
+  std::cout << "number_of_events:                     ";
   for (const int& i : no_allevents) { std::cout << " " << i; }
   std::cout << "\n";
-  std::cout << "number_of_reads:                  ";
+  std::cout << "number_of_reads:                      ";
   for (const int& i : no_reads) { std::cout << " " << i; }
   std::cout << "\n";
-  std::cout << "number_of_writes:                 ";
+  std::cout << "number_of_writes:                     ";
   for (const int& i : no_writes) { std::cout << " " << i; }
   std::cout << "\n";
-  std::cout << "number_of_threads:                ";
+  std::cout << "number_of_threads:                    ";
   for (const int& i : no_threads) { std::cout << " " << i; }
   std::cout << "\n";
-  std::cout << "number_of_variables:              ";
+  std::cout << "number_of_variables:                  ";
   for (const int& i : no_variables) { std::cout << " " << i; }
   std::cout << "\n";
-  // TODO number of events reads writes threads variables
-  std::cout << "times_our_yesclosure_yesauxtrace: ";
+  std::cout << "number_of_closure_rule23_edges:       ";
+  for (const int& i : no_closure_rule23_edges) { std::cout << " " << i; }
+  std::cout << "\n";
+  // Times
+  std::cout << "times_closure:                        ";
+  for (const double& d : t_closure) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "times_our_yesclosure_yesauxtrace:     ";
   for (const double& d : t_our_yescl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_our_yesclosure_noauxtrace:  ";
+  std::cout << "times_our_yesclosure_noauxtrace:      ";
   for (const double& d : t_our_yescl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_our_noclosure_yesauxtrace:  ";
+  std::cout << "times_our_noclosure_yesauxtrace:      ";
   for (const double& d : t_our_nocl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_our_noclosure_noauxtrace:   ";
+  std::cout << "times_our_noclosure_noauxtrace:       ";
   for (const double& d : t_our_nocl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_base_yesclosure_yesauxtrace:";
+  std::cout << "times_base_yesclosure_yesauxtrace:    ";
   for (const double& d : t_base_yescl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_base_yesclosure_noauxtrace: ";
+  std::cout << "times_base_yesclosure_noauxtrace:     ";
   for (const double& d : t_base_yescl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_base_noclosure_yesauxtrace:  ";
+  std::cout << "times_base_noclosure_yesauxtrace:     ";
   for (const double& d : t_base_nocl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
-  std::cout << "times_base_noclosure_noauxtrace:  ";
+  std::cout << "times_base_noclosure_noauxtrace:      ";
   for (const double& d : t_base_nocl_noaux) { std::cout << " " << d; }
-  std::cout << "\n\n";
+  std::cout << "\n";
+  // branching factors
+  /*
+  std::cout << "branch_our_yesclosure_yesauxtrace:    ";
+  for (const double& d : br_our_yescl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_our_yesclosure_noauxtrace:     ";
+  for (const double& d : br_our_yescl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_our_noclosure_yesauxtrace:     ";
+  for (const double& d : br_our_nocl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_our_noclosure_noauxtrace:      ";
+  for (const double& d : br_our_nocl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_base_yesclosure_yesauxtrace:   ";
+  for (const double& d : br_base_yescl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_base_yesclosure_noauxtrace:    ";
+  for (const double& d : br_base_yescl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_base_noclosure_yesauxtrace:    ";
+  for (const double& d : br_base_nocl_yesaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  std::cout << "branch_base_noclosure_noauxtrace:     ";
+  for (const double& d : br_base_nocl_noaux) { std::cout << " " << d; }
+  std::cout << "\n";
+  */
+  // branching parents and children
+  std::cout << "parents_our_yesclosure_yesauxtrace:   ";
+  for (const int& i : par_our_yescl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_our_yesclosure_yesauxtrace:  ";
+  for (const int& i : ch_our_yescl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_our_yesclosure_noauxtrace:    ";
+  for (const int& i : par_our_yescl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_our_yesclosure_noauxtrace:   ";
+  for (const int& i : ch_our_yescl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_our_noclosure_yesauxtrace:    ";
+  for (const int& i : par_our_nocl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_our_noclosure_yesauxtrace:   ";
+  for (const int& i : ch_our_nocl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_our_noclosure_noauxtrace:     ";
+  for (const int& i : par_our_nocl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_our_noclosure_noauxtrace:    ";
+  for (const int& i : ch_our_nocl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_base_yesclosure_yesauxtrace:  ";
+  for (const int& i : par_base_yescl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_base_yesclosure_yesauxtrace: ";
+  for (const int& i : ch_base_yescl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_base_yesclosure_noauxtrace:   ";
+  for (const int& i : par_base_yescl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_base_yesclosure_noauxtrace:  ";
+  for (const int& i : ch_base_yescl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_base_noclosure_yesauxtrace:   ";
+  for (const int& i : par_base_nocl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_base_noclosure_yesauxtrace:  ";
+  for (const int& i : ch_base_nocl_yesaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "parents_base_noclosure_noauxtrace:    ";
+  for (const int& i : par_base_nocl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "children_base_noclosure_noauxtrace:   ";
+  for (const int& i : ch_base_nocl_noaux) { std::cout << " " << i; }
+  std::cout << "\n";
+  std::cout << "\n";
   return;
 
   std::cout << "\n";
@@ -503,7 +586,7 @@ void ZExplorer::mutate
   // Close
   err_msg("attempt-closure");
   init = std::clock();
-  ZClosure closure(mutated_annotation, mutated_graph);
+  ZClosure closure(mutated_annotation, mutated_graph, mutated_graph.po);
   bool closed = closure.close();
   double time = (double)(clock() - init)/CLOCKS_PER_SEC;
   time_closure += time;
@@ -519,6 +602,7 @@ void ZExplorer::mutate
     closure_no_edge++;
     time_closure_no_edge += time;
   }
+  int cur_edges = closure.added_edges;
   closure_edges += closure.added_edges;
   closure_iter += closure.iterations;
   // Linearize
@@ -546,16 +630,42 @@ void ZExplorer::mutate
     return;
   }
   ++linearization_succeeded;
+  //
+  //
+  //
+  //
+  //
   if (mutated_annotation.read_size() >= lin_read_lower_bound) {
     // PERFORM LINEARIZATION EXPERIMENTS
+    t_closure.push_back(time);
     t_our_yescl_yesaux.push_back(linearizer.elapsed_time);
+    br_our_yescl_yesaux.push_back(cur_br);
+    par_our_yescl_yesaux.push_back(linearizer.num_parents);
+    ch_our_yescl_yesaux.push_back(linearizer.num_children);
+    no_closure_rule23_edges.push_back(cur_edges);
     collect_linearization_stats(linear, mutated_graph);
     linearization_experiments(
       ann_trace, mutated_annotation, mutated_graph.getPo(),
       thread_order);
+    //
+    // mutated_graph.getPo().dump();
+    // thread_order.dump();
+    // mutated_annotation.dump();
+    //
+#ifndef NDEBUG
+    ZClosure xxclosure(mutated_annotation, mutated_graph, thread_order);
+    bool xxclosed = xxclosure.close();
+    assert(xxclosed);
+    assert(xxclosure.added_edges == cur_edges);
+#endif
   } else {
     ++lin_below_bound;
   }
+  //
+  //
+  //
+  //
+  //
   assert(total_lin==linearization_succeeded+linearization_failed);
   assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));
   // Construct tau
@@ -791,64 +901,79 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinearization zlin_our_yescl_noaux(
+  ZLinearization linearizer(
     annotation, closed_po, emptyaux);
   std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    zlin_our_yescl_noaux.linearizeTSO() : zlin_our_yescl_noaux.linearizePSO();
+    linearizer.linearizeTSO() : linearizer.linearizePSO();
   if (!linear.empty()) {
-    assert(!zlin_our_yescl_noaux.exceeded_limit);
-    assert(zlin_our_yescl_noaux.elapsed_time <= zlin_our_yescl_noaux.time_limit);
-    t_our_yescl_noaux.push_back(zlin_our_yescl_noaux.elapsed_time);
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_our_yescl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
-    assert(zlin_our_yescl_noaux.exceeded_limit);
-    assert(zlin_our_yescl_noaux.elapsed_time > zlin_our_yescl_noaux.time_limit);
-    t_our_yescl_noaux.push_back(zlin_our_yescl_noaux.time_limit);
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_our_yescl_noaux.push_back(linearizer.time_limit);
   }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_our_yescl_noaux.push_back(cur_br);
+  par_our_yescl_noaux.push_back(linearizer.num_parents);
+  ch_our_yescl_noaux.push_back(linearizer.num_children);
   }
 
   // OUR, NOclosure, YESauxtrace
   {
-  ZLinearization zlin_our_nocl_yesaux(
+  ZLinearization linearizer(
     annotation, thread_order, ann_trace.exec);
   std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    zlin_our_nocl_yesaux.linearizeTSO() : zlin_our_nocl_yesaux.linearizePSO();
+    linearizer.linearizeTSO() : linearizer.linearizePSO();
   if (!linear.empty()) {
-    assert(!zlin_our_nocl_yesaux.exceeded_limit);
-    assert(zlin_our_nocl_yesaux.elapsed_time <= zlin_our_nocl_yesaux.time_limit);
-    t_our_nocl_yesaux.push_back(zlin_our_nocl_yesaux.elapsed_time);
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_our_nocl_yesaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
-    assert(zlin_our_nocl_yesaux.exceeded_limit);
-    assert(zlin_our_nocl_yesaux.elapsed_time > zlin_our_nocl_yesaux.time_limit);
-    t_our_nocl_yesaux.push_back(zlin_our_nocl_yesaux.time_limit);
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_our_nocl_yesaux.push_back(linearizer.time_limit);
   }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_our_nocl_yesaux.push_back(cur_br);
+  par_our_nocl_yesaux.push_back(linearizer.num_parents);
+  ch_our_nocl_yesaux.push_back(linearizer.num_children);
   }
 
   // OUR, NOclosure, NOauxtrace
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinearization zlin_our_nocl_noaux(
+  ZLinearization linearizer(
     annotation, thread_order, emptyaux);
   std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    zlin_our_nocl_noaux.linearizeTSO() : zlin_our_nocl_noaux.linearizePSO();
+    linearizer.linearizeTSO() : linearizer.linearizePSO();
   if (!linear.empty()) {
-    assert(!zlin_our_nocl_noaux.exceeded_limit);
-    assert(zlin_our_nocl_noaux.elapsed_time <= zlin_our_nocl_noaux.time_limit);
-    t_our_nocl_noaux.push_back(zlin_our_nocl_noaux.elapsed_time);
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_our_nocl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
-    assert(zlin_our_nocl_noaux.exceeded_limit);
-    assert(zlin_our_nocl_noaux.elapsed_time > zlin_our_nocl_noaux.time_limit);
-    t_our_nocl_noaux.push_back(zlin_our_nocl_noaux.time_limit);
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_our_nocl_noaux.push_back(linearizer.time_limit);
   }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_our_nocl_noaux.push_back(cur_br);
+  par_our_nocl_noaux.push_back(linearizer.num_parents);
+  ch_our_nocl_noaux.push_back(linearizer.num_children);
   }
 }
 
@@ -873,6 +998,10 @@ bool ZExplorer::linearization_respects_ann
   std::unordered_map
     <int, std::unordered_map
      <SymAddrSize, std::list<int>>> storeQueue;
+  // ThreadID -> order in which enqueued
+  std::unordered_map<int, std::vector<int>> queue_enqorder;
+  // ThreadID -> order in which dequeued
+  std::unordered_map<int, std::vector<int>> queue_deqorder;
   // Real observation in trace
   std::unordered_map<int, int> realObs;
   // BufferWrite -> pos
@@ -888,7 +1017,9 @@ bool ZExplorer::linearization_respects_ann
     assert(ev->thread_id() == graph.proc_seq_to_thread_id.at(ev->cpid().get_proc_seq()));
 
     if (isWriteB(ev)) {
+      // bw_pos
       bw_pos.emplace(ev->id(), i);
+      // storeQueue
       if (!storeQueue.count(ev->thread_id()))
         storeQueue.emplace
           (ev->thread_id(), std::unordered_map<SymAddrSize, std::list<int>>());
@@ -896,16 +1027,47 @@ bool ZExplorer::linearization_respects_ann
         storeQueue.at(ev->thread_id()).emplace
           (ev->ml, std::list<int>());
       storeQueue.at(ev->thread_id()).at(ev->ml).push_back(i);
+      // queue_enqorder
+      if (!queue_enqorder.count(ev->thread_id())) {
+        queue_enqorder.emplace(ev->thread_id(), std::vector<int>());
+      }
+      queue_enqorder.at(ev->thread_id()).push_back(i);
     }
 
     if (isWriteM(ev)) {
+      // lastWrite
       lastWrite[ev->ml] = i;
+      // storeQueue
       assert(storeQueue.count(ev->thread_id()) && "Maybe writeM before writeB?");
       assert(storeQueue.at(ev->thread_id()).count(ev->ml) && "Maybe writeM before writeB?");
       assert(!storeQueue.at(ev->thread_id()).at(ev->ml).empty());
       buf_mem.emplace(storeQueue.at(ev->thread_id()).at(ev->ml).front(), i);
-      ev->write_other_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).front(); ////////////////////
+      //ev->write_other_trace_id = storeQueue.at(ev->thread_id()).at(ev->ml).front(); ////////////////////
       storeQueue.at(ev->thread_id()).at(ev->ml).pop_front();
+      // queue_deqorder
+      if (!queue_deqorder.count(ev->thread_id())) {
+        queue_deqorder.emplace(ev->thread_id(), std::vector<int>());
+      }
+      queue_deqorder.at(ev->thread_id()).push_back(i);
+      assert(queue_enqorder.count(ev->thread_id()) && "Maybe writeM before writeB?");
+      assert(queue_enqorder.at(ev->thread_id()).size() >= queue_deqorder.at(ev->thread_id()).size());
+      int last = queue_deqorder.at(ev->thread_id()).size() - 1;
+      assert(last >= 0);
+      const ZEvent& bw = trace.at(queue_enqorder.at(ev->thread_id()).at(last));
+      assert(isWriteB(bw));
+      if (model != MemoryModel::PSO &&
+          ((last >= 1 && ev->event_id() <= trace.at(queue_deqorder.at(ev->thread_id()).at(last - 1)).event_id()) ||
+           ev->ml != bw.ml)) {
+        llvm::errs() << "Partial order\n";
+        graph.dump();
+        llvm::errs() << "Linearization\n";
+        dump_trace(trace);
+        llvm::errs() << "Annotation that should be respected\n";
+        annotation.dump();
+        llvm::errs() << "Memory-write dequeued earlier than another memory-write added to the buffer beforehand\n";
+        ev->dump();
+        return false;
+      }
     }
 
     if (isRead(ev)) {
@@ -974,6 +1136,21 @@ bool ZExplorer::linearization_respects_ann
     llvm::errs() << "Annotation has " << annotation.size() <<
       "read/locks, linearization has " << annotated_readlocks << "\n";
     return false;
+  }
+  for (const auto& bwid_bwpos : bw_pos) {
+    if (!buf_mem.count(bwid_bwpos.second)) {
+      const ZEvent& bw = trace.at(bwid_bwpos.second);
+      assert(isWriteB(bw));
+      llvm::errs() << "Partial order\n";
+      graph.dump();
+      llvm::errs() << "Linearization\n";
+      dump_trace(trace);
+      llvm::errs() << "Annotation that should be respected\n";
+      annotation.dump();
+      llvm::errs() << "Buffer-write has no memory-write in the trace";
+      bw.dump();
+      return false;
+    }
   }
 
   for (unsigned i=0; i<trace.size(); ++i) {
