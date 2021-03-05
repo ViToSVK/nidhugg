@@ -53,6 +53,7 @@ libnidhugg_a_SOURCES = \
   ZGraph.cpp ZGraph.h \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
+  ZLinNoclosure.cpp ZLinNoclosure.h \
   ZExplorer.cpp ZExplorer.h
 
 libnidhugg_a_CXXFLAGS = -fno-rtti

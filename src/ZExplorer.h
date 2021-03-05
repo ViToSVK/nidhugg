@@ -30,6 +30,7 @@
 #include "ZTrace.h"
 #include "ZClosure.h"
 #include "ZLinearization.h"
+#include "ZLinNoclosure.h"
 
 
 class ZExplorer {

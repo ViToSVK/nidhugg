@@ -926,7 +926,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
 
   // OUR, NOclosure, YESauxtrace
   {
-  ZLinearization linearizer(
+  ZLinNoclosure linearizer(
     annotation, thread_order, ann_trace.exec);
   std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
     linearizer.linearizeTSO() : linearizer.linearizePSO();
@@ -953,7 +953,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinearization linearizer(
+  ZLinNoclosure linearizer(
     annotation, thread_order, emptyaux);
   std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
     linearizer.linearizeTSO() : linearizer.linearizePSO();
