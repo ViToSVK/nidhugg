@@ -236,6 +236,81 @@ const ZEvent * ZLinNoclosure::State::currEvent(unsigned thr, int aux) const {
 }
 
 
+void ZLinNoclosure::State::add_into_queues(const ZEvent *ev) {
+  assert(isWriteB(ev));
+  assert(!ev->cpid().is_auxiliary());
+  // pso
+  if (!pso_queue.count(ev->cpid())) {
+    pso_queue.emplace(ev->cpid(), std::unordered_map<SymAddrSize, std::list<ZObs>>());
+  }
+  assert(pso_queue.count(ev->cpid()));
+  if (!pso_queue.at(ev->cpid()).count(ev->ml)) {
+    pso_queue.at(ev->cpid()).emplace(ev->ml, std::list<ZObs>());
+  }
+  assert(pso_queue.at(ev->cpid()).count(ev->ml));
+  pso_queue.at(ev->cpid()).at(ev->ml).push_back(ZObs(ev, gr));
+  // tso not needed to be maintained
+}
+
+
+void ZLinNoclosure::State::remove_from_queues(const ZEvent *ev) {
+  assert(isWriteM(ev));
+  const ZEvent *buffer = ev->write_other_ptr;
+  assert(isWriteB(buffer));
+  assert(!buffer->cpid().is_auxiliary());
+  // pso
+  assert(pso_queue.count(buffer->cpid()));
+  assert(pso_queue.at(buffer->cpid()).count(buffer->ml));
+  assert(pso_queue.at(buffer->cpid()).at(buffer->ml).front() == ZObs(buffer, gr));
+  pso_queue.at(buffer->cpid()).at(buffer->ml).pop_front();
+  // tso not needed to be maintained
+}
+
+
+ZObs ZLinNoclosure::State::what_would_read_observe(const ZEvent *ev) const {
+  assert(isRead(ev));
+  assert(!ev->cpid().is_auxiliary());
+  // read from buffer
+  if (pso_queue.count(ev->cpid()) &&
+      pso_queue.at(ev->cpid()).count(ev->ml) &&
+      !pso_queue.at(ev->cpid()).at(ev->ml).empty()) {
+    return ZObs(pso_queue.at(ev->cpid()).at(ev->ml).back());
+  }
+  // read from main memory
+  assert(!pso_queue.count(ev->cpid()) ||
+         !pso_queue.at(ev->cpid()).count(ev->ml) ||
+         pso_queue.at(ev->cpid()).at(ev->ml).empty());
+  if (curr_vals.count(ev->ml)) {
+    return curr_vals.at(ev->ml);
+  }
+  // read initial event
+  ZObs initial(INT_MAX, INT_MAX);
+  assert(initial.isInitial());
+  return initial;
+}
+
+
+bool ZLinNoclosure::State::read_would_observe_what_it_should(const ZEvent *ev) const {
+  assert(isRead(ev));
+  ZObs would_obs = what_would_read_observe(ev);
+  assert(par.an.defines(ev));
+  const ZEventID& should_obs_id = par.an.obs(ev);
+  if (should_obs_id.event_id() < 0) {
+    // initial event
+    assert(should_obs_id.event_id() == -1);
+    return would_obs.isInitial();
+  }
+  assert(should_obs_id.event_id() >= 0);
+  // noninitial event
+  assert(par.gr.hasEvent(should_obs_id));
+  const ZEvent * should_buffer = par.gr.getEvent(should_obs_id);
+  assert(isWriteB(should_buffer));
+  assert(sameMl(should_buffer, ev));
+  ZObs should_obs(should_buffer, gr);
+  return (would_obs == should_obs);
+}
+
+
 bool ZLinNoclosure::State::isClosedVar(SymAddrSize ml) const {
   start_err(std::string("isClosedVar_") + ml.to_string() + "...");
   auto it = curr_vals.find(ml);
@@ -260,6 +335,7 @@ bool ZLinNoclosure::State::canAdvanceAux(unsigned thr, int aux) const {
     end_err("0a");
     return false;
   }
+  assert(isWriteM(ev));
   if (isWriteM(ev)) {
     if (ev->write_other_ptr->event_id() >= prefix.at(thr)) {
       end_err("0b");
@@ -286,7 +362,14 @@ void ZLinNoclosure::State::advance(unsigned thr, int aux, std::vector<ZEvent>& r
       curr_vals.erase(ev->ml);
     }
     curr_vals.emplace(ev->ml, ZObs(ev->write_other_ptr, gr));
+    remove_from_queues(ev);
   }
+  if (isWriteB(ev)) {
+    add_into_queues(ev);
+  }
+  // Below assertion fails on PSO if we do not have rule1 edges
+  // remote_obsw --> read (our PSO algo assumes and uses that they are there)
+  assert(!isRead(ev) || read_would_observe_what_it_should(ev));
   res.push_back(ZEvent(*ev, res.size()));
   prefix.at(thr, aux)++;
   // Update tr_pos
@@ -363,6 +446,9 @@ bool ZLinNoclosure::State::canPushUp(unsigned thr, int aux) const {
         return false;
       }
     }
+  }
+  if (isRead(ev) && !read_would_observe_what_it_should(ev)) {
+    return false;
   }
   end_err("1");
   return true;

@@ -144,6 +144,8 @@ class ZLinNoclosure {
     const ZLinNoclosure& par;
     Prefix prefix;
     std::unordered_map<SymAddrSize, ZObs> curr_vals;    // no mapping if initial
+    std::unordered_map<
+      CPid, std::unordered_map<SymAddrSize, std::list<ZObs>>> pso_queue;
     unsigned tr_pos;
     const ZGraph& gr;
 
@@ -152,6 +154,12 @@ class ZLinNoclosure {
 
     // Returns the next event in the given thread, or nullptr if there is none.
     const ZEvent * currEvent(unsigned thr, int aux = -1) const;
+
+    // Check observation of a read
+    void add_into_queues(const ZEvent *ev);
+    void remove_from_queues(const ZEvent *ev);
+    ZObs what_would_read_observe(const ZEvent *ev) const;
+    bool read_would_observe_what_it_should(const ZEvent *ev) const;
 
     bool isClosedVar(SymAddrSize ml) const;
     bool canAdvanceAux(unsigned thr, int aux = 0) const;
