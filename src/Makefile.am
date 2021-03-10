@@ -54,6 +54,7 @@ libnidhugg_a_SOURCES = \
   ZClosure.cpp ZClosure.h \
   ZLinearization.cpp ZLinearization.h \
   ZLinNoclosure.cpp ZLinNoclosure.h \
+  ZLinNaive.cpp ZLinNaive.h \
   ZExplorer.cpp ZExplorer.h
 
 libnidhugg_a_CXXFLAGS = -fno-rtti

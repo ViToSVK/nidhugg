@@ -31,6 +31,7 @@
 #include "ZClosure.h"
 #include "ZLinearization.h"
 #include "ZLinNoclosure.h"
+#include "ZLinNaive.h"
 
 
 class ZExplorer {

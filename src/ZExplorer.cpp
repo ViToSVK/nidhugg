@@ -975,6 +975,108 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   par_our_nocl_noaux.push_back(linearizer.num_parents);
   ch_our_nocl_noaux.push_back(linearizer.num_children);
   }
+
+  //////////////////////////////////////////////////////////////////
+
+  // BASE, YESclosure, YESauxtrace
+  {
+  ZLinNaive linearizer(
+    annotation, closed_po, ann_trace.exec);
+  std::vector<ZEvent> linear = linearizer.linearize();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_base_yescl_yesaux.push_back(linearizer.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_base_yescl_yesaux.push_back(linearizer.time_limit);
+  }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_base_yescl_yesaux.push_back(cur_br);
+  par_base_yescl_yesaux.push_back(linearizer.num_parents);
+  ch_base_yescl_yesaux.push_back(linearizer.num_children);
+  }
+
+  // BASE, YESclosure, NOauxtrace
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinNaive linearizer(
+    annotation, closed_po, emptyaux);
+  std::vector<ZEvent> linear = linearizer.linearize();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_base_yescl_noaux.push_back(linearizer.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_base_yescl_noaux.push_back(linearizer.time_limit);
+  }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_base_yescl_noaux.push_back(cur_br);
+  par_base_yescl_noaux.push_back(linearizer.num_parents);
+  ch_base_yescl_noaux.push_back(linearizer.num_children);
+  }
+
+  // BASE, NOclosure, YESauxtrace
+  {
+  ZLinNaive linearizer(
+    annotation, thread_order, ann_trace.exec);
+  std::vector<ZEvent> linear = linearizer.linearize();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_base_nocl_yesaux.push_back(linearizer.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_base_nocl_yesaux.push_back(linearizer.time_limit);
+  }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_base_nocl_yesaux.push_back(cur_br);
+  par_base_nocl_yesaux.push_back(linearizer.num_parents);
+  ch_base_nocl_yesaux.push_back(linearizer.num_children);
+  }
+
+  // BASE, NOclosure, NOauxtrace
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinNaive linearizer(
+    annotation, thread_order, emptyaux);
+  std::vector<ZEvent> linear = linearizer.linearize();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    t_base_nocl_noaux.push_back(linearizer.elapsed_time);
+    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    assert(respects);
+  } else {
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    t_base_nocl_noaux.push_back(linearizer.time_limit);
+  }
+  double cur_br = (linearizer.num_parents==0) ? 1.0 :
+    ((double)linearizer.num_children/linearizer.num_parents);
+  br_base_nocl_noaux.push_back(cur_br);
+  par_base_nocl_noaux.push_back(linearizer.num_parents);
+  ch_base_nocl_noaux.push_back(linearizer.num_children);
+  }
 }
 
 
