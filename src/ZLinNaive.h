@@ -33,7 +33,16 @@ class ZLinNaive {
   const ZGraph& gr;
   const ZPartialOrder& po;
   const std::vector<ZEvent>& tr;  // reference-trace for heuristics
-  mutable std::map<int, int> event_id_hash_to_trace_id;
+  std::map<CPid, std::vector<int>> cpid_to_trace_ids;
+
+  // WriteM --> CPid --> Latest (wrt event_id) Read of CPid to observe Write
+  std::unordered_map<const ZEvent *, std::map<CPid, const ZEvent *>> wr_mapping;
+  // ML --> CPid --> Latest (wrt event_id) Read of CPid and ML to observe initial write
+  std::unordered_map<SymAddrSize, std::map<CPid, const ZEvent *>> wr_initial;
+
+  // Populates wr_mapping and wr_initial from annotation
+  void calculateWrMapping();
+  void calculateTrIDs();
 
 
   class State {
@@ -62,6 +71,8 @@ class ZLinNaive {
     void remove_from_queues(const ZEvent *ev);
     const ZEvent * what_would_read_observe(const ZEvent *ev) const;
     bool read_would_observe_what_it_should(const ZEvent *ev) const;
+    bool read_was_already_played(const ZEvent *ev) const;
+    bool write_can_overwrite_variable(const ZEvent *ev) const;
 
     bool can_advance(const ZEvent *ev) const;
     void advance(const ZEvent *ev, std::vector<ZEvent>& res);
@@ -99,10 +110,9 @@ class ZLinNaive {
  public:
   ZLinNaive(const ZAnnotation& annotation,
             const ZPartialOrder& partialOrder,
-            const std::vector<ZEvent>& trace)
-  : an(annotation), gr(partialOrder.graph),
-    po(partialOrder), tr(trace) {}
+            const std::vector<ZEvent>& trace);
 
+  ZLinNaive() = delete;
   ZLinNaive(const ZLinNaive& oth) = delete;
   ZLinNaive& operator=(ZLinNaive& oth) = delete;
   ZLinNaive(ZLinNaive&& oth) = delete;

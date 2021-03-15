@@ -61,6 +61,92 @@ bool ZLinNaive::KeyNaive::operator< (const KeyNaive& other) const {
 
 
 /* *************************** */
+/* CONSTRUCTOR                 */
+/* *************************** */
+
+
+ZLinNaive::ZLinNaive
+(const ZAnnotation& annotation,
+ const ZPartialOrder& partialOrder,
+ const std::vector<ZEvent>& trace)
+: an(annotation), gr(partialOrder.graph),
+  po(partialOrder), tr(trace)
+{
+  calculateWrMapping();
+  calculateTrIDs();
+}
+
+
+void ZLinNaive::calculateWrMapping()
+{
+  for (auto it = an.begin(); it != an.end(); it++) {
+    assert(it->first.event_id() >= 0); // read cannot be initial event
+    const ZEvent * read = gr.getEvent(it->first);
+    assert(isRead(read));
+    if (it->second.event_id() < 0) {
+      // initial-event observation
+      assert(it->second.event_id() == -1);
+      if (!wr_initial.count(read->ml)) {
+        wr_initial.emplace(read->ml, std::map<CPid, const ZEvent *>());
+      }
+      assert(wr_initial.count(read->ml));
+      // erase if there is already a read with same cpid and lower event_id
+      if (wr_initial.at(read->ml).count(read->cpid())) {
+        assert(isRead(wr_initial.at(read->ml).at(read->cpid())));
+        if (wr_initial.at(read->ml).at(read->cpid())->event_id() < read->event_id()) {
+          wr_initial.at(read->ml).erase(read->cpid());
+        }
+      }
+      // emplace if empty/erased
+      if (!wr_initial.at(read->ml).count(read->cpid())) {
+        wr_initial.at(read->ml).emplace(read->cpid(), read);
+      }
+      assert(wr_initial.at(read->ml).count(read->cpid()));
+      continue;
+    }
+    // write observation
+    assert(it->second.event_id() >= 0);
+    const ZEvent * obsbuf = gr.getEvent(it->second);
+    assert(isWriteB(obsbuf));
+    const ZEvent * obsmem = obsbuf->write_other_ptr;
+    assert(isWriteM(obsmem) && sameMl(obsmem, obsbuf));
+    if (!wr_mapping.count(obsmem)) {
+      wr_mapping.emplace(obsmem, std::map<CPid, const ZEvent *>());
+    }
+    assert(wr_mapping.count(obsmem));
+    assert(!wr_mapping.count(obsbuf));
+    // erase if there is already a read with same cpid and lower event_id
+    if (wr_mapping.at(obsmem).count(read->cpid())) {
+      assert(isRead(wr_mapping.at(obsmem).at(read->cpid())));
+      if (wr_mapping.at(obsmem).at(read->cpid())->event_id() < read->event_id()) {
+        wr_mapping.at(obsmem).erase(read->cpid());
+      }
+    }
+    // emplace if empty/erased
+    if (!wr_mapping.at(obsmem).count(read->cpid())) {
+      wr_mapping.at(obsmem).emplace(read->cpid(), read);
+    }
+    assert(wr_mapping.at(obsmem).count(read->cpid()));
+  }
+}
+
+
+void ZLinNaive::calculateTrIDs()
+{
+  for (int i = 0; i < tr.size(); ++i) {
+    if (!cpid_to_trace_ids.count(tr.at(i).cpid())) {
+      cpid_to_trace_ids.emplace(tr.at(i).cpid(), std::vector<int>());
+    }
+    assert(cpid_to_trace_ids.count(tr.at(i).cpid()));
+    std::vector<int>& ids = cpid_to_trace_ids.at(tr.at(i).cpid());
+    assert(ids.size() == tr.at(i).event_id());
+    ids.push_back(i);
+    assert(cpid_to_trace_ids.at(tr.at(i).cpid()).size() == tr.at(i).event_id() + 1);
+  }
+}
+
+
+/* *************************** */
 /* ZSTATE                      */
 /* *************************** */
 
@@ -76,11 +162,6 @@ ZLinNaive::State::State(const ZLinNaive& par0)
       assert(!positions.at(thr_id).count(aux_id));
       positions.at(thr_id).emplace(aux_id, 0);
     }
-  }
-  for (int i = 0; i < par.tr.size(); ++i) {
-    int hsh = par.tr.at(i).id().hash();
-    assert(!par.event_id_hash_to_trace_id.count(hsh));
-    par.event_id_hash_to_trace_id.emplace(hsh, i);
   }
 }
 
@@ -236,20 +317,84 @@ bool ZLinNaive::State::read_would_observe_what_it_should(const ZEvent *ev) const
 }
 
 
+bool ZLinNaive::State::read_was_already_played(const ZEvent *ev) const
+{
+  assert(isRead(ev));
+  assert(positions.count(ev->thread_id()));
+  assert(positions.at(ev->thread_id()).count(ev->aux_id()));
+  int pos = positions.at(ev->thread_id()).at(ev->aux_id());
+  // pos means that events up until including pos-1 have been added
+  return (pos > ev->event_id());
+}
+
+
+bool ZLinNaive::State::write_can_overwrite_variable(const ZEvent *ev) const
+{
+  assert(isWriteM(ev));
+  // Make sure ev does not write onto a held variable
+  if (main_memory.count(ev->ml)) {
+    // Some write has already happened on this ml
+    const ZEvent * curr_buff = main_memory.at(ev->ml);
+    assert(isWriteB(curr_buff) && sameMl(curr_buff, ev));
+    const ZEvent * curr_mem = curr_buff->write_other_ptr;
+    assert(isWriteM(curr_mem) && sameMl(curr_mem, curr_buff));
+    assert(curr_mem != ev && *curr_mem != *ev);
+    assert(!par.wr_mapping.count(curr_buff));
+    if (!par.wr_mapping.count(curr_mem)) {
+      return true;
+    }
+    assert(par.wr_mapping.count(curr_mem));
+    assert(!par.wr_mapping.at(curr_mem).empty());
+    for (const auto& cpid_last : par.wr_mapping.at(curr_mem)) {
+      // last read of cpid observing curr_mem
+      const ZEvent * last = cpid_last.second;
+      assert(isRead(last) && sameMl(last, curr_mem));
+      if (!read_was_already_played(last)) {
+        // curr_mem cannot be overwritten now, last needs to see it
+        return false;
+      }
+    }
+    return true;
+  }
+  // There is still the initial event on this ml
+  assert(!main_memory.count(ev->ml));
+  if (!par.wr_initial.count(ev->ml)) {
+    return true;
+  }
+  assert(par.wr_initial.count(ev->ml));
+  assert(!par.wr_initial.at(ev->ml).empty());
+  for (const auto& cpid_last : par.wr_initial.at(ev->ml)) {
+    // last read of cpid observing the initial event
+    const ZEvent * last = cpid_last.second;
+    assert(isRead(last) && sameMl(last, ev));
+    if (!read_was_already_played(last)) {
+      // initial event cannot be overwritten now, last needs to see it
+      return false;
+    }
+  }
+  return true;
+}
+
+
 bool ZLinNaive::State::can_advance(const ZEvent *ev) const
 {
   start_err("canAdvance...");
   assert(ev);
-  if (isRead(ev) && !read_would_observe_what_it_should(ev)) {
-    return false;
+  if (isRead(ev)) {
+    end_err("?r");
+    return read_would_observe_what_it_should(ev);
   }
-#ifndef NDEBUG
+  assert(!isRead(ev));
   if (isWriteM(ev)) {
+#ifndef NDEBUG
     const ZEvent * buffer = ev->write_other_ptr;
     assert(isWriteB(buffer) && sameMl(buffer, ev));
     assert(buffer->event_id() < positions.at(buffer->thread_id()).at(buffer->aux_id()));
-  }
 #endif
+    end_err("?w");
+    return write_can_overwrite_variable(ev);
+  }
+  assert(!isRead(ev) && !isWriteM(ev));
   end_err("1");
   return true;
 }
@@ -323,12 +468,16 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
   for (const ZEvent * ev : next_pomin) {
     assert(ev);
     if (tr.empty()) {
-      assert(!next_ordered.count(ev->cpid().get_hash()));
-      next_ordered.emplace(ev->cpid().get_hash(), ev);
+      // order by cpid-hash
+      int hsh = ev->cpid().get_hash();
+      assert(!next_ordered.count(hsh));
+      while (next_ordered.count(hsh)) { hsh++; }
+      next_ordered.emplace(hsh, ev);
     } else {
-      int hsh = ev->id().hash();
-      assert(event_id_hash_to_trace_id.count(hsh));
-      int tr_id = event_id_hash_to_trace_id.at(hsh);
+      // order by auxiliary trace
+      assert(cpid_to_trace_ids.count(ev->cpid()));
+      assert(cpid_to_trace_ids.at(ev->cpid()).size() > ev->event_id());
+      int tr_id = cpid_to_trace_ids.at(ev->cpid()).at(ev->event_id());
       assert(tr.at(tr_id) == *ev);
       assert(!next_ordered.count(tr_id));
       next_ordered.emplace(tr_id, ev);
