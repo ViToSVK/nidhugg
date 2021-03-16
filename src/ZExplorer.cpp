@@ -67,7 +67,7 @@ void ZExplorer::print_stats() const
   std::cout << "number_of_variables:                  ";
   for (const int& i : no_variables) { std::cout << " " << i; }
   std::cout << "\n";
-  std::cout << "number_of_closure_nonrf_edges:        ";
+  std::cout << "number_of_closure_rule23_edges:       ";
   for (const int& i : no_closure_rule23_edges) { std::cout << " " << i; }
   std::cout << "\n";
   // Times

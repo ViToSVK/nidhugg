@@ -334,6 +334,18 @@ void ZPartialOrder::add_reads_from_edges
       assert(isWriteM(wM) && sameMl(read, wM));
       assert(!hasEdge(read, wM) && "Inconsistent annotation");
       if (!hasEdge(wM, read)) addEdge(wM, read);
+      // last-buffer -> wM
+      auto lastBuf = graph.getLocalBufferW(read);
+      if(lastBuf) {
+        assert(isWriteB(lastBuf));
+        assert(graph.hasEvent(lastBuf));
+        auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
+        assert(isWriteM(mem_counterpart));
+        assert(graph.hasEvent(mem_counterpart));
+        if(!areOrdered(mem_counterpart, wM)) {
+          addEdge(mem_counterpart, wM);
+        }
+      }
     }
   }
   // Locks
