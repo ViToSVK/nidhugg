@@ -92,6 +92,7 @@ bool ZClosure::ruleOne(const ZEvent *ev, const ZEventID& obs) {
         return true;
       if(!po.hasEdge(mem_counterpart, obsMem)) {
         po.addEdge(mem_counterpart, obsMem); // Memory write before curr obs
+        added_edges++;
       }
     }
   }
