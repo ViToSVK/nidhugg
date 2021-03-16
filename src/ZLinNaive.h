@@ -50,6 +50,7 @@ class ZLinNaive {
     const ZLinNaive& par;
     const ZGraph& gr;
     std::map<unsigned, std::map<int, int>> positions;
+    std::unordered_set<const ZEvent *> next_events;
     std::map<CPid, std::unordered_map<
       SymAddrSize, std::list<const ZEvent *>>> pso_queue;
     std::unordered_map<SymAddrSize, const ZEvent *> main_memory;
@@ -60,8 +61,6 @@ class ZLinNaive {
     State& operator=(const State&) = delete;
     State& operator=(State&&) = delete;
 
-    // Returns the next events, or empty set if we are finished.
-    std::unordered_set<const ZEvent *> next_events() const;
     // Returns the PO-minimal events of the input set.
     std::unordered_set<const ZEvent *> po_minimal_events
     (const std::unordered_set<const ZEvent *>& input) const;

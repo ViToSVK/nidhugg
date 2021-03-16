@@ -159,34 +159,15 @@ ZLinNaive::State::State(const ZLinNaive& par0)
     positions.emplace(thr_id, std::map<int, int>());
     for (int aux_id : gr.auxes(thr_id)) {
       assert(gr.hasThreadAux(thr_id, aux_id));
+      // Initialize positions
       assert(!positions.at(thr_id).count(aux_id));
       positions.at(thr_id).emplace(aux_id, 0);
+      // Initialize next_events
+      const ZEvent * next = gr.getEvent(thr_id, aux_id, 0);
+      assert(next && !next_events.count(next));
+      next_events.insert(next);
     }
   }
-}
-
-
-// Returns the next events, or empty set if we are finished.
-std::unordered_set<const ZEvent *> ZLinNaive::State::next_events() const
-{
-  start_err("next_events...");
-  std::unordered_set<const ZEvent *> res;
-  for (unsigned thr_id : gr.get_threads()) {
-    assert(positions.count(thr_id));
-    for (int aux_id : gr.auxes(thr_id)) {
-      assert(gr.hasThreadAux(thr_id, aux_id));
-      assert(positions.at(thr_id).count(aux_id));
-      int pos = positions.at(thr_id).at(aux_id);
-      assert(pos >= 0 && pos <= gr(thr_id, aux_id).size());
-      if (pos < gr(thr_id, aux_id).size()) {
-        const ZEvent * next = gr.getEvent(thr_id, aux_id, pos);
-        assert(next && !res.count(next));
-        res.insert(next);
-      }
-    }
-  }
-  end_err("1");
-  return res;
 }
 
 
@@ -429,6 +410,16 @@ void ZLinNaive::State::advance(const ZEvent *ev, std::vector<ZEvent>& res)
   assert(positions.at(ev->thread_id()).at(ev->aux_id()) == ev->event_id());
   positions.at(ev->thread_id()).at(ev->aux_id())++;
   assert(positions.at(ev->thread_id()).at(ev->aux_id()) == ev->event_id() + 1);
+  // Update next_events
+  assert(next_events.count(ev));
+  next_events.erase(ev);
+  int pos = positions.at(ev->thread_id()).at(ev->aux_id());
+  assert(pos >= 0 && pos <= gr(ev->thread_id(), ev->aux_id()).size());
+  if (pos < gr(ev->thread_id(), ev->aux_id()).size()) {
+    const ZEvent * next = gr.getEvent(ev->thread_id(), ev->aux_id(), pos);
+    assert(next && next->event_id() == pos && !next_events.count(next));
+    next_events.insert(next);
+  }
   end_err();
 }
 
@@ -455,14 +446,13 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
   }
   marked.insert(key);
   // Anything to extend?
-  std::unordered_set<const ZEvent *> next = curr.next_events();
-  if (next.empty()) {
+  if (curr.next_events.empty()) {
     // Successfully finished
     end_err("1a");
     return true;
   }
   // Order partial-order-minimal events to extend
-  std::unordered_set<const ZEvent *> next_pomin = curr.po_minimal_events(next);
+  std::unordered_set<const ZEvent *> next_pomin = curr.po_minimal_events(curr.next_events);
   assert(!next_pomin.empty());
   std::map<int, const ZEvent *> next_ordered;
   for (const ZEvent * ev : next_pomin) {
