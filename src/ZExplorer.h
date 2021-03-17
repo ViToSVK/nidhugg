@@ -114,7 +114,7 @@ class ZExplorer {
   //
   //
   int lin_read_lower_bound = 10;
-  int lin_goal = 10;
+  int lin_goal = 50;
   int lin_below_bound = 0;
   int lin_performed = 0;
   int latest_problematic_lin = -1;
