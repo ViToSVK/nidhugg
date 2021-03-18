@@ -123,6 +123,7 @@ class ZGraph {
 
   bool empty() const { return (lines.empty() && po.empty() && cache.empty()); }
   size_t size() const { return lines.size(); }
+  int events_size() const;
 
   /* *************************** */
   /* CONSTRUCTORS                */

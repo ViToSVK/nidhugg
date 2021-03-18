@@ -154,9 +154,12 @@ void ZLinNaive::calculateTrIDs()
 ZLinNaive::State::State(const ZLinNaive& par0)
  : par(par0), gr(par.gr)
 {
+  assert(gr.number_of_threads() == gr.get_threads().size());
+  assert(gr.number_of_threads() >= 2);
   for (unsigned thr_id : gr.get_threads()) {
     assert(!positions.count(thr_id));
     positions.emplace(thr_id, std::map<int, int>());
+    assert(!gr.auxes(thr_id).empty());
     for (int aux_id : gr.auxes(thr_id)) {
       assert(gr.hasThreadAux(thr_id, aux_id));
       // Initialize positions
@@ -448,10 +451,13 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
   // Anything to extend?
   if (curr.next_events.empty()) {
     // Successfully finished
+    assert(res.size() == gr.events_size());
     end_err("1a");
     return true;
   }
   // Order partial-order-minimal events to extend
+  int no_of_next = curr.next_events.size();
+  assert(no_of_next > 0);
   std::unordered_set<const ZEvent *> next_pomin = curr.po_minimal_events(curr.next_events);
   assert(!next_pomin.empty());
   std::map<int, const ZEvent *> next_ordered;
@@ -477,6 +483,7 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
   bool has_child = false;
   // Enumerate choices
   for (const auto& id_ev : next_ordered) {
+    assert(no_of_next == curr.next_events.size());
     const ZEvent * ev = id_ev.second;
     if (!curr.can_advance(ev)) {
       continue;

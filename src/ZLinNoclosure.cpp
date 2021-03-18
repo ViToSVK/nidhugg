@@ -574,6 +574,7 @@ bool ZLinNoclosure::linearizeTSO(State& curr, std::set<T>& marked, std::vector<Z
   marked.insert(key);
   if (curr.finished()) {
     curr.finishOff(res);
+    assert(res.size() == gr.events_size());
     end_err("1a");
     return true;
   }
@@ -619,6 +620,7 @@ std::vector<ZEvent> ZLinNoclosure::linearizeTSO() const
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
   assert(!exceeded_limit || res.empty());
+  assert(res.empty() || res.size() == gr.events_size());
   return res;
 }
 
@@ -883,6 +885,7 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
 
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
+  unsigned orig_size = res.size();
   curr.pushUp(res);
   err_msg("prefix: " + curr.prefix.str());
   T key(curr);
@@ -893,6 +896,7 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
   marked.insert(key);
   if (curr.finished()) {
     curr.finishOff(res);
+    assert(res.size() == gr.events_size());
     end_err("1a");
     return true;
   }
@@ -900,7 +904,6 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
 
   // Now we have choices to make (which main?); try them out
   unsigned n = gr.number_of_threads();
-  unsigned orig_size = res.size();
   unsigned start_thr = trHintPSO(curr);
   for (unsigned d = 0; d < n; d++) {
     unsigned thr = (start_thr + d) % n;
@@ -938,6 +941,7 @@ std::vector<ZEvent> ZLinNoclosure::linearizePSO() const
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
   assert(!exceeded_limit || res.empty());
+  assert(res.empty() || res.size() == gr.events_size());
   return res;
 }
 

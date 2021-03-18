@@ -50,8 +50,9 @@ void ZExplorer::print_stats() const
   std::cout << "number_of_cases_below_bound:           " << lin_below_bound << "\n";
   std::cout << "number_of_cases_to_check:              " << lin_goal << "\n";
   std::cout << "number_of_cases_checked:               " << lin_performed << "\n";
+  std::cout << "number_of_cases_skipped:               " << lin_skipped << "\n";
   std::cout << "latest_idx_some_algo_spurious_lin:     " << latest_problematic_lin << "\n";
-  assert(lin_performed + lin_below_bound + linearization_failed == total_lin);
+  assert(lin_performed + lin_below_bound + lin_skipped + linearization_failed == total_lin);
   std::cout << "number_of_events:                     ";
   for (const int& i : no_allevents) { std::cout << " " << i; }
   std::cout << "\n";
@@ -635,7 +636,8 @@ void ZExplorer::mutate
   //
   //
   //
-  if (mutated_annotation.read_size() >= lin_read_lower_bound) {
+  if (mutated_annotation.read_size() >= lin_read_lower_bound &&
+      (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per)) {
     // PERFORM LINEARIZATION EXPERIMENTS
     t_closure.push_back(time);
     t_our_yescl_yesaux.push_back(linearizer.elapsed_time);
@@ -659,7 +661,10 @@ void ZExplorer::mutate
     assert(xxclosure.added_edges == cur_edges);
 #endif
   } else {
-    ++lin_below_bound;
+    if (mutated_annotation.read_size() < lin_read_lower_bound)
+      ++lin_below_bound;
+    else
+      ++lin_skipped;
   }
   //
   //
@@ -913,6 +918,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_yescl_noaux.push_back(linearizer.time_limit);
@@ -938,6 +944,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_nocl_yesaux.push_back(linearizer.time_limit);
@@ -965,6 +972,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_nocl_noaux.push_back(linearizer.time_limit);
@@ -991,6 +999,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_yescl_yesaux.push_back(linearizer.time_limit);
@@ -1017,6 +1026,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_yescl_noaux.push_back(linearizer.time_limit);
@@ -1041,6 +1051,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_nocl_yesaux.push_back(linearizer.time_limit);
@@ -1067,6 +1078,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!respects) { latest_problematic_lin = lin_performed - 1; }
     assert(respects);
   } else {
+    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_nocl_noaux.push_back(linearizer.time_limit);
