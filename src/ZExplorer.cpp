@@ -51,7 +51,9 @@ void ZExplorer::print_stats() const
   std::cout << "number_of_cases_to_check:              " << lin_goal << "\n";
   std::cout << "number_of_cases_checked:               " << lin_performed << "\n";
   std::cout << "number_of_cases_skipped:               " << lin_skipped << "\n";
-  std::cout << "latest_idx_some_algo_spurious_lin:     " << latest_problematic_lin << "\n";
+  std::cout << "some_algo_spurious_lin:               ";
+  for (const int& i : problematic_lin) { std::cout << " " << i; }
+  std::cout << "\n";
   assert(lin_performed + lin_below_bound + lin_skipped + linearization_failed == total_lin);
   std::cout << "number_of_events:                     ";
   for (const int& i : no_allevents) { std::cout << " " << i; }
@@ -915,10 +917,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_our_yescl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_yescl_noaux.push_back(linearizer.time_limit);
@@ -941,10 +943,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_our_nocl_yesaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_nocl_yesaux.push_back(linearizer.time_limit);
@@ -969,10 +971,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_our_nocl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_our_nocl_noaux.push_back(linearizer.time_limit);
@@ -996,10 +998,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_base_yescl_yesaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_yescl_yesaux.push_back(linearizer.time_limit);
@@ -1023,10 +1025,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_base_yescl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_yescl_noaux.push_back(linearizer.time_limit);
@@ -1048,10 +1050,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_base_nocl_yesaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_nocl_yesaux.push_back(linearizer.time_limit);
@@ -1075,10 +1077,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     assert(linearizer.elapsed_time <= linearizer.time_limit);
     t_base_nocl_noaux.push_back(linearizer.elapsed_time);
     bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects) { latest_problematic_lin = lin_performed - 1; }
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(respects);
   } else {
-    if (!linearizer.exceeded_limit) { latest_problematic_lin = lin_performed - 1; }
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
     assert(linearizer.exceeded_limit);
     assert(linearizer.elapsed_time > linearizer.time_limit);
     t_base_nocl_noaux.push_back(linearizer.time_limit);

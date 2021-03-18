@@ -119,7 +119,7 @@ class ZExplorer {
   int lin_below_bound = 0;
   int lin_performed = 0;
   int lin_skipped = 0;
-  int latest_problematic_lin = -1;
+  std::vector<int> problematic_lin = std::vector<int>(1, -1);
   //
   std::vector<int> no_allevents;
   std::vector<int> no_reads;
