@@ -33,7 +33,6 @@ class ZLinNaive {
   const ZGraph& gr;
   const ZPartialOrder& po;
   const std::vector<ZEvent>& tr;  // reference-trace for heuristics
-  std::map<CPid, std::vector<int>> cpid_to_trace_ids;
 
   // WriteM --> CPid --> Latest (wrt event_id) Read of CPid to observe Write
   std::unordered_map<const ZEvent *, std::map<CPid, const ZEvent *>> wr_mapping;
@@ -42,7 +41,6 @@ class ZLinNaive {
 
   // Populates wr_mapping and wr_initial from annotation
   void calculateWrMapping();
-  void calculateTrIDs();
 
 
   class State {

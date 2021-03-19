@@ -73,7 +73,6 @@ ZLinNaive::ZLinNaive
   po(partialOrder), tr(trace)
 {
   calculateWrMapping();
-  calculateTrIDs();
 }
 
 
@@ -127,21 +126,6 @@ void ZLinNaive::calculateWrMapping()
       wr_mapping.at(obsmem).emplace(read->cpid(), read);
     }
     assert(wr_mapping.at(obsmem).count(read->cpid()));
-  }
-}
-
-
-void ZLinNaive::calculateTrIDs()
-{
-  for (int i = 0; i < tr.size(); ++i) {
-    if (!cpid_to_trace_ids.count(tr.at(i).cpid())) {
-      cpid_to_trace_ids.emplace(tr.at(i).cpid(), std::vector<int>());
-    }
-    assert(cpid_to_trace_ids.count(tr.at(i).cpid()));
-    std::vector<int>& ids = cpid_to_trace_ids.at(tr.at(i).cpid());
-    assert(ids.size() == tr.at(i).event_id());
-    ids.push_back(i);
-    assert(cpid_to_trace_ids.at(tr.at(i).cpid()).size() == tr.at(i).event_id() + 1);
   }
 }
 
@@ -471,12 +455,11 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
       next_ordered.emplace(hsh, ev);
     } else {
       // order by auxiliary trace
-      assert(cpid_to_trace_ids.count(ev->cpid()));
-      assert(cpid_to_trace_ids.at(ev->cpid()).size() > ev->event_id());
-      int tr_id = cpid_to_trace_ids.at(ev->cpid()).at(ev->event_id());
-      assert(tr.at(tr_id) == *ev);
-      assert(!next_ordered.count(tr_id));
-      next_ordered.emplace(tr_id, ev);
+      int key = ev->exec_trace_id;
+      assert(key >= 0);
+      assert(!next_ordered.count(key));
+      while (next_ordered.count(key)) { key++; }
+      next_ordered.emplace(key, ev);
     }
   }
   assert(!next_ordered.empty());

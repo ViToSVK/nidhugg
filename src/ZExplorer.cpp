@@ -904,6 +904,17 @@ void ZExplorer::linearization_experiments(
 const ZTrace& ann_trace, const ZAnnotation& annotation,
 const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
 {
+  for (int i = 0; i < ann_trace.exec.size(); ++i) {
+    ann_trace.exec.at(i).exec_trace_id = i;
+    int thi = ann_trace.exec.at(i).thread_id();
+    int aui = ann_trace.exec.at(i).aux_id();
+    int evi = ann_trace.exec.at(i).event_id();
+    if (closed_po.graph.hasThreadAux(thi, aui) &&
+        closed_po.graph(thi, aui).size() > evi) {
+      closed_po.graph.getEvent(thi, aui, evi)->exec_trace_id = i;
+    }
+  }
+
   // OUR, YESclosure, NOauxtrace
   {
   std::vector<ZEvent> emptyaux;

@@ -104,6 +104,8 @@ class ZEvent {
   mutable int value;
   /* Mark that this is an artificially added failed lock attempt */
   bool failed_lock;
+  // extra for linearization hint
+  mutable int exec_trace_id = -1;
 
   /* Below for trace-builder */
 
