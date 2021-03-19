@@ -447,20 +447,37 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
   std::map<int, const ZEvent *> next_ordered;
   for (const ZEvent * ev : next_pomin) {
     assert(ev);
-    if (tr.empty()) {
-      // order by cpid-hash
-      int hsh = ev->cpid().get_hash();
-      assert(!next_ordered.count(hsh));
-      while (next_ordered.count(hsh)) { hsh++; }
-      next_ordered.emplace(hsh, ev);
-    } else {
-      // order by auxiliary trace
-      int key = ev->exec_trace_id;
-      assert(key >= 0);
-      assert(!next_ordered.count(key));
-      while (next_ordered.count(key)) { key++; }
-      next_ordered.emplace(key, ev);
+    if (isRead(ev) || isWriteB(ev) || isWriteM(ev)) {
+      if (tr.empty()) {
+        // order by cpid-hash
+        int hsh = ev->cpid().get_hash();
+        assert(!next_ordered.count(hsh));
+        while (next_ordered.count(hsh)) { hsh++; }
+        next_ordered.emplace(hsh, ev);
+      } else {
+        // order by auxiliary trace
+        int key = ev->exec_trace_id;
+        assert(key >= 0);
+        assert(!next_ordered.count(key));
+        while (next_ordered.count(key)) { key++; }
+        next_ordered.emplace(key, ev);
+      }
+      continue;
     }
+    // There is a non-read-non-write, proceed uniquely
+    assert(!isRead(ev) && !isWriteB(ev) && !isWriteM(ev));
+    assert(curr.can_advance(ev));
+    // Since we proceed uniquely, no need to copy State
+    curr.advance(ev, res);
+    if (linearize(curr, marked, res)) {
+      end_err("1b");
+      return true;
+    }
+    // Backtrack, this path does not lead to a witness
+    assert(res.back() == *ev);
+    res.pop_back();
+    end_err("0b");
+    return false;
   }
   assert(!next_ordered.empty());
   bool has_child = false;
@@ -481,7 +498,7 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
     State next(curr);
     next.advance(ev, res);
     if (linearize(next, marked, res)) {
-      end_err("1b");
+      end_err("1c");
       return true;
     }
     // Backtrack
@@ -489,7 +506,7 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
     res.pop_back();
   }
   // No choice led to a witness
-  end_err("0b");
+  end_err("0c");
   return false;
 }
 
