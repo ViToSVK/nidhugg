@@ -74,6 +74,9 @@ void ZExplorer::print_stats() const
   for (const int& i : no_closure_rule23_edges) { std::cout << " " << i; }
   std::cout << "\n";
   // Times
+  std::cout << "times_rule1_edges:                    ";
+  for (const double& d : t_rule1) { std::cout << " " << d; }
+  std::cout << "\n";
   std::cout << "times_closure:                        ";
   for (const double& d : t_closure) { std::cout << " " << d; }
   std::cout << "\n";
@@ -580,7 +583,9 @@ void ZExplorer::mutate
     pre_tau_limit, causes_all_idx, readlock->trace_id());
   ZPartialOrder thread_order(mutated_graph.getPo());
   // We add reads-from edges to the thread order
+  clock_t r1init = std::clock();
   thread_order.add_reads_from_edges(mutated_annotation);
+  double r1time = (double)(clock() - r1init)/CLOCKS_PER_SEC;
   for (int idx : missing_memory_writes) {
     assert(!causes_all_idx.count(idx));
     causes_all_idx.emplace(idx);
@@ -641,6 +646,7 @@ void ZExplorer::mutate
   if (mutated_annotation.read_size() >= lin_read_lower_bound &&
       (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per)) {
     // PERFORM LINEARIZATION EXPERIMENTS
+    t_rule1.push_back(r1time);
     t_closure.push_back(time);
     t_our_yescl_yesaux.push_back(linearizer.elapsed_time);
     br_our_yescl_yesaux.push_back(cur_br);

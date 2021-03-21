@@ -128,6 +128,7 @@ class ZExplorer {
   std::vector<int> no_variables;
   std::vector<int> no_closure_rule23_edges;
   // times
+  std::vector<double> t_rule1;
   std::vector<double> t_closure;
   std::vector<double> t_our_yescl_yesaux;
   std::vector<double> t_our_yescl_noaux;
