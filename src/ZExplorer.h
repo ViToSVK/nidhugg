@@ -121,6 +121,7 @@ class ZExplorer {
   int lin_skipped = 0;
   std::vector<int> problematic_lin = std::vector<int>(1, -1);
   //
+  int max_allevents = 0;
   std::vector<int> no_allevents;
   std::vector<int> no_reads;
   std::vector<int> no_writes;

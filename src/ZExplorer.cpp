@@ -643,7 +643,11 @@ void ZExplorer::mutate
   //
   //
   //
+  if (linear.size() > max_allevents) {
+    max_allevents = linear.size();
+  }
   if (mutated_annotation.read_size() >= lin_read_lower_bound &&
+      (linear.size() * 5) >= max_allevents &&
       (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per)) {
     // PERFORM LINEARIZATION EXPERIMENTS
     t_rule1.push_back(r1time);
