@@ -320,6 +320,54 @@ void ZPartialOrder::shrink()
 }
 
 
+bool ZPartialOrder::add_reads_from_edges
+(const ZAnnotation& annotation)
+{
+  // Reads
+  for (auto it = annotation.read_begin(); it != annotation.read_end(); ++it) {
+    assert(graph.hasEvent(it->first));
+    const ZEvent * const read = graph.getEvent(it->first);
+    assert(isRead(read) && !it->second.cpid().is_auxiliary());
+    if (it->second != ZEventID(true) && read->cpid() != it->second.cpid()) {
+      assert(graph.hasEvent(it->second));
+      const ZEvent * const wM = graph.getEvent(it->second)->write_other_ptr;
+      assert(isWriteM(wM) && sameMl(read, wM));
+      assert(!hasEdge(read, wM) && "Inconsistent annotation");
+      if (hasEdge(read, wM)) { return false; }
+      if (!hasEdge(wM, read)) addEdge(wM, read);
+      // last-buffer -> wM
+      auto lastBuf = graph.getLocalBufferW(read);
+      if(lastBuf) {
+        assert(isWriteB(lastBuf));
+        assert(graph.hasEvent(lastBuf));
+        auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
+        assert(isWriteM(mem_counterpart));
+        assert(graph.hasEvent(mem_counterpart));
+        if (hasEdge(wM, mem_counterpart)) { return false; } // Cannot satisfy Rule1
+        if (!areOrdered(mem_counterpart, wM)) {
+          addEdge(mem_counterpart, wM);
+        }
+      }
+    }
+  }
+  // Locks
+  for (auto it = annotation.lock_begin(); it != annotation.lock_end(); ++it) {
+    assert(graph.hasEvent(it->first));
+    const ZEvent * const lock = graph.getEvent(it->first);
+    assert(isLock(lock) && !it->second.cpid().is_auxiliary());
+    if (it->second != ZEventID(true) && lock->cpid() != it->second.cpid()) {
+      assert(graph.hasEvent(it->second));
+      const ZEvent * const unlock = graph.getEvent(it->second);
+      assert(isUnlock(unlock) && sameMl(lock, unlock));
+      assert(!hasEdge(lock, unlock) && "Inconsistent annotation");
+      if (hasEdge(lock, unlock)) { return false; }
+      if (!hasEdge(unlock, lock)) addEdge(unlock, lock);
+    }
+  }
+  return true;
+}
+
+
 std::string ZPartialOrder::to_string() const
 {
   std::stringstream res;

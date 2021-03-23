@@ -90,6 +90,16 @@ const LineT& ZGraph::operator()(unsigned thread_id, int aux_id) const
 }
 
 
+int ZGraph::events_size() const
+{
+  int res = 0;
+  for (const auto& line : lines) {
+    res += line.size();
+  }
+  return res;
+}
+
+
 const ZEvent * const ZGraph::getEvent(unsigned thread_id, int aux_id, unsigned event_id) const
 {
   assert(thread_id != INT_MAX && "Called for initial event");

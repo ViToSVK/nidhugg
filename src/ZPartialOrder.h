@@ -74,6 +74,7 @@ class ZPartialOrder {
   void addLine(const ZEvent * ev);
   void addEvent(const ZEvent * ev);
   void shrink();
+  bool add_reads_from_edges(const ZAnnotation& annotation);
 
  public:
   // Initial

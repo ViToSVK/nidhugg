@@ -436,11 +436,13 @@ void ZExplorer::mutate
     causes_all_idx.emplace(idx);
   }
   time_copy += (double)(clock() - init)/CLOCKS_PER_SEC;
-  // Close
+  // VARIATION: DO NOT CLOSE, ONLY ADD RULE1 EDGES
+  // AND THEN PROCEED DIRECTLY WITH LINEARIZATION
   err_msg("attempt-closure");
   init = std::clock();
-  ZClosure closure(mutated_annotation, mutated_graph);
-  bool closed = closure.close();
+  //ZClosure closure(mutated_annotation, mutated_graph);
+  //bool closed = closure.close();
+  bool closed = mutated_graph.po.add_reads_from_edges(mutated_annotation);
   double time = (double)(clock() - init)/CLOCKS_PER_SEC;
   time_closure += time;
   if (!closed) {
@@ -451,12 +453,12 @@ void ZExplorer::mutate
     return;
   }
   ++closure_succeeded;
-  if (closure.added_edges == 0) {
+  //if (closure.added_edges == 0) {
     closure_no_edge++;
     time_closure_no_edge += time;
-  }
-  closure_edges += closure.added_edges;
-  closure_iter += closure.iterations;
+  //}
+  //closure_edges += closure.added_edges;
+  //closure_iter += closure.iterations;
   // Linearize
   // if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
   err_msg("attempt-linearization");
@@ -475,7 +477,7 @@ void ZExplorer::mutate
   if(cur_br>max_branch) {
     max_branch = cur_br;
   }
-  if (linear.empty()) {
+  if (linear.size() != mutated_graph.events_size()) {
     ++linearization_failed;
     assert(!failed_schedules.at(pre_tau_limit).count(mutated_key));
     failed_schedules[pre_tau_limit].emplace(mutated_key);
