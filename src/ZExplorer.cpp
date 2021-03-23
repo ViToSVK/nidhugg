@@ -461,8 +461,10 @@ void ZExplorer::mutate
   // if (INFO) { mutated_graph.dump(); mutated_annotation.dump(); }
   err_msg("attempt-linearization");
   init = std::clock();
+  std::vector<ZEvent> empty_aux;
+  assert(empty_aux.empty());
   ZLinearization linearizer(
-    mutated_annotation, mutated_graph.getPo(), ann_trace.exec);
+    mutated_annotation, mutated_graph.getPo(), empty_aux);
   auto linear = (model != MemoryModel::PSO) ? linearizer.linearizeTSO()
                                             : linearizer.linearizePSO();
   time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;

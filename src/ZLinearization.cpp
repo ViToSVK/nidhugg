@@ -445,6 +445,10 @@ bool ZLinearization::KeyTSO::operator< (const KeyTSO& other) const {
 
 unsigned ZLinearization::trHintTSO(const State& state) const {
   start_err("trHintTSO...");
+  if (tr.empty()) {
+    end_err("0");
+    return 0;
+  }
   if (state.tr_pos == tr.size()) {
     end_err("0a");
     return 0;
@@ -512,6 +516,7 @@ template<class T>
 std::vector<ZEvent> ZLinearization::linearizeTSO() const
 {
   start_err("linearizeTSO/0...");
+  assert(tr.empty()); // We run the variant without auxiliary trace
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
@@ -737,6 +742,7 @@ void ZLinearization::calculateTrNextMain() {
   start_err("calculateTrNextMain...");
   int n = tr.size();
   tr_next_main.clear();
+  if (tr.empty()) { return; }
   tr_next_main.resize(n+1, UINT_MAX);
   for (int i = n-1; i >= 0; i--) {
     tr_next_main.at(i) = (
@@ -750,6 +756,11 @@ void ZLinearization::calculateTrNextMain() {
 
 unsigned ZLinearization::trHintPSO(const State& state) const {
   start_err("trHintPSO...");
+  if (tr.empty()) {
+    end_err("0");
+    return 0;
+  }
+  assert(!tr.empty());
   unsigned pos = tr_next_main.at(state.tr_pos);
   if (pos == UINT_MAX) {
     end_err("0");
@@ -815,6 +826,7 @@ template<class T>
 std::vector<ZEvent> ZLinearization::linearizePSO() const
 {
   start_err("linearizePSO/0...");
+  assert(tr.empty()); // We run the variant without auxiliary trace
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
