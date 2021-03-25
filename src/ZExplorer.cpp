@@ -54,6 +54,7 @@ void ZExplorer::print_stats() const
   std::cout << "some_algo_spurious_lin:               ";
   for (const int& i : problematic_lin) { std::cout << " " << i; }
   std::cout << "\n";
+  std::cout << "averaged_each_case_over_runs:          " << repeat_runs << "\n";
   assert(lin_performed + lin_below_bound + lin_skipped + linearization_failed == total_lin);
   std::cout << "number_of_events:                     ";
   for (const int& i : no_allevents) { std::cout << " " << i; }
@@ -582,6 +583,7 @@ void ZExplorer::mutate
   auto missing_memory_writes = mutated_graph.construct(ann_trace.tau,
     pre_tau_limit, causes_all_idx, readlock->trace_id());
   ZPartialOrder thread_order(mutated_graph.getPo());
+  ZPartialOrder po_to_be_copied(mutated_graph.getPo());
   // We add reads-from edges to the thread order
   clock_t r1init = std::clock();
   thread_order.add_reads_from_edges(mutated_annotation);
@@ -596,8 +598,8 @@ void ZExplorer::mutate
   init = std::clock();
   ZClosure closure(mutated_annotation, mutated_graph, mutated_graph.po);
   bool closed = closure.close();
-  double time = (double)(clock() - init)/CLOCKS_PER_SEC;
-  time_closure += time;
+  double cltime = (double)(clock() - init)/CLOCKS_PER_SEC;
+  time_closure += cltime;
   if (!closed) {
     ++closure_failed;
     assert(!failed_schedules.at(pre_tau_limit).count(mutated_key));
@@ -608,7 +610,7 @@ void ZExplorer::mutate
   ++closure_succeeded;
   if (closure.added_edges == 0) {
     closure_no_edge++;
-    time_closure_no_edge += time;
+    time_closure_no_edge += cltime;
   }
   int cur_edges = closure.added_edges;
   closure_edges += closure.added_edges;
@@ -620,7 +622,8 @@ void ZExplorer::mutate
     mutated_annotation, mutated_graph.getPo(), ann_trace.exec);
   auto linear = (model != MemoryModel::PSO) ? linearizer.linearizeTSO()
                                             : linearizer.linearizePSO();
-  time_linearization += linearizer.elapsed_time;
+  double lintime = linearizer.elapsed_time;
+  time_linearization += lintime;
   ++total_lin;
   total_parents += linearizer.num_parents;
   total_children += linearizer.num_children;
@@ -638,6 +641,8 @@ void ZExplorer::mutate
     return;
   }
   ++linearization_succeeded;
+  assert(total_lin==linearization_succeeded+linearization_failed);
+  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));
   //
   //
   //
@@ -650,13 +655,50 @@ void ZExplorer::mutate
       (linear.size() * 5) >= max_allevents &&
       (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per)) {
     // PERFORM LINEARIZATION EXPERIMENTS
+    //
+    // REPEAT RULE1
+    for (int rep = 1; rep < repeat_runs; ++rep) {
+      ZPartialOrder rule1_run(po_to_be_copied);
+      r1init = std::clock();
+      rule1_run.add_reads_from_edges(mutated_annotation);
+      r1time += ((double)(clock() - r1init)/CLOCKS_PER_SEC);
+    }
+    r1time /= double(repeat_runs);
     t_rule1.push_back(r1time);
-    t_closure.push_back(time);
-    t_our_yescl_yesaux.push_back(linearizer.elapsed_time);
+    //
+    // REPEAT CLOSURE
+    for (int rep = 1; rep < repeat_runs; ++rep) {
+      ZPartialOrder po_closure_run(po_to_be_copied);
+      init = std::clock();
+      ZClosure closure_run(mutated_annotation, mutated_graph, po_closure_run);
+      bool closed_run = closure_run.close();
+      cltime += ((double)(clock() - init)/CLOCKS_PER_SEC);
+      assert(closed_run);
+      assert(cur_edges == closure_run.added_edges);
+    }
+    cltime /= double(repeat_runs);
+    t_closure.push_back(cltime);
+    no_closure_rule23_edges.push_back(cur_edges);
+    //
     br_our_yescl_yesaux.push_back(cur_br);
     par_our_yescl_yesaux.push_back(linearizer.num_parents);
     ch_our_yescl_yesaux.push_back(linearizer.num_children);
-    no_closure_rule23_edges.push_back(cur_edges);
+    //
+    // REPEAT OUR LINEARIZATION
+    for (int rep = 1; rep < repeat_runs; ++rep) {
+      ZLinearization linearizer_run(
+        mutated_annotation, mutated_graph.getPo(), ann_trace.exec);
+      auto linear_run = (model != MemoryModel::PSO) ?
+        linearizer_run.linearizeTSO() : linearizer_run.linearizePSO();
+      assert(linear_run.size() == linear.size());
+      assert(linearization_respects_ann(linear_run, mutated_annotation, mutated_graph, ann_trace));
+      assert(linearizer_run.num_parents == linearizer.num_parents);
+      assert(linearizer_run.num_children == linearizer.num_children);
+      lintime += (linearizer_run.elapsed_time);
+    }
+    lintime /= double(repeat_runs);
+    t_our_yescl_yesaux.push_back(lintime);
+    //
     collect_linearization_stats(linear, mutated_graph);
     linearization_experiments(
       ann_trace, mutated_annotation, mutated_graph.getPo(),
@@ -671,6 +713,10 @@ void ZExplorer::mutate
     bool xxclosed = xxclosure.close();
     assert(xxclosed);
     assert(xxclosure.added_edges == cur_edges);
+    ZClosure copiedclosure(mutated_annotation, mutated_graph, po_to_be_copied);
+    bool copiedclosed = copiedclosure.close();
+    assert(copiedclosed);
+    assert(copiedclosure.added_edges == cur_edges);
 #endif
   } else {
     if (mutated_annotation.read_size() < lin_read_lower_bound)
@@ -683,8 +729,6 @@ void ZExplorer::mutate
   //
   //
   //
-  assert(total_lin==linearization_succeeded+linearization_failed);
-  assert(linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace));
   // Construct tau
   init = std::clock();
   err_msg("attempt-tau");
@@ -929,188 +973,308 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinearization linearizer(
-    annotation, closed_po, emptyaux);
-  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    linearizer.linearizeTSO() : linearizer.linearizePSO();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_our_yescl_noaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_our_yescl_noaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinearization linearizer(
+      annotation, closed_po, emptyaux);
+    std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+      linearizer.linearizeTSO() : linearizer.linearizePSO();
+    //
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_our_yescl_noaux.push_back(cur_br);
-  par_our_yescl_noaux.push_back(linearizer.num_parents);
-  ch_our_yescl_noaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_our_yescl_noaux.push_back(time);
+  par_our_yescl_noaux.push_back(par);
+  ch_our_yescl_noaux.push_back(ch);
+  br_our_yescl_noaux.push_back(br);
   }
 
   // OUR, NOclosure, YESauxtrace
   {
-  ZLinNoclosure linearizer(
-    annotation, thread_order, ann_trace.exec);
-  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    linearizer.linearizeTSO() : linearizer.linearizePSO();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_our_nocl_yesaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_our_nocl_yesaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNoclosure linearizer(
+      annotation, thread_order, ann_trace.exec);
+    std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+      linearizer.linearizeTSO() : linearizer.linearizePSO();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_our_nocl_yesaux.push_back(cur_br);
-  par_our_nocl_yesaux.push_back(linearizer.num_parents);
-  ch_our_nocl_yesaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_our_nocl_yesaux.push_back(time);
+  par_our_nocl_yesaux.push_back(par);
+  ch_our_nocl_yesaux.push_back(ch);
+  br_our_nocl_yesaux.push_back(br);
   }
 
   // OUR, NOclosure, NOauxtrace
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinNoclosure linearizer(
-    annotation, thread_order, emptyaux);
-  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
-    linearizer.linearizeTSO() : linearizer.linearizePSO();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_our_nocl_noaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_our_nocl_noaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNoclosure linearizer(
+      annotation, thread_order, emptyaux);
+    std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+      linearizer.linearizeTSO() : linearizer.linearizePSO();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_our_nocl_noaux.push_back(cur_br);
-  par_our_nocl_noaux.push_back(linearizer.num_parents);
-  ch_our_nocl_noaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_our_nocl_noaux.push_back(time);
+  par_our_nocl_noaux.push_back(par);
+  ch_our_nocl_noaux.push_back(ch);
+  br_our_nocl_noaux.push_back(br);
   }
 
   //////////////////////////////////////////////////////////////////
 
   // BASE, YESclosure, YESauxtrace
   {
-  ZLinNaive linearizer(
-    annotation, closed_po, ann_trace.exec);
-  std::vector<ZEvent> linear = linearizer.linearize();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_base_yescl_yesaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_base_yescl_yesaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNaive linearizer(
+      annotation, closed_po, ann_trace.exec);
+    std::vector<ZEvent> linear = linearizer.linearize();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_base_yescl_yesaux.push_back(cur_br);
-  par_base_yescl_yesaux.push_back(linearizer.num_parents);
-  ch_base_yescl_yesaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_base_yescl_yesaux.push_back(time);
+  par_base_yescl_yesaux.push_back(par);
+  ch_base_yescl_yesaux.push_back(ch);
+  br_base_yescl_yesaux.push_back(br);
   }
 
   // BASE, YESclosure, NOauxtrace
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinNaive linearizer(
-    annotation, closed_po, emptyaux);
-  std::vector<ZEvent> linear = linearizer.linearize();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_base_yescl_noaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_base_yescl_noaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNaive linearizer(
+      annotation, closed_po, emptyaux);
+    std::vector<ZEvent> linear = linearizer.linearize();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_base_yescl_noaux.push_back(cur_br);
-  par_base_yescl_noaux.push_back(linearizer.num_parents);
-  ch_base_yescl_noaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_base_yescl_noaux.push_back(time);
+  par_base_yescl_noaux.push_back(par);
+  ch_base_yescl_noaux.push_back(ch);
+  br_base_yescl_noaux.push_back(br);
   }
 
   // BASE, NOclosure, YESauxtrace
   {
-  ZLinNaive linearizer(
-    annotation, thread_order, ann_trace.exec);
-  std::vector<ZEvent> linear = linearizer.linearize();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_base_nocl_yesaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_base_nocl_yesaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNaive linearizer(
+      annotation, thread_order, ann_trace.exec);
+    std::vector<ZEvent> linear = linearizer.linearize();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_base_nocl_yesaux.push_back(cur_br);
-  par_base_nocl_yesaux.push_back(linearizer.num_parents);
-  ch_base_nocl_yesaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_base_nocl_yesaux.push_back(time);
+  par_base_nocl_yesaux.push_back(par);
+  ch_base_nocl_yesaux.push_back(ch);
+  br_base_nocl_yesaux.push_back(br);
   }
 
   // BASE, NOclosure, NOauxtrace
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  ZLinNaive linearizer(
-    annotation, thread_order, emptyaux);
-  std::vector<ZEvent> linear = linearizer.linearize();
-  if (!linear.empty()) {
-    assert(!linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time <= linearizer.time_limit);
-    t_base_nocl_noaux.push_back(linearizer.elapsed_time);
-    bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
-    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(respects);
-  } else {
-    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
-    assert(linearizer.exceeded_limit);
-    assert(linearizer.elapsed_time > linearizer.time_limit);
-    t_base_nocl_noaux.push_back(linearizer.time_limit);
+  double time = 0;
+  int par = -1;
+  int ch = -1;
+  double br = -1.;
+  for (int rep = 0; rep < repeat_runs; ++rep) {
+    ZLinNaive linearizer(
+      annotation, thread_order, emptyaux);
+    std::vector<ZEvent> linear = linearizer.linearize();
+    if (!linear.empty()) {
+      assert(!linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time <= linearizer.time_limit);
+      time += linearizer.elapsed_time;
+      bool respects = linearization_respects_ann(linear, annotation, closed_po.graph, ann_trace);
+      if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(respects);
+    } else {
+      if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+      assert(linearizer.exceeded_limit);
+      assert(linearizer.elapsed_time > linearizer.time_limit);
+      time += linearizer.time_limit;
+    }
+    //
+    if (rep == 0) {
+      assert(par < 0 && ch < 0 && br < 0.);
+      par = linearizer.num_parents;
+      ch = linearizer.num_children;
+      br = (linearizer.num_parents==0) ? 1.0 :
+           ((double)linearizer.num_children/linearizer.num_parents);
+    } else {
+      assert(par == linearizer.num_parents);
+      assert(ch == linearizer.num_children);
+    }
   }
-  double cur_br = (linearizer.num_parents==0) ? 1.0 :
-    ((double)linearizer.num_children/linearizer.num_parents);
-  br_base_nocl_noaux.push_back(cur_br);
-  par_base_nocl_noaux.push_back(linearizer.num_parents);
-  ch_base_nocl_noaux.push_back(linearizer.num_children);
+  time /= double(repeat_runs);
+  t_base_nocl_noaux.push_back(time);
+  par_base_nocl_noaux.push_back(par);
+  ch_base_nocl_noaux.push_back(ch);
+  br_base_nocl_noaux.push_back(br);
   }
 }
 
