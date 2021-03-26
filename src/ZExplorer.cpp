@@ -958,6 +958,7 @@ void ZExplorer::linearization_experiments(
 const ZTrace& ann_trace, const ZAnnotation& annotation,
 const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
 {
+  std::map<int, std::map<int, int>> visited;
   for (int i = 0; i < ann_trace.exec.size(); ++i) {
     ann_trace.exec.at(i).exec_trace_id = i;
     int thi = ann_trace.exec.at(i).thread_id();
@@ -966,6 +967,22 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (closed_po.graph.hasThreadAux(thi, aui) &&
         closed_po.graph(thi, aui).size() > evi) {
       closed_po.graph.getEvent(thi, aui, evi)->exec_trace_id = i;
+      if (!visited.count(thi)) {
+        visited.emplace(thi, std::map<int, int>());
+      }
+      assert(!visited.at(thi).count(aui) || visited.at(thi).at(aui) < evi);
+      visited.at(thi)[aui] = evi;
+    }
+  }
+  int cont = ann_trace.exec.size();
+  for (int thi : closed_po.graph.get_threads()) {
+    for (int aui : closed_po.graph.auxes(thi)) {
+      int start = (visited.count(thi) && visited.at(thi).count(aui))
+                  ? visited.at(thi).at(aui) : 0;
+      for (int evi = start; evi < closed_po.graph(thi, aui).size(); ++evi) {
+        closed_po.graph.getEvent(thi, aui, evi)->exec_trace_id = cont;
+        ++cont;
+      }
     }
   }
 
