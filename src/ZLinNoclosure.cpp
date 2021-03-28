@@ -887,6 +887,7 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
   // and check for victory
   unsigned orig_size = res.size();
   curr.pushUp(res);
+  unsigned pushed_size = res.size();
   err_msg("prefix: " + curr.prefix.str());
   T key(curr);
   if (marked.count(key)) {
@@ -917,9 +918,12 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
       end_err("1b");
       return true;
     }
-    while (res.size() > orig_size) {
+    while (res.size() > pushed_size) {
       res.pop_back();
     }
+  }
+  while (res.size() > orig_size) {
+    res.pop_back();
   }
   end_err("0b");
   return false;
