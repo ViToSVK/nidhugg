@@ -115,10 +115,11 @@ class ZExplorer {
   //
   int lin_read_lower_bound = 10;
   int lin_perform_one_per = 5;
-  int lin_goal = 50;
+  int lin_goal = 5; //50;
   int lin_below_bound = 0;
   int lin_performed = 0;
   int lin_skipped = 0;
+  int lin_not_even_rule1_succ = 0;
   std::vector<int> problematic_lin = std::vector<int>(1, -1);
   int repeat_runs = 10;
   //
@@ -201,7 +202,6 @@ class ZExplorer {
     const ZGraph& graph, const ZTrace& parent_trace) const;
 
   void collect_linearization_stats(
-    const std::vector<ZEvent>& linearization,
     const ZGraph& graph);
 
   void linearization_experiments(

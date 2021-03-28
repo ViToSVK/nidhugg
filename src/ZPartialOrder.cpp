@@ -320,7 +320,7 @@ void ZPartialOrder::shrink()
 }
 
 
-void ZPartialOrder::add_reads_from_edges
+bool ZPartialOrder::add_reads_from_edges
 (const ZAnnotation& annotation)
 {
   // Reads
@@ -333,6 +333,7 @@ void ZPartialOrder::add_reads_from_edges
       const ZEvent * const wM = graph.getEvent(it->second)->write_other_ptr;
       assert(isWriteM(wM) && sameMl(read, wM));
       assert(!hasEdge(read, wM) && "Inconsistent annotation");
+      if (hasEdge(read, wM)) { return false; }
       if (!hasEdge(wM, read)) addEdge(wM, read);
       // last-buffer -> wM
       auto lastBuf = graph.getLocalBufferW(read);
@@ -342,7 +343,8 @@ void ZPartialOrder::add_reads_from_edges
         auto mem_counterpart = lastBuf->write_other_ptr; // Getting the Memory Write
         assert(isWriteM(mem_counterpart));
         assert(graph.hasEvent(mem_counterpart));
-        if(!areOrdered(mem_counterpart, wM)) {
+        if (hasEdge(wM, mem_counterpart)) { return false; } // Cannot satisfy Rule1
+        if (!areOrdered(mem_counterpart, wM)) {
           addEdge(mem_counterpart, wM);
         }
       }
@@ -358,9 +360,11 @@ void ZPartialOrder::add_reads_from_edges
       const ZEvent * const unlock = graph.getEvent(it->second);
       assert(isUnlock(unlock) && sameMl(lock, unlock));
       assert(!hasEdge(lock, unlock) && "Inconsistent annotation");
+      if (hasEdge(lock, unlock)) { return false; }
       if (!hasEdge(unlock, lock)) addEdge(unlock, lock);
     }
   }
+  return true;
 }
 
 
