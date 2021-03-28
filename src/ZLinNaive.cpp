@@ -423,6 +423,7 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
       > time_limit) {
     exceeded_limit = true;
     res.clear();
+    end_err("0to");
     return false;
   }
   // Check marked
@@ -473,8 +474,13 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
       end_err("1b");
       return true;
     }
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0toa");
+      return false;
+    }
     // Backtrack, this path does not lead to a witness
-    assert(res.back() == *ev);
+    assert(!res.empty() && res.back() == *ev);
     res.pop_back();
     end_err("0b");
     return false;
@@ -501,8 +507,13 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
       end_err("1c");
       return true;
     }
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0tob");
+      return false;
+    }
     // Backtrack
-    assert(res.back() == *ev);
+    assert(!res.empty() && res.back() == *ev);
     res.pop_back();
   }
   // No choice led to a witness

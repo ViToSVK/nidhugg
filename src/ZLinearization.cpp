@@ -473,6 +473,7 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
       > time_limit) {
     exceeded_limit = true;
     res.clear();
+    end_err("0to");
     return false;
   }
 
@@ -508,6 +509,11 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
     if (linearizeTSO(next, marked, res)) {
       end_err("1b");
       return true;
+    }
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0toa");
+      return false;
     }
     while (res.size() > orig_size) {
       res.pop_back();
@@ -792,6 +798,7 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
       > time_limit) {
     exceeded_limit = true;
     res.clear();
+    end_err("0to");
     return false;
   }
 
@@ -827,6 +834,11 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
     if (linearizePSO(next, marked, res)) {
       end_err("1b");
       return true;
+    }
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0toa");
+      return false;
     }
     while (res.size() > orig_size) {
       res.pop_back();

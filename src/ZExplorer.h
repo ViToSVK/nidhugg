@@ -115,13 +115,13 @@ class ZExplorer {
   //
   int lin_read_lower_bound = 10;
   int lin_perform_one_per = 5;
-  int lin_goal = 5; //50;
+  int lin_goal = 20;
   int lin_below_bound = 0;
   int lin_performed = 0;
   int lin_skipped = 0;
   int lin_not_even_rule1_succ = 0;
   std::vector<int> problematic_lin = std::vector<int>(1, -1);
-  int repeat_runs = 10;
+  int repeat_runs = 2;
   //
   int max_allevents = 0;
   std::vector<int> no_allevents;

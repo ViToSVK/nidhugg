@@ -366,7 +366,7 @@ class ZLinearization {
   mutable unsigned num_parents = 0;
   mutable unsigned num_children = 0;
   mutable double elapsed_time;
-  double time_limit = 60;
+  double time_limit = 20;
   mutable bool exceeded_limit = false;
 };
 

@@ -660,13 +660,20 @@ void ZExplorer::mutate
       assert(!copiedclosed);
       assert(copiedclosure.added_edges == closure.added_edges);
 #endif
+      //std::cout << "case-" << std::flush;
     } else {
-      if (sat_rule1 && mutated_annotation.read_size() < lin_read_lower_bound)
+      if (sat_rule1 && mutated_annotation.read_size() < lin_read_lower_bound) {
         ++lin_below_bound;
-      else if (sat_rule1)
+        //if (lin_below_bound % 100 == 1) { std::cout << "lbb-" << std::flush; }
+      }
+      else if (sat_rule1) {
         ++lin_skipped;
-      else
+        //if (lin_below_bound % 100 == 1) { std::cout << "sk-" << std::flush; }
+      }
+      else {
         ++lin_not_even_rule1_succ;
+        //if (lin_not_even_rule1_succ % 100 == 1) { std::cout << "nr1-" << std::flush; }
+      }
     }
     //
     // END - UNREALIZABLE EXPERIMENTS
@@ -987,6 +994,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   int par = -1;
   int ch = -1;
   double br = -1.;
+  bool timedout = false;
   for (int rep = 0; rep < repeat_runs; ++rep) {
     ZLinNoclosure linearizer(
       annotation, thread_order, ann_trace.exec);
@@ -1002,7 +1010,8 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!linearizer.exceeded_limit) {
       time += linearizer.elapsed_time;
     } else {
-      time += linearizer.time_limit;
+      timedout = true;
+      time = linearizer.time_limit * repeat_runs;
     }
     //
     if (rep == 0) {
@@ -1014,6 +1023,9 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     } else {
       assert(par == linearizer.num_parents);
       assert(ch == linearizer.num_children);
+    }
+    if (timedout) {
+      break;
     }
   }
   time /= double(repeat_runs);
@@ -1031,6 +1043,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   int par = -1;
   int ch = -1;
   double br = -1.;
+  bool timedout = false;
   for (int rep = 0; rep < repeat_runs; ++rep) {
     ZLinNoclosure linearizer(
       annotation, thread_order, emptyaux);
@@ -1046,7 +1059,8 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!linearizer.exceeded_limit) {
       time += linearizer.elapsed_time;
     } else {
-      time += linearizer.time_limit;
+      timedout = true;
+      time = linearizer.time_limit * repeat_runs;
     }
     //
     if (rep == 0) {
@@ -1058,6 +1072,9 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     } else {
       assert(par == linearizer.num_parents);
       assert(ch == linearizer.num_children);
+    }
+    if (timedout) {
+      break;
     }
   }
   time /= double(repeat_runs);
@@ -1093,6 +1110,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   int par = -1;
   int ch = -1;
   double br = -1.;
+  bool timedout = false;
   for (int rep = 0; rep < repeat_runs; ++rep) {
     ZLinNaive linearizer(
       annotation, thread_order, ann_trace.exec);
@@ -1107,7 +1125,8 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!linearizer.exceeded_limit) {
       time += linearizer.elapsed_time;
     } else {
-      time += linearizer.time_limit;
+      timedout = true;
+      time = linearizer.time_limit * repeat_runs;
     }
     //
     if (rep == 0) {
@@ -1119,6 +1138,9 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     } else {
       assert(par == linearizer.num_parents);
       assert(ch == linearizer.num_children);
+    }
+    if (timedout) {
+      break;
     }
   }
   time /= double(repeat_runs);
@@ -1136,6 +1158,7 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   int par = -1;
   int ch = -1;
   double br = -1.;
+  bool timedout = false;
   for (int rep = 0; rep < repeat_runs; ++rep) {
     ZLinNaive linearizer(
       annotation, thread_order, emptyaux);
@@ -1150,7 +1173,8 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     if (!linearizer.exceeded_limit) {
       time += linearizer.elapsed_time;
     } else {
-      time += linearizer.time_limit;
+      timedout = true;
+      time = linearizer.time_limit * repeat_runs;
     }
     //
     if (rep == 0) {
@@ -1162,6 +1186,9 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
     } else {
       assert(par == linearizer.num_parents);
       assert(ch == linearizer.num_children);
+    }
+    if (timedout) {
+      break;
     }
   }
   time /= double(repeat_runs);
