@@ -961,9 +961,6 @@ std::vector<ZEvent> ZLinNoclosure::linearizePSO() const
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
   assert(!exceeded_limit || res.empty());
-  if (!(res.empty() || res.size() == gr.events_size())) {
-    dump_trace(res);
-  }
   assert(res.empty() || res.size() == gr.events_size());
   return res;
 }
