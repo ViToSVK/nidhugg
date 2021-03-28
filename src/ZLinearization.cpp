@@ -473,12 +473,15 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
       > time_limit) {
     exceeded_limit = true;
     res.clear();
+    end_err("0to");
     return false;
   }
 
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
+  unsigned orig_size = res.size();
   curr.pushUp(res);
+  unsigned pushed_size = res.size();
   err_msg("prefix: " + curr.prefix.str());
   T key(curr);
   if (marked.count(key)) {
@@ -495,7 +498,6 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
 
   // Now we have choices to make (advance which aux?); try them out
   unsigned n = gr.number_of_threads();
-  unsigned orig_size = res.size();
   unsigned start_thr = trHintTSO(curr);
   for (unsigned d = 0; d < n; d++) {
     unsigned thr = (start_thr + d) % n;
@@ -509,9 +511,17 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
       end_err("1b");
       return true;
     }
-    while (res.size() > orig_size) {
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0toa");
+      return false;
+    }
+    while (res.size() > pushed_size) {
       res.pop_back();
     }
+  }
+  while (res.size() > orig_size) {
+    res.pop_back();
   }
   end_err("0b");
   return false;
@@ -792,12 +802,15 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
       > time_limit) {
     exceeded_limit = true;
     res.clear();
+    end_err("0to");
     return false;
   }
 
   // Push-up as much as possible (the boring stuff), then update marked
   // and check for victory
+  unsigned orig_size = res.size();
   curr.pushUp(res);
+  unsigned pushed_size = res.size();
   err_msg("prefix: " + curr.prefix.str());
   T key(curr);
   if (marked.count(key)) {
@@ -814,7 +827,6 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
 
   // Now we have choices to make (which main?); try them out
   unsigned n = gr.number_of_threads();
-  unsigned orig_size = res.size();
   unsigned start_thr = trHintPSO(curr);
   for (unsigned d = 0; d < n; d++) {
     unsigned thr = (start_thr + d) % n;
@@ -828,9 +840,17 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
       end_err("1b");
       return true;
     }
-    while (res.size() > orig_size) {
+    if (exceeded_limit) {
+      assert(res.empty());
+      end_err("0toa");
+      return false;
+    }
+    while (res.size() > pushed_size) {
       res.pop_back();
     }
+  }
+  while (res.size() > orig_size) {
+    res.pop_back();
   }
   end_err("0b");
   return false;
