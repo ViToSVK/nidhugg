@@ -185,6 +185,9 @@ class ZExplorer {
   double time_copy = 0;
   // Total time spent on linearization
   double time_linearization = 0;
+  double time_lin_noaux = 0;
+  double time_lin_nocl = 0;
+  double time_lin_noclnoaux = 0;
   // Total time spent on interpreting
   double time_interpreter = 0;
   // Total time spent on closure

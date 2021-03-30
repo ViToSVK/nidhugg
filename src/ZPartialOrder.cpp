@@ -70,6 +70,85 @@ ZPartialOrder::ZPartialOrder(ZPartialOrder&& oth, const ZGraph& graph)
 }
 
 
+// Get po_full restricted only to events of po_part
+ZPartialOrder::ZPartialOrder
+(const ZPartialOrder& po_part, const ZPartialOrder& po_full)
+  : graph(po_part.graph),
+    _succ(),
+    _pred(),
+    _closure_safe_until(),
+    _line_sizes(),
+    _threads_spanned()
+{
+  // Add threads
+  inherit_lines(po_part);
+  // Add events
+  assert(threads_spanned().size() == po_part.threads_spanned().size());
+  for (int i = 0; i < threads_spanned().size(); ++i) {
+    const CPid& cpid = threads_spanned().at(i);
+    assert(cpid == po_part.threads_spanned().at(i));
+    for (int evid = 0; evid < po_part.thread_size(cpid); ++evid) {
+      assert(graph.has_event(cpid, evid));
+      const ZEvent *ev = graph.event(cpid, evid);
+      assert(po_part.spans_event(ev));
+      add_event(ev);
+    }
+    assert(thread_size(cpid) == po_part.thread_size(cpid));
+  }
+  // Add edges
+  std::unordered_map<SymAddrSize, std::set<const ZEvent *>> locks;
+  std::unordered_map<SymAddrSize, std::set<const ZEvent *>> unlocks;
+  int added = 0;
+  for (const CPid& cpid1 : threads_spanned()) {
+    assert(thread_size(cpid1) == po_part.thread_size(cpid1));
+    for (int evid1 = thread_size(cpid1) - 1; evid1 >= 0; --evid1) {
+      assert(graph.has_event(cpid1, evid1));
+      const ZEvent *ev1 = graph.event(cpid1, evid1);
+      assert(ev1 && spans_event(ev1));
+      assert(po_full.spans_event(ev1));
+      // record lock/unlock
+      if (is_lock(ev1)) {
+        if (!locks.count(ev1->ml())) {
+          locks.emplace(ev1->ml(), std::set<const ZEvent *>());
+        }
+        assert(!locks.at(ev1->ml()).count(ev1));
+        locks.at(ev1->ml()).insert(ev1);
+      }
+      if (is_unlock(ev1)) {
+        if (!unlocks.count(ev1->ml())) {
+          unlocks.emplace(ev1->ml(), std::set<const ZEvent *>());
+        }
+        assert(!unlocks.at(ev1->ml()).count(ev1));
+        unlocks.at(ev1->ml()).insert(ev1);
+      }
+      for (const CPid& cpid2 : threads_spanned()) {
+        if (cpid1 == cpid2) {
+          continue;
+        }
+        // edge ev1 -> cpid2
+        const ZEvent *succ2 = po_full.succ(ev1, cpid2).first;
+        assert(!succ2 || succ2->cpid() == cpid2);
+        if (!succ2 || !spans_event(succ2)) {
+          // the earlier successor is not present in po_part
+          assert(!succ2 || !po_part.spans_event(succ2));
+          assert(!succ2 || succ2->event_id() >= thread_size(cpid2));
+          continue;
+        }
+        assert(succ2 && spans_event(succ2) && po_part.spans_event(succ2));
+        assert(po_part.has_edge(ev1, succ2));
+        assert(!has_edge(succ2, ev1));
+        if (!are_ordered(ev1, succ2)) {
+          add_edge(ev1, succ2);
+          ++added;
+        }
+      }
+    }
+  }
+  assert(added > 0);
+  // TODO mutex edges
+}
+
+
 const std::vector<CPid>& ZPartialOrder::threads_spanned() const
 {
   return _threads_spanned;

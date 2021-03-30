@@ -116,6 +116,10 @@ class ZPartialOrder {
   ZPartialOrder& operator=(ZPartialOrder&& oth) = delete;
   ZPartialOrder& operator=(const ZPartialOrder& oth) = delete;
 
+  // Get po_full restricted only to events of po_part
+  ZPartialOrder(const ZPartialOrder& po_part,
+                const ZPartialOrder& po_full);
+
   bool empty() const {
     assert(_succ.size() == _pred.size());
     return _succ.empty() && _closure_safe_until.empty() && _line_sizes.empty();

@@ -98,6 +98,9 @@ void ZExplorer::print_stats() const
   std::cout << "Linearization branching Max:       " << max_branch << "\n";
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
+  std::cout << "Time linearization noaux:          " << time_lin_noaux << "\n";
+  std::cout << "Time linearization noclos:         " << time_lin_nocl << "\n";
+  std::cout << "Time linearization noclos noaux:   " << time_lin_noclnoaux << "\n";
   std::cout << "Time spent on interpreting:        " << time_interpreter << "\n";
   std::cout << "Time spent on closure:             " << time_closure << "\n";
   std::cout << "Time spent on closure-succ-noedge: " << time_closure_no_edge << "\n";
@@ -599,6 +602,9 @@ bool ZExplorer::realize_mutation
     (parent_trace, read_lock, mutated_annotation, std::move(mutated_po));
   }
   else {
+    // Prepare thread order + mutex edges
+    ZPartialOrder thrord_mutexedges(mutated_po, parent_trace.po_full());
+    // Linearization + closure + auxiliary
     clock_t init = std::clock();
     ZLinearization linearizer(mutated_annotation, mutated_po);
     std::vector<ZEvent> linear = linearizer.linearize();
