@@ -125,8 +125,9 @@ ZPartialOrder::ZPartialOrder
         if (cpid1 == cpid2) {
           continue;
         }
-        // edge ev1 -> cpid2
+        // edge ev1 -> cpid2 based on !! po_full !!
         const ZEvent *succ2 = po_full.succ(ev1, cpid2).first;
+        assert(!succ2 || po_full.has_edge(ev1, succ2));
         assert(!succ2 || succ2->cpid() == cpid2);
         if (!succ2 || !spans_event(succ2)) {
           // the earlier successor is not present in po_part
@@ -145,7 +146,28 @@ ZPartialOrder::ZPartialOrder
     }
   }
   assert(added > 0);
-  // TODO mutex edges
+  // Order mutex events the same way as they are in po_part
+  for (const auto& ml_unlocks : unlocks) {
+    if (!locks.count(ml_unlocks.first)) {
+      continue;
+    }
+    for (const ZEvent * unlock : ml_unlocks.second) {
+      // order unlock with locks of its ml
+      assert(is_unlock(unlock));
+      assert(unlock->ml() == ml_unlocks.first);
+      assert(locks.count(unlock->ml()));
+      for (const ZEvent * lock : locks.at(unlock->ml())) {
+        assert(is_lock(lock) && same_ml(lock, unlock));
+        if (po_part.has_edge(lock, unlock)) {
+          assert(!has_edge(unlock, lock));
+          if (!are_ordered(lock, unlock)) { add_edge(lock, unlock); }
+        } else if (po_part.has_edge(unlock, lock)) {
+          assert(!has_edge(lock, unlock));
+          if (!are_ordered(unlock, lock)) { add_edge(unlock, lock); }
+        }
+      }
+    }
+  }
 }
 
 

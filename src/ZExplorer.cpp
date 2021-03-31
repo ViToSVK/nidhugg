@@ -93,9 +93,12 @@ void ZExplorer::print_stats() const
   std::cout << "Linearization succeeded:           " << linearization_succeeded << "\n";
   std::cout << std::setprecision(2) << std::fixed;
   double avg1_branch = (total_parents==0) ? 1.0 : ((double)total_children/total_parents);
+  std::cout << "Linearization branching Max:       " << max_branch << "\n";
   std::cout << "Linearization branching Avg1:      " << avg1_branch << "\n";
   std::cout << "Linearization branching Avg2:      " << avg2_branch << "\n";
-  std::cout << "Linearization branching Max:       " << max_branch << "\n";
+  std::cout << "Linearization noaux Avg2:          " << avg2_noaux << "\n";
+  std::cout << "Linearization noclos Avg2:         " << avg2_nocl << "\n";
+  std::cout << "Linearization noclos noaux Avg2:   " << avg2_noclnoaux << "\n";
   std::cout << "Time spent on copying:             " << time_copy << "\n";
   std::cout << "Time spent on linearization:       " << time_linearization << "\n";
   std::cout << "Time linearization noaux:          " << time_lin_noaux << "\n";
@@ -557,6 +560,9 @@ bool ZExplorer::close_po
  bool mutation_follows_current_trace)
 {
   start_err("close_po...");
+  // Prepare thread order + mutex edges
+  ZPartialOrder thrord_mutexedges(mutated_po, ann_trace.po_full());
+
   auto init = std::clock();
   ZClosure closure(mutated_annotation, mutated_po);
   bool closed = closure.close
@@ -566,6 +572,33 @@ bool ZExplorer::close_po
 
   if (!closed) {
     ++closure_failed;
+    // We need to run no-closure-linearizations so they detect the failure
+    //
+    // Linearization MINUS closure PLUS auxiliary
+    {
+    clock_t noclinit = std::clock();
+    ZLinearization nocllinearizer(mutated_annotation, /*po=*/thrord_mutexedges, /*aux=*/true);
+    std::vector<ZEvent> nocllinear = nocllinearizer.linearize();
+    time_lin_nocl += (double)(clock() - noclinit)/CLOCKS_PER_SEC;
+    double cbr = (nocllinearizer.num_parents==0) ? 1.0 :
+      ((double)nocllinearizer.num_children/nocllinearizer.num_parents);
+    avg2_nocl += ((double)(cbr - avg2_nocl)/total_lin);
+    assert(nocllinear.empty());
+    }
+    //
+    // Linearization MINUS closure MINUS auxiliary
+    {
+    clock_t nobothinit = std::clock();
+    ZLinearization nobothlinearizer(mutated_annotation, /*po=*/thrord_mutexedges, /*aux=*/false);
+    std::vector<ZEvent> nobothlinear = nobothlinearizer.linearize();
+    time_lin_noclnoaux += (double)(clock() - nobothinit)/CLOCKS_PER_SEC;
+    double cbr = (nobothlinearizer.num_parents==0) ? 1.0 :
+      ((double)nobothlinearizer.num_children/nobothlinearizer.num_parents);
+    avg2_noclnoaux += ((double)(cbr - avg2_noclnoaux)/total_lin);
+    assert(nobothlinear.empty());
+    }
+    //
+    //
     end_err("0");
     return false;
   }
@@ -580,7 +613,8 @@ bool ZExplorer::close_po
 
   bool res = realize_mutation
     (ann_trace, read_lock, std::move(mutated_annotation),
-     std::move(mutated_po), mutation_follows_current_trace);
+     std::move(mutated_po), mutation_follows_current_trace,
+     thrord_mutexedges);
   end_err("?");
   return res;
 }
@@ -593,7 +627,8 @@ bool ZExplorer::close_po
 bool ZExplorer::realize_mutation
 (ZTrace& parent_trace, const ZEvent *read_lock,
  ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
- bool mutation_follows_current_trace)
+ bool mutation_follows_current_trace,
+ const ZPartialOrder& thrord_mutexedges)
 {
   start_err("realize_mutation...");
   TraceExtension mutated_trace;
@@ -602,11 +637,10 @@ bool ZExplorer::realize_mutation
     (parent_trace, read_lock, mutated_annotation, std::move(mutated_po));
   }
   else {
-    // Prepare thread order + mutex edges
-    ZPartialOrder thrord_mutexedges(mutated_po, parent_trace.po_full());
-    // Linearization + closure + auxiliary
+    //
+    // Linearization PLUS closure PLUS auxiliary
     clock_t init = std::clock();
-    ZLinearization linearizer(mutated_annotation, mutated_po);
+    ZLinearization linearizer(mutated_annotation, /*po=*/mutated_po, /*aux=*/true);
     std::vector<ZEvent> linear = linearizer.linearize();
     time_linearization += (double)(clock() - init)/CLOCKS_PER_SEC;
     ++total_lin;
@@ -619,6 +653,63 @@ bool ZExplorer::realize_mutation
       max_branch = cur_br;
     }
     err_msg("finished linearisation");
+    bool worked = (!linear.empty() &&
+                   linearization_respects_annotation(linear, mutated_annotation,
+                                                     mutated_po, parent_trace));
+    assert(linear.empty() || worked);
+    //
+    // Linearization PLUS closure MINUS auxiliary
+    {
+    clock_t noauxinit = std::clock();
+    ZLinearization noauxlinearizer(mutated_annotation, /*po=*/mutated_po, /*aux=*/false);
+    std::vector<ZEvent> noauxlinear = noauxlinearizer.linearize();
+    time_lin_noaux += (double)(clock() - noauxinit)/CLOCKS_PER_SEC;
+    double cbr = (noauxlinearizer.num_parents==0) ? 1.0 :
+      ((double)noauxlinearizer.num_children/noauxlinearizer.num_parents);
+    avg2_noaux += ((double)(cbr - avg2_noaux)/total_lin);
+    if (worked) {
+      assert(!noauxlinear.empty());
+      assert(linearization_respects_annotation(noauxlinear, mutated_annotation, mutated_po, parent_trace));
+    } else {
+      assert(linear.empty() && noauxlinear.empty());
+    }
+    }
+    //
+    // Linearization MINUS closure PLUS auxiliary
+    {
+    clock_t noclinit = std::clock();
+    ZLinearization nocllinearizer(mutated_annotation, /*po=*/thrord_mutexedges, /*aux=*/true);
+    std::vector<ZEvent> nocllinear = nocllinearizer.linearize();
+    time_lin_nocl += (double)(clock() - noclinit)/CLOCKS_PER_SEC;
+    double cbr = (nocllinearizer.num_parents==0) ? 1.0 :
+      ((double)nocllinearizer.num_children/nocllinearizer.num_parents);
+    avg2_nocl += ((double)(cbr - avg2_nocl)/total_lin);
+    if (worked) {
+      assert(!nocllinear.empty());
+      assert(linearization_respects_annotation(nocllinear, mutated_annotation, mutated_po, parent_trace));
+    } else {
+      assert(linear.empty() && nocllinear.empty());
+    }
+    }
+    //
+    // Linearization MINUS closure MINUS auxiliary
+    {
+    clock_t nobothinit = std::clock();
+    ZLinearization nobothlinearizer(mutated_annotation, /*po=*/thrord_mutexedges, /*aux=*/false);
+    std::vector<ZEvent> nobothlinear = nobothlinearizer.linearize();
+    time_lin_noclnoaux += (double)(clock() - nobothinit)/CLOCKS_PER_SEC;
+    double cbr = (nobothlinearizer.num_parents==0) ? 1.0 :
+      ((double)nobothlinearizer.num_children/nobothlinearizer.num_parents);
+    avg2_noclnoaux += ((double)(cbr - avg2_noclnoaux)/total_lin);
+    if (worked) {
+      assert(!nobothlinear.empty());
+      assert(linearization_respects_annotation(nobothlinear, mutated_annotation, mutated_po, parent_trace));
+    } else {
+      assert(linear.empty() && nobothlinear.empty());
+    }
+    }
+    //
+    //
     if (linear.empty()) {
       ++linearization_failed;
       end_err("0-linfailed");

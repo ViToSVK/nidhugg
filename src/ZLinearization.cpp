@@ -318,12 +318,16 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
     if (!curr.canForce(thr)) {
       continue;
     }
-    thr_or.push_back(make_pair(ev->trace_id(),thr));
+    if (use_aux) {
+      thr_or.push_back(make_pair(ev->trace_id(),thr));
+    } else {
+      thr_or.push_back(make_pair(thr, thr));
+    }
     // num_children++;
     fl=1;
 
   }
-  sort(thr_or.begin(),thr_or.end());
+  if (use_aux) { sort(thr_or.begin(),thr_or.end()); };
   for(int i=0;i<thr_or.size();i++){
     State next=curr;
     unsigned thr=thr_or[i].second;

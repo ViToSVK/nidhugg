@@ -112,7 +112,8 @@ class ZExplorer {
   bool realize_mutation
   (ZTrace& parent_trace, const ZEvent *read_lock,
    ZAnnotation&& mutated_annotation, ZPartialOrder&& mutated_po,
-   bool mutation_follows_current_trace);
+   bool mutation_follows_current_trace,
+   const ZPartialOrder& thrord_mutexedges);
 
   TraceExtension reuse_trace
   (const ZTrace& parent_trace, const ZEvent *read_lock,
@@ -186,8 +187,11 @@ class ZExplorer {
   // Total time spent on linearization
   double time_linearization = 0;
   double time_lin_noaux = 0;
+  double avg2_noaux = 1.0;
   double time_lin_nocl = 0;
+  double avg2_nocl = 1.0;
   double time_lin_noclnoaux = 0;
+  double avg2_noclnoaux = 1.0;
   // Total time spent on interpreting
   double time_interpreter = 0;
   // Total time spent on closure

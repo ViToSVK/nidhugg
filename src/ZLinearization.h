@@ -35,6 +35,7 @@ class ZLinearization {
   const ZAnnotation& an;
   const ZGraph& gr;
   const ZPartialOrder& po;
+  bool use_aux;
   // const std::vector<ZEvent>& tr;  // reference-trace is used indirectly via ev->trace_id()
 
 
@@ -301,10 +302,11 @@ class ZLinearization {
 
  public:
   ZLinearization(const ZAnnotation& annotation,
-                 ZPartialOrder& partialOrder)
+                 const ZPartialOrder& partialOrder,
+                 bool use_auxiliary_trace)
                  // const std::vector<ZEvent>& trace)
   : an(annotation), gr(partialOrder.graph),
-    po(partialOrder)//, tr(trace)
+    po(partialOrder), use_aux(use_auxiliary_trace) //, tr(trace)
   {
     //calculateWrMapping();
     //calculateTrNextMain();
