@@ -28,6 +28,9 @@
 
 
 class ZLinNaive {
+ public:
+  using PositionsT = std::map<unsigned, std::map<int, int>>;
+
  private:
   const ZAnnotation& an;
   const ZGraph& gr;
@@ -47,21 +50,22 @@ class ZLinNaive {
    public:
     const ZLinNaive& par;
     const ZGraph& gr;
-    std::map<unsigned, std::map<int, int>> positions;
-    std::unordered_set<const ZEvent *> next_events;
+
+    PositionsT positions;
     std::map<CPid, std::unordered_map<
       SymAddrSize, std::list<const ZEvent *>>> pso_queue;
     std::unordered_map<SymAddrSize, const ZEvent *> main_memory;
+
+    std::unordered_set<const ZEvent *> next_events_ready;
+    std::unordered_map<const ZEvent *, PositionsT> next_events_req;
+    void add_to_next_events(const ZEvent * ev);
+    void add_to_next_events_and_update_req(const ZEvent *ev);
 
     State(const ZLinNaive& par0);
     State(const State&) = default;
     State(State&&) = default;
     State& operator=(const State&) = delete;
     State& operator=(State&&) = delete;
-
-    // Returns the PO-minimal events of the input set.
-    std::unordered_set<const ZEvent *> po_minimal_events
-    (const std::unordered_set<const ZEvent *>& input) const;
 
     // Check observation of a read
     void add_into_queues(const ZEvent *ev);
