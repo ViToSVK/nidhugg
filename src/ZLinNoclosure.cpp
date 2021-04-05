@@ -581,7 +581,7 @@ bool ZLinNoclosure::linearizeTSO(State& curr, std::set<T>& marked, std::vector<Z
     end_err("1a");
     return true;
   }
-  num_parents++;
+  bool has_child = false;
 
   // Now we have choices to make (advance which aux?); try them out
   unsigned n = gr.number_of_threads();
@@ -590,6 +590,10 @@ bool ZLinNoclosure::linearizeTSO(State& curr, std::set<T>& marked, std::vector<Z
     unsigned thr = (start_thr + d) % n;
     if (!curr.canAdvanceAux(thr)) {
       continue;
+    }
+    if (!has_child) {
+      has_child = true;
+      num_parents++;
     }
     num_children++;
     State next(curr);
@@ -912,7 +916,7 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
     end_err("1a");
     return true;
   }
-  num_parents++;
+  bool has_child = false;
 
   // Now we have choices to make (which main?); try them out
   unsigned n = gr.number_of_threads();
@@ -921,6 +925,10 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
     unsigned thr = (start_thr + d) % n;
     if (!canForce(curr, thr)) {
       continue;
+    }
+    if (!has_child) {
+      has_child = true;
+      num_parents++;
     }
     num_children++;
     State next(curr);
