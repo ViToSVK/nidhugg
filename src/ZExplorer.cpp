@@ -277,6 +277,15 @@ void ZExplorer::maintain_buffers
 bool ZExplorer::extend_and_explore
 (ZTrace& ann_trace, ZTraceExtension&& ext)
 {
+  if (!time_started) {
+    time_started = true;
+    time_start = std::clock();
+  }
+  if ((((double)(clock() - time_start)/CLOCKS_PER_SEC) >
+      0.95 * time_timeout_counter) && lin_performed > 0) {
+    // Nearing timeout, stop early and report what you collected
+    return false;
+  }
   if (lin_performed >= lin_goal) {
     return false;
   }
@@ -469,6 +478,11 @@ bool ZExplorer::explore(const ZTrace& ann_trace)
       graph.get_lock_mutation(ev, previous_lock_id, ann_trace.tau);
     // Perform the mutations
     for (const ZEventID& mutation : mutations) {
+      if ((((double)(clock() - time_start)/CLOCKS_PER_SEC) >
+          0.95 * time_timeout_counter) && lin_performed > 0) {
+        // Nearing timeout, stop early and report what you collected
+        break;
+      }
       if (lin_performed < lin_goal) {
         mutate(ann_trace, graph, ev, mutation);
       }
@@ -815,6 +829,11 @@ bool ZExplorer::recur(const ZTrace& ann_trace)
       for (auto& key_trace : sch) {
         start_err(std::string("schedule-on-") + std::to_string(i) +
                 "-(idx-is-" + std::to_string(idx) + ")...");
+        if ((((double)(clock() - time_start)/CLOCKS_PER_SEC) >
+            0.95 * time_timeout_counter) && lin_performed > 0) {
+          // Nearing timeout, stop early and report what you collected
+          return false;
+        }
         if (lin_performed >= lin_goal) {
           return false;
         }

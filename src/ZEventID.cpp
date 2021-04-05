@@ -48,14 +48,15 @@ std::size_t ZEventID::hash() const
 std::size_t ZEventID::compute_hash() const
 {
   std::size_t res = cpid().get_hash();
-  assert(res <= 99999);
+  assert(res < 200000);
   res *= 10000;
   std::size_t ev = 9999;
   assert(event_id() >= -1);
   if (event_id() >= 0)
     ev = (std::size_t) (event_id() % 10000);
   res += ev;
-  assert(res <= 999999999);
+  assert(res < 2000000000);
+  // maxint is 2147483647
   return res;
 }
 

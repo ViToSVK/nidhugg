@@ -124,12 +124,13 @@ std::size_t CPid::compute_hash() const{
     res += (aux_idx % 500);
   assert(res <= 999);
   res *= 100;
+  assert(res <= 199800);
   std::size_t max = 0;
   for (unsigned i = 1; i < proc_seq.size(); ++i)
     if (proc_seq[i] > 0 && (std::size_t) proc_seq[i] > max)
       max = (std::size_t) proc_seq[i];
-  res += ((proc_seq[0] + max) % 100);
-  assert(res <= 99999);
+  res += ((proc_seq[0] + max) % 200);
+  assert(res < 200000);
   return res;
 }
 
