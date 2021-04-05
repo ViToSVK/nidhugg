@@ -120,7 +120,11 @@ class ZExplorer {
   int lin_performed = 0;
   int lin_skipped = 0;
   std::vector<int> problematic_lin = std::vector<int>(1, -1);
-  int repeat_runs = 10;
+  int repeat_runs = 1;
+  //
+  bool time_started = false;
+  clock_t time_start;
+  double time_timeout_counter = 4. * 2. * repeat_runs;
   //
   int max_allevents = 0;
   std::vector<int> no_allevents;
