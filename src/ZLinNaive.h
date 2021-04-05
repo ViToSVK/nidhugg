@@ -57,6 +57,7 @@ class ZLinNaive {
     std::unordered_map<SymAddrSize, const ZEvent *> main_memory;
 
     std::unordered_set<const ZEvent *> next_events_ready;
+    std::unordered_set<const ZEvent *> next_events_ready_unique;
     std::unordered_map<const ZEvent *, PositionsT> next_events_req;
     void add_to_next_events(const ZEvent * ev);
     void update_req(const ZEvent *ev, const std::vector<ZEvent>& res);

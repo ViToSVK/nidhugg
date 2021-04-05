@@ -149,7 +149,7 @@ ZLinNaive::State::State(const ZLinNaive& par0)
       // Initialize positions
       assert(!positions.at(thr_id).count(aux_id));
       positions.at(thr_id).emplace(aux_id, 0);
-      // Add to next_events_ready / next_events_req
+      // Add to next_events_ready(_unique) / next_events_req
       const ZEvent * next = gr.getEvent(thr_id, aux_id, 0);
       assert(next);
       add_to_next_events(next);
@@ -161,7 +161,8 @@ ZLinNaive::State::State(const ZLinNaive& par0)
 void ZLinNaive::State::add_to_next_events(const ZEvent * ev)
 {
   assert(ev);
-  assert(!next_events_ready.count(ev) && !next_events_req.count(ev));
+  assert(!next_events_ready.count(ev) && !next_events_req.count(ev) &&
+         !next_events_ready_unique.count(ev));
   PositionsT req;
   for (unsigned thr_id : gr.get_threads()) {
     for (int aux_id : gr.auxes(thr_id)) {
@@ -188,7 +189,11 @@ void ZLinNaive::State::add_to_next_events(const ZEvent * ev)
     }
   }
   if (req.empty()) {
-    next_events_ready.insert(ev);
+    if (isRead(ev) || isWriteB(ev) || isWriteM(ev)) {
+      next_events_ready.insert(ev);
+    } else {
+      next_events_ready_unique.insert(ev);
+    }
   } else {
     next_events_req.emplace(ev, req);
   }
@@ -222,11 +227,17 @@ void ZLinNaive::State::update_req(const ZEvent *ev, const std::vector<ZEvent>& r
     if (req.empty()) {
       // All requirements have been met, event is ready
       const ZEvent * now_ready = it->first;
-      assert(!next_events_ready.count(now_ready));
-      next_events_ready.insert(now_ready);
+      assert(!next_events_ready.count(now_ready) &&
+             !next_events_ready_unique.count(now_ready));
+      if (isRead(now_ready) || isWriteB(now_ready) || isWriteM(now_ready)) {
+        next_events_ready.insert(now_ready);
+      } else {
+        next_events_ready_unique.insert(now_ready);
+      }
       it = next_events_req.erase(it);
       assert(!next_events_req.count(now_ready) &&
-             next_events_ready.count(now_ready));
+             (next_events_ready.count(now_ready) ||
+              next_events_ready_unique.count(now_ready)));
     } else {
       ++it;
     }
@@ -427,16 +438,21 @@ void ZLinNaive::State::advance(const ZEvent *ev, std::vector<ZEvent>& res)
   assert(positions.at(ev->thread_id()).at(ev->aux_id()) == ev->event_id());
   positions.at(ev->thread_id()).at(ev->aux_id())++;
   assert(positions.at(ev->thread_id()).at(ev->aux_id()) == ev->event_id() + 1);
-  // Update next_events_ready and next_events_req
-  assert(next_events_ready.count(ev));
-  next_events_ready.erase(ev);
+  // Update next_events_ready(_unique) and next_events_req
+  if (next_events_ready.count(ev)) {
+    next_events_ready.erase(ev);
+  } else {
+    assert(next_events_ready_unique.count(ev));
+    next_events_ready_unique.erase(ev);
+  }
   update_req(ev, res);
   int pos = positions.at(ev->thread_id()).at(ev->aux_id());
   assert(pos >= 0 && pos <= gr(ev->thread_id(), ev->aux_id()).size());
   if (pos < gr(ev->thread_id(), ev->aux_id()).size()) {
     const ZEvent * next = gr.getEvent(ev->thread_id(), ev->aux_id(), pos);
     assert(next && next->event_id() == pos &&
-           !next_events_ready.count(next) && !next_events_req.count(next));
+           !next_events_ready.count(next) && !next_events_req.count(next) &&
+           !next_events_ready_unique.count(next));
     add_to_next_events(next);
   }
   end_err();
@@ -465,39 +481,11 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
     return false;
   }
   marked.insert(key);
-  // Anything to extend?
-  if (curr.next_events_ready.empty()) {
-    // Successfully finished
-    assert(curr.next_events_req.empty());
-    assert(res.size() == gr.events_size());
-    end_err("1a");
-    return true;
-  }
-  // Order partial-order-minimal events to extend
-  int no_of_next = curr.next_events_ready.size();
-  assert(no_of_next > 0);
-  std::map<int, const ZEvent *> next_ordered;
-  for (const ZEvent * ev : curr.next_events_ready) {
-    assert(ev);
-    if (isRead(ev) || isWriteB(ev) || isWriteM(ev)) {
-      if (tr.empty()) {
-        // order by cpid-hash
-        int hsh = ev->cpid().get_hash();
-        assert(!next_ordered.count(hsh));
-        while (next_ordered.count(hsh)) { hsh++; }
-        next_ordered.emplace(hsh, ev);
-      } else {
-        // order by auxiliary trace
-        int key = ev->exec_trace_id;
-        assert(key >= 0);
-        assert(!next_ordered.count(key));
-        while (next_ordered.count(key)) { key++; }
-        next_ordered.emplace(key, ev);
-      }
-      continue;
-    }
+  // Anything unique to extend with?
+  if (!curr.next_events_ready_unique.empty()) {
     // There is a non-read-non-write, proceed uniquely
-    assert(!isRead(ev) && !isWriteB(ev) && !isWriteM(ev));
+    const ZEvent * ev = *(curr.next_events_ready_unique.begin());
+    assert(ev && !isRead(ev) && !isWriteB(ev) && !isWriteM(ev));
     assert(curr.can_advance(ev));
     // Since we proceed uniquely, no need to copy State
     curr.advance(ev, res);
@@ -515,6 +503,37 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
     res.pop_back();
     end_err("0b");
     return false;
+  }
+  // Anything non-unique to extend with?
+  assert(curr.next_events_ready_unique.empty());
+  if (curr.next_events_ready.empty()) {
+    // Successfully finished
+    assert(curr.next_events_req.empty());
+    assert(res.size() == gr.events_size());
+    end_err("1a");
+    return true;
+  }
+  // Order next_events_ready to extend
+  int no_of_next = curr.next_events_ready.size();
+  assert(no_of_next > 0);
+  std::map<int, const ZEvent *> next_ordered;
+  for (const ZEvent * ev : curr.next_events_ready) {
+    assert(ev);
+    assert(isRead(ev) || isWriteB(ev) || isWriteM(ev));
+    if (tr.empty()) {
+      // order by cpid-hash
+      int hsh = ev->cpid().get_hash();
+      assert(!next_ordered.count(hsh));
+      while (next_ordered.count(hsh)) { hsh++; }
+      next_ordered.emplace(hsh, ev);
+    } else {
+      // order by auxiliary trace
+      int key = ev->exec_trace_id;
+      assert(key >= 0);
+      assert(!next_ordered.count(key));
+      while (next_ordered.count(key)) { key++; }
+      next_ordered.emplace(key, ev);
+    }
   }
   assert(!next_ordered.empty());
   bool has_child = false;
