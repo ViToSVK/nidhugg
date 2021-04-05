@@ -114,7 +114,7 @@ class ZExplorer {
   //
   //
   int lin_read_lower_bound = 10;
-  int lin_perform_one_per = 5;
+  int lin_perform_one_per = 1;
   int lin_goal = 50;
   int lin_below_bound = 0;
   int lin_performed = 0;
@@ -125,6 +125,9 @@ class ZExplorer {
   bool time_started = false;
   clock_t time_start;
   double time_timeout_counter = 2. * 60. * 60. * repeat_runs;
+  double min_lin_time = 1.;
+  double prerun_our_noheur;
+  double prerun_base_noheur;
   //
   int max_allevents = 0;
   std::vector<int> no_allevents;

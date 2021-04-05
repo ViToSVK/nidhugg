@@ -662,13 +662,96 @@ void ZExplorer::mutate
   //
   //
   //
+  // PRE-RUN TO DETERMINE IF WE CONSIDER THIS CASE
+  //
+  // OUR, NOclosure, NOauxtrace
+  double ournoheur_time = 0.;
+  int ournoheur_par = -1;
+  int ournoheur_ch = -1;
+  double ournoheur_br = -1.;
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinNoclosure linearizer(
+    mutated_annotation, thread_order, emptyaux);
+  std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
+    linearizer.linearizeTSO() : linearizer.linearizePSO();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    ournoheur_time = linearizer.elapsed_time;
+    bool respects = linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace);
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+    assert(respects);
+  } else {
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    ournoheur_time = linearizer.time_limit;
+  }
+  //
+  assert(ournoheur_par < 0 && ournoheur_ch < 0 && ournoheur_br < 0.);
+  ournoheur_par = linearizer.num_parents;
+  ournoheur_ch = linearizer.num_children;
+  ournoheur_br = (linearizer.num_parents==0) ? 1.0 :
+       ((double)linearizer.num_children/linearizer.num_parents);
+  }
+  //
+  //
+  //
+  // BASE, NOclosure, NOauxtrace
+  double basenoheur_time = 0.;
+  int basenoheur_par = -1;
+  int basenoheur_ch = -1;
+  double basenoheur_br = -1.;
+  {
+  std::vector<ZEvent> emptyaux;
+  assert(emptyaux.empty());
+  ZLinNaive linearizer(
+    mutated_annotation, thread_order, emptyaux);
+  std::vector<ZEvent> linear = linearizer.linearize();
+  if (!linear.empty()) {
+    assert(!linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time <= linearizer.time_limit);
+    basenoheur_time = linearizer.elapsed_time;
+    bool respects = linearization_respects_ann(linear, mutated_annotation, mutated_graph, ann_trace);
+    if (!respects && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+    assert(respects);
+  } else {
+    if (!linearizer.exceeded_limit && problematic_lin.back() != lin_performed - 1) { problematic_lin.push_back(lin_performed - 1); }
+    assert(linearizer.exceeded_limit);
+    assert(linearizer.elapsed_time > linearizer.time_limit);
+    basenoheur_time = linearizer.time_limit;
+  }
+  //
+  assert(basenoheur_par < 0 && basenoheur_ch < 0 && basenoheur_br < 0.);
+  basenoheur_par = linearizer.num_parents;
+  basenoheur_ch = linearizer.num_children;
+  basenoheur_br = (linearizer.num_parents==0) ? 1.0 :
+       ((double)linearizer.num_children/linearizer.num_parents);
+  }
+  //
+  //
+  //
   if (linear.size() > max_allevents) {
     max_allevents = linear.size();
   }
   if (mutated_annotation.read_size() >= lin_read_lower_bound &&
-      (linear.size() * 5) >= max_allevents &&
-      (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per)) {
+//      (linear.size() * 5) >= max_allevents &&
+      (lin_below_bound + lin_skipped) >= (lin_performed * lin_perform_one_per) &&
+      (ournoheur_time >= min_lin_time || basenoheur_time >= min_lin_time)) {
     // PERFORM LINEARIZATION EXPERIMENTS
+    //
+    //
+    // COLLECT PRE-RUN STATS
+    prerun_our_noheur = ournoheur_time;
+    par_our_nocl_noaux.push_back(ournoheur_par);
+    ch_our_nocl_noaux.push_back(ournoheur_ch);
+    br_our_nocl_noaux.push_back(ournoheur_br);
+    prerun_base_noheur = basenoheur_time;
+    par_base_nocl_noaux.push_back(basenoheur_par);
+    ch_base_nocl_noaux.push_back(basenoheur_ch);
+    br_base_nocl_noaux.push_back(basenoheur_br);
     //
     // REPEAT RULE1
     for (int rep = 1; rep < repeat_runs; ++rep) {
@@ -1095,14 +1178,12 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   }
 
   // OUR, NOclosure, NOauxtrace
+  // (one run was already done early in mutate)
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  double time = 0;
-  int par = -1;
-  int ch = -1;
-  double br = -1.;
-  for (int rep = 0; rep < repeat_runs; ++rep) {
+  double time = prerun_our_noheur;
+  for (int rep = /* */1; rep < repeat_runs; ++rep) {
     ZLinNoclosure linearizer(
       annotation, thread_order, emptyaux);
     std::vector<ZEvent> linear = (model != MemoryModel::PSO) ?
@@ -1121,22 +1202,14 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
       time += linearizer.time_limit;
     }
     //
-    if (rep == 0) {
-      assert(par < 0 && ch < 0 && br < 0.);
-      par = linearizer.num_parents;
-      ch = linearizer.num_children;
-      br = (linearizer.num_parents==0) ? 1.0 :
-           ((double)linearizer.num_children/linearizer.num_parents);
-    } else {
-      assert(par == linearizer.num_parents);
-      assert(ch == linearizer.num_children);
-    }
+    assert(par_our_nocl_noaux.back() == linearizer.num_parents);
+    assert(ch_our_nocl_noaux.back() == linearizer.num_children);
   }
   time /= double(repeat_runs);
   t_our_nocl_noaux.push_back(time);
-  par_our_nocl_noaux.push_back(par);
-  ch_our_nocl_noaux.push_back(ch);
-  br_our_nocl_noaux.push_back(br);
+  // par_our_nocl_noaux.push_back(par);
+  // ch_our_nocl_noaux.push_back(ch);
+  // br_our_nocl_noaux.push_back(br);
   }
 
   //////////////////////////////////////////////////////////////////
@@ -1270,14 +1343,12 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   }
 
   // BASE, NOclosure, NOauxtrace
+  // (one run was already done early in mutate)
   {
   std::vector<ZEvent> emptyaux;
   assert(emptyaux.empty());
-  double time = 0;
-  int par = -1;
-  int ch = -1;
-  double br = -1.;
-  for (int rep = 0; rep < repeat_runs; ++rep) {
+  double time = prerun_base_noheur;
+  for (int rep = /* */1; rep < repeat_runs; ++rep) {
     ZLinNaive linearizer(
       annotation, thread_order, emptyaux);
     std::vector<ZEvent> linear = linearizer.linearize();
@@ -1295,22 +1366,14 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
       time += linearizer.time_limit;
     }
     //
-    if (rep == 0) {
-      assert(par < 0 && ch < 0 && br < 0.);
-      par = linearizer.num_parents;
-      ch = linearizer.num_children;
-      br = (linearizer.num_parents==0) ? 1.0 :
-           ((double)linearizer.num_children/linearizer.num_parents);
-    } else {
-      assert(par == linearizer.num_parents);
-      assert(ch == linearizer.num_children);
-    }
+    assert(par_base_nocl_noaux.back() == linearizer.num_parents);
+    assert(ch_base_nocl_noaux.back() == linearizer.num_children);
   }
   time /= double(repeat_runs);
   t_base_nocl_noaux.push_back(time);
-  par_base_nocl_noaux.push_back(par);
-  ch_base_nocl_noaux.push_back(ch);
-  br_base_nocl_noaux.push_back(br);
+  // par_base_nocl_noaux.push_back(par);
+  // ch_base_nocl_noaux.push_back(ch);
+  // br_base_nocl_noaux.push_back(br);
   }
 }
 
