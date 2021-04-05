@@ -124,7 +124,7 @@ class ZExplorer {
   //
   bool time_started = false;
   clock_t time_start;
-  double time_timeout_counter = 4. * 2. * repeat_runs;
+  double time_timeout_counter = 2. * 60. * 60. * repeat_runs;
   //
   int max_allevents = 0;
   std::vector<int> no_allevents;
