@@ -169,11 +169,17 @@ void ZLinNaive::State::add_to_next_events(const ZEvent * ev)
         continue;
       }
       int pred = par.po.pred(ev, thr_id, aux_id).second;
-      assert(pred >= -1);
       if (pred == -1) {
+        // No requirement wrt thr_id / aux_id
         continue;
       }
-      // Add requirement of ev
+      assert(pred >= 0);
+      if (positions.count(thr_id) && positions.at(thr_id).count(aux_id) &&
+          positions.at(thr_id).at(aux_id) > pred) {
+        // thr_id / aux_id already progressed past the requirement
+        continue;
+      }
+      // Add the thr_id / aux_id requirement of ev
       if (!req.count(thr_id)) {
         req.emplace(thr_id, std::map<int, int>());
       }
@@ -189,8 +195,10 @@ void ZLinNaive::State::add_to_next_events(const ZEvent * ev)
 }
 
 
-void ZLinNaive::State::add_to_next_events_and_update_req(const ZEvent *ev)
+void ZLinNaive::State::update_req(const ZEvent *ev, const std::vector<ZEvent>& res)
 {
+  assert(ev);
+  assert(res.back() == *ev);
   // Update next_events_req
   unsigned thr = ev->thread_id();
   int aux = ev->aux_id();
@@ -198,12 +206,12 @@ void ZLinNaive::State::add_to_next_events_and_update_req(const ZEvent *ev)
   for (auto it = next_events_req.begin(); it != next_events_req.end(); /**/) {
     PositionsT& req = it->second;
     if (!req.count(thr) || !req.at(thr).count(aux) ||
-        req.at(thr).at(aux) >= evid) {
+        req.at(thr).at(aux) > evid) {
       ++it;
       continue;
     }
     // Requirement of thr/aux has been met
-    assert(req.at(thr).at(aux) == evid - 1);
+    assert(req.at(thr).at(aux) == evid);
     req.at(thr).erase(aux);
     if (!req.at(thr).empty()) {
       ++it;
@@ -223,8 +231,6 @@ void ZLinNaive::State::add_to_next_events_and_update_req(const ZEvent *ev)
       ++it;
     }
   }
-  // Add to next_events_ready / next_events_req
-  add_to_next_events(ev);
 }
 
 
@@ -424,13 +430,14 @@ void ZLinNaive::State::advance(const ZEvent *ev, std::vector<ZEvent>& res)
   // Update next_events_ready and next_events_req
   assert(next_events_ready.count(ev));
   next_events_ready.erase(ev);
+  update_req(ev, res);
   int pos = positions.at(ev->thread_id()).at(ev->aux_id());
   assert(pos >= 0 && pos <= gr(ev->thread_id(), ev->aux_id()).size());
   if (pos < gr(ev->thread_id(), ev->aux_id()).size()) {
     const ZEvent * next = gr.getEvent(ev->thread_id(), ev->aux_id(), pos);
     assert(next && next->event_id() == pos &&
            !next_events_ready.count(next) && !next_events_req.count(next));
-    add_to_next_events_and_update_req(next);
+    add_to_next_events(next);
   }
   end_err();
 }
