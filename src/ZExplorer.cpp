@@ -99,12 +99,18 @@ void ZExplorer::print_stats() const
   std::cout << "times_base_yesclosure_noauxtrace:     ";
   for (const double& d : t_base_yescl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
+
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+///*
   std::cout << "times_base_noclosure_yesauxtrace:     ";
   for (const double& d : t_base_nocl_yesaux) { std::cout << " " << d; }
   std::cout << "\n";
   std::cout << "times_base_noclosure_noauxtrace:      ";
   for (const double& d : t_base_nocl_noaux) { std::cout << " " << d; }
   std::cout << "\n";
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+//*/
+
   // branching factors
   /*
   std::cout << "branch_our_yesclosure_yesauxtrace:    ";
@@ -169,6 +175,9 @@ void ZExplorer::print_stats() const
   std::cout << "children_base_yesclosure_noauxtrace:  ";
   for (const int& i : ch_base_yescl_noaux) { std::cout << " " << i; }
   std::cout << "\n";
+
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+///*
   std::cout << "parents_base_noclosure_yesauxtrace:   ";
   for (const int& i : par_base_nocl_yesaux) { std::cout << " " << i; }
   std::cout << "\n";
@@ -181,6 +190,9 @@ void ZExplorer::print_stats() const
   std::cout << "children_base_noclosure_noauxtrace:   ";
   for (const int& i : ch_base_nocl_noaux) { std::cout << " " << i; }
   std::cout << "\n";
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+//*/
+
   std::cout << "\n";
   return;
 
@@ -1123,6 +1135,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   br_base_yescl_noaux.push_back(1.);
   }
 
+
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+///*
+
   // BASE, NOclosure, YESauxtrace
   {
   double time = 0;
@@ -1216,6 +1232,10 @@ const ZPartialOrder& closed_po, const ZPartialOrder& thread_order)
   ch_base_nocl_noaux.push_back(ch);
   br_base_nocl_noaux.push_back(br);
   }
+
+// COMMENT OUT FOR LARGE-UNROLL EXPERIMENTS
+//*/
+
 }
 
 
