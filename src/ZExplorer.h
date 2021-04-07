@@ -125,7 +125,7 @@ class ZExplorer {
   bool time_started = false;
   clock_t time_start;
   double time_timeout_counter = 2. * 60. * 60. * repeat_runs;
-  double min_lin_time = 1.;
+  double min_lin_time = 0.5;
   double prerun_our_noheur;
   double prerun_base_noheur;
   //
