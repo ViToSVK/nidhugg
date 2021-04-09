@@ -175,7 +175,7 @@ void ZLinNoclosure::calculateWrMapping() {
 }
 
 
-const ZLinNoclosure::WrSet& ZLinNoclosure::initialGetObservers(SymAddrSize ml) const {
+const ZLinNoclosure::WrSet& ZLinNoclosure::initialGetObservers(const SymAddrSize& ml) const {
   start_err(std::string("initialGetObservers_") + ml.to_string() + "...");
   auto it = wr_initial.find(ml);
   if (it == wr_initial.end()) {
@@ -311,7 +311,7 @@ bool ZLinNoclosure::State::read_would_observe_what_it_should(const ZEvent *ev) c
 }
 
 
-bool ZLinNoclosure::State::isClosedVar(SymAddrSize ml) const {
+bool ZLinNoclosure::State::isClosedVar(const SymAddrSize& ml) const {
   start_err(std::string("isClosedVar_") + ml.to_string() + "...");
   auto it = curr_vals.find(ml);
   const std::set<ZObs>& observers = (it == curr_vals.end() ? par.initialGetObservers(ml) : par.getObservers(it->second)).toSet();

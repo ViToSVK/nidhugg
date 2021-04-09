@@ -53,7 +53,7 @@ class ZLinNoclosure {
       return obs_set;
     }
 
-    void insert(ZObs obs) {
+    void insert(const ZObs& obs) {
       WrEntry& entry = thr_map[obs.thr];
       if (obs.ev < entry.first) {
         obs_set.erase(ZObs(obs.thr, entry.first));
@@ -92,7 +92,7 @@ class ZLinNoclosure {
 
   /* Returns the observers of (the initial event for variable ml |
    * the event given by (obs | ev)). */
-  const WrSet& initialGetObservers(SymAddrSize ml) const;
+  const WrSet& initialGetObservers(const SymAddrSize& ml) const;
   const WrSet& getObservers(const ZObs& obs) const;
   const WrSet& getObservers(const ZEvent *ev) const;
 
@@ -161,7 +161,7 @@ class ZLinNoclosure {
     ZObs what_would_read_observe(const ZEvent *ev) const;
     bool read_would_observe_what_it_should(const ZEvent *ev) const;
 
-    bool isClosedVar(SymAddrSize ml) const;
+    bool isClosedVar(const SymAddrSize& ml) const;
     bool canAdvanceAux(unsigned thr, int aux = 0) const;
     void advance(unsigned thr, int aux, std::vector<ZEvent>& res);
 
@@ -199,7 +199,7 @@ class ZLinNoclosure {
     }
 
    public:
-    KeyTSO(State& state) : vals(state.prefix.numThreads()) {
+    KeyTSO(const State& state) : vals(state.prefix.numThreads()) {
       for (unsigned thr = 0; thr < size(); thr++) {
         vals.at(thr) = state.prefix.at(thr, 0);
       }

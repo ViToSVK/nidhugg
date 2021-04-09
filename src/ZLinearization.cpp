@@ -175,7 +175,7 @@ void ZLinearization::calculateWrMapping() {
 }
 
 
-const ZLinearization::WrSet& ZLinearization::initialGetObservers(SymAddrSize ml) const {
+const ZLinearization::WrSet& ZLinearization::initialGetObservers(const SymAddrSize& ml) const {
   start_err(std::string("initialGetObservers_") + ml.to_string() + "...");
   auto it = wr_initial.find(ml);
   if (it == wr_initial.end()) {
@@ -236,7 +236,7 @@ const ZEvent * ZLinearization::State::currEvent(unsigned thr, int aux) const {
 }
 
 
-bool ZLinearization::State::isClosedVar(SymAddrSize ml) const {
+bool ZLinearization::State::isClosedVar(const SymAddrSize& ml) const {
   start_err(std::string("isClosedVar_") + ml.to_string() + "...");
   auto it = curr_vals.find(ml);
   const std::set<ZObs>& observers = (it == curr_vals.end() ? par.initialGetObservers(ml) : par.getObservers(it->second)).toSet();
