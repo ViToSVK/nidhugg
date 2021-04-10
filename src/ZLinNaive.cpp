@@ -573,17 +573,19 @@ bool ZLinNaive::linearize(State& curr, std::set<T>& marked, std::vector<ZEvent>&
 
 
 std::vector<ZEvent> ZLinNaive::linearize() const {
+  std::vector<ZEvent> res;
+  res.reserve(gr.events_size());
   start_time = std::clock();
   start_err("linearize/0...");
   // po.dump();
   assert(!gr.empty() && gr.size() > 0 && gr.number_of_threads() > 1);
   State start(*this);
   std::set<KeyNaive> marked;
-  std::vector<ZEvent> res;
   linearize<KeyNaive>(start, marked, res);
   end_err();
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  res.shrink_to_fit();
   assert(!exceeded_limit || res.empty());
   return res;
 }

@@ -535,17 +535,19 @@ bool ZLinearization::linearizeTSO(State& curr, std::set<T>& marked, std::vector<
 template<class T>
 std::vector<ZEvent> ZLinearization::linearizeTSO() const
 {
+  std::vector<ZEvent> res;
+  res.reserve(gr.events_size());
   start_time = std::clock();
   start_err("linearizeTSO/0...");
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
   std::set<T> marked;
-  std::vector<ZEvent> res;
   linearizeTSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  res.shrink_to_fit();
   assert(!exceeded_limit || res.empty());
   return res;
 }
@@ -868,17 +870,19 @@ bool ZLinearization::linearizePSO(State& curr, std::set<T>& marked, std::vector<
 template<class T>
 std::vector<ZEvent> ZLinearization::linearizePSO() const
 {
+  std::vector<ZEvent> res;
+  res.reserve(gr.events_size());
   start_time = std::clock();
   start_err("linearizePSO/0...");
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
   std::set<T> marked;
-  std::vector<ZEvent> res;
   linearizePSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  res.shrink_to_fit();
   assert(!exceeded_limit || res.empty());
   return res;
 }
