@@ -175,7 +175,7 @@ void ZLinNoclosure::calculateWrMapping() {
 }
 
 
-const ZLinNoclosure::WrSet& ZLinNoclosure::initialGetObservers(SymAddrSize ml) const {
+const ZLinNoclosure::WrSet& ZLinNoclosure::initialGetObservers(const SymAddrSize& ml) const {
   start_err(std::string("initialGetObservers_") + ml.to_string() + "...");
   auto it = wr_initial.find(ml);
   if (it == wr_initial.end()) {
@@ -311,7 +311,7 @@ bool ZLinNoclosure::State::read_would_observe_what_it_should(const ZEvent *ev) c
 }
 
 
-bool ZLinNoclosure::State::isClosedVar(SymAddrSize ml) const {
+bool ZLinNoclosure::State::isClosedVar(const SymAddrSize& ml) const {
   start_err(std::string("isClosedVar_") + ml.to_string() + "...");
   auto it = curr_vals.find(ml);
   const std::set<ZObs>& observers = (it == curr_vals.end() ? par.initialGetObservers(ml) : par.getObservers(it->second)).toSet();
@@ -622,17 +622,19 @@ bool ZLinNoclosure::linearizeTSO(State& curr, std::set<T>& marked, std::vector<Z
 template<class T>
 std::vector<ZEvent> ZLinNoclosure::linearizeTSO() const
 {
+  std::vector<ZEvent> res;
+  res.reserve(gr.events_size());
   start_time = std::clock();
   start_err("linearizeTSO/0...");
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
   std::set<T> marked;
-  std::vector<ZEvent> res;
   linearizeTSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  res.shrink_to_fit();
   assert(!exceeded_limit || res.empty());
   assert(res.empty() || res.size() == gr.events_size());
   return res;
@@ -957,17 +959,19 @@ bool ZLinNoclosure::linearizePSO(State& curr, std::set<T>& marked, std::vector<Z
 template<class T>
 std::vector<ZEvent> ZLinNoclosure::linearizePSO() const
 {
+  std::vector<ZEvent> res;
+  res.reserve(gr.events_size());
   start_time = std::clock();
   start_err("linearizePSO/0...");
   // po.dump();
   assert(gr.size() > 0);
   State start(*this, gr.number_of_threads());
   std::set<T> marked;
-  std::vector<ZEvent> res;
   linearizePSO<T>(start, marked, res);
   end_err();
   // dump_trace(res);
   elapsed_time = (double)(std::clock() - start_time)/CLOCKS_PER_SEC;
+  res.shrink_to_fit();
   assert(!exceeded_limit || res.empty());
   assert(res.empty() || res.size() == gr.events_size());
   return res;
