@@ -59,7 +59,9 @@ class ZAnnotationNeg {
 
   bool forbids(const ZEvent *ev, const ZEvent *obs) const;
 
-  void update(const ZEvent *ev, NegativeT&& upd);
+  void update(const ZEvent *ev, const NegativeT& upd);
+
+  void set_mapping(const ZAnnotationNeg& oth);
 };
 llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZAnnotationNeg& an);
 

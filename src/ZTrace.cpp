@@ -22,49 +22,139 @@
 
 
 ZTrace::ZTrace
-(std::vector<ZEvent>&& initial_trace,
+(const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& initial_trace,
+ const std::shared_ptr<ZGraph>& initial_graph,
+ const std::shared_ptr<ZPartialOrder>& initial_po_full,
+ const std::shared_ptr<ZPartialOrder>& initial_po_part,
  bool assumeblocked)
-  : parent(nullptr),
-    trace(std::move(initial_trace)),
-    annotation(),
-    negative(),
-    graph(this->trace),
+  : _parent(nullptr),
+    _trace(initial_trace),
+    _annotation(),
+    _negative(),
+    _graph(initial_graph),
+    _po_full(initial_po_full),
+    _po_part(initial_po_part),
     assumeblocked(assumeblocked),
     deadlocked(false)
-{}
+{
+  assert(_trace && _graph && _po_full && _po_part);
+  assert(!empty());
+  assert(&(_po_full->graph) == _graph.get());
+  assert(&(_po_part->graph) == _graph.get());
+}
 
 
 ZTrace::ZTrace
 (const ZTrace& parentTrace,
- std::vector<ZEvent>&& new_trace,
+ const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& new_trace,
  ZAnnotation&& new_annotation,
- ZPartialOrder&& new_po,
+ const std::shared_ptr<ZGraph>& new_graph,
+ const std::shared_ptr<ZPartialOrder>& new_po_full,
+ const std::shared_ptr<ZPartialOrder>& new_po_part,
  bool assumeblocked)
-  : parent(&parentTrace),
-    trace(std::move(new_trace)),
-    annotation(std::move(new_annotation)),
-    negative(parentTrace.negative),
-    graph(parentTrace.graph, std::move(new_po),
-          this->trace, this->annotation),
+  : _parent(&parentTrace),
+    _trace(new_trace),
+    _annotation(std::move(new_annotation)),
+    _negative(parentTrace.negative()),
+    _graph(new_graph),
+    _po_full(new_po_full),
+    _po_part(new_po_part),
     assumeblocked(assumeblocked),
     deadlocked(false)
-{}
+{
+  assert(_trace && _graph && _po_full && _po_part);
+  assert(!empty());
+  assert(&(_po_full->graph) == _graph.get());
+  assert(&(_po_part->graph) == _graph.get());
+}
 
 
-std::string ZTrace::to_string(unsigned depth = 2) const
+bool ZTrace::empty() const
+{
+  return ((!_trace || _trace->empty()) &&
+          annotation().empty() &&
+          _negative.empty() &&
+          (!_graph || _graph->empty()) &&
+          (!_po_full || _po_full->empty()) &&
+          (!_po_part || _po_part->empty()));
+}
+
+
+const std::vector<std::unique_ptr<ZEvent>>& ZTrace::trace() const
+{
+  assert(_trace);
+  return *_trace;
+}
+
+
+const std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>>& ZTrace::trace_ptr() const
+{
+  assert(_trace);
+  return _trace;
+}
+
+const ZAnnotation& ZTrace::annotation() const { return _annotation; }
+ZAnnotationNeg& ZTrace::negative() { return _negative; }
+const ZAnnotationNeg& ZTrace::negative() const { return _negative; }
+
+
+const ZGraph& ZTrace::graph() const
+{
+  assert(_graph);
+  return *_graph;
+}
+
+
+const std::shared_ptr<ZGraph>& ZTrace::graph_ptr() const
+{
+  assert(_graph);
+  return _graph;
+}
+
+
+const ZPartialOrder& ZTrace::po_full() const
+{
+  assert(_po_full);
+  return *_po_full;
+}
+
+
+const std::shared_ptr<ZPartialOrder>& ZTrace::po_full_ptr() const
+{
+  assert(_po_full);
+  return _po_full;
+}
+
+
+const ZPartialOrder& ZTrace::po_part() const
+{
+  assert(_po_part);
+  return *_po_part;
+}
+
+
+void ZTrace::set_negative(const ZAnnotationNeg& oth)
+{
+  assert(negative().empty());
+  _negative.set_mapping(oth);
+}
+
+
+std::string ZTrace::to_string(int depth = 2) const
 {
   std::stringstream res;
+  assert(depth >= 0);
 
-  if (!parent) {
+  if (!_parent) {
     res << "########################\n"
         << "#     INITIAL TRACE    #\n"
         << "########################\n";
   } else if (depth > 0) {
-    res << parent->to_string(depth-1);
+    res << _parent->to_string(depth-1);
   }
 
-  res << graph.to_string();
-  res << annotation.to_string();
+  res << po_part().to_string();
+  res << annotation().to_string();
   res << "\nvvvvvvvvvvvvvvvvvvvvvvvv\n";
 
   return res.str();

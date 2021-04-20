@@ -41,15 +41,17 @@ std::string pr(std::vector<int> key){
 unsigned ZLinearization::numEventsInThread(unsigned thr) const {
    // start_err("numEventsInThread...");
   assert(thr < gr.size() && "Non-existent thread");
-  auto cp = gr.line_id_to_cpid(thr);
-  LineT line = gr(cp);
-  unsigned res = line.size();
+  const CPid& cp = gr.line_id_to_cpid(thr);
+  assert(po.spans_thread(cp) && "PO does not span this thread");
+  int res = po.thread_size(cp);
+  assert(res > 0);
   const ZEvent* lastEv = gr.event(cp , res-1);
+  assert(po.spans_event(lastEv));
   bool ahead = (lastEv->kind==ZEvent::Kind::READ && !an.defines(lastEv)) ||
                (lastEv->kind==ZEvent::Kind::M_LOCK && !an.is_last_lock(lastEv));
   res=res-ahead;
   // end_err("1");
-  return res;
+  return ((unsigned) res);
 }
 /*
 
@@ -60,24 +62,24 @@ unsigned ZLinearization::numEventsInThread(unsigned thr) const {
 */
 const ZEvent * ZLinearization::State::currEvent(unsigned thr) const {
   start_err("currEvent...");
-  assert(thr < par.gr.size() && "Non-existent main thread");
+  assert(thr < par.po.threads_spanned().size() && "Non-spanned main thread");
   int pos = key[thr]+1;
   if (pos >= par.numEventsInThread(thr)) {
     end_err("0");
     return nullptr;
   }
-  auto cpid= par.gr.line_id_to_cpid(thr);
-  auto res = par.gr.event(cpid, pos);
+  const CPid& cpid = par.gr.line_id_to_cpid(thr);
+  const ZEvent * res = par.gr.event(cpid, pos);
   end_err("1");
   return res;
 }
 
-ZLinearization::State::State(const ZLinearization& par0): par(par0){
-  key.resize(par.gr.size(),-1);
+ZLinearization::State::State(const ZLinearization& par0): par(par0) {
+  key.resize(par.po.threads_spanned().size(),-1);
   //last_w.resize(par.gr.size());
-
 }
-void ZLinearization::State::advance(unsigned thr,  std::vector<ZEvent>& res) {
+
+void ZLinearization::State::advance(unsigned thr, std::vector<ZEvent>& res) {
   // start_err("advanceAux...");
   const ZEvent *ev = currEvent(thr);
   if (ev->kind==ZEvent::Kind::WRITE) {
@@ -169,20 +171,14 @@ void ZLinearization::State::advance_atomic(unsigned thr,  std::vector<ZEvent>& r
       key[thr]++;
     }
   }
-
-
-
-
-
 }
 
 
-
 bool ZLinearization::State::finished() const {
-
   start_err("key"+pr(key));
   // start_err("finished...");
-  for (unsigned thr = 0; thr < par.gr.size(); thr++) {
+  assert(key.size() >= par.po.threads_spanned().size());
+  for (unsigned thr = 0; thr < par.po.threads_spanned().size(); thr++) {
     int pos = key[thr];
     int tgt = par.numEventsInThread(thr)-1;
     assert(pos <= tgt+1);
@@ -218,7 +214,7 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     // return true;
 
   //check for partial order satisfiability
-  for (unsigned thr2 = 0; thr2 < par.gr.size(); thr2++) {
+  for (unsigned thr2 = 0; thr2 < par.po.threads_spanned().size(); thr2++) {
 
       if(thr2==thr) continue;
       int req = par.po.pred(ev, par.gr.line_id_to_cpid(thr2)).second;
@@ -233,8 +229,8 @@ bool ZLinearization::State::canForce(unsigned thr) const {
     if(ev->kind==ZEvent::Kind::READ){
       // SymAddrSize ml=ev->_ml;
       if(occured.find(ev->ml())==occured.end()){
-        ZEventID idd= par.gr.initial()->_id;
-        if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
+        const ZEventID& idd= par.gr.initial()->id();
+        if(par.an.ann(ev->id()).goodwrites.find(idd)==par.an.ann(ev->id()).goodwrites.end())
           return false;
         else
           return true;
@@ -242,11 +238,11 @@ bool ZLinearization::State::canForce(unsigned thr) const {
       unsigned thr_no=key[occured.at(ev->ml())];
       if(key[thr_no]+1>par.numEventsInThread(thr_no))
         return false;
-      CPid ii=par.gr.line_id_to_cpid(thr_no);
+      const CPid& ii=par.gr.line_id_to_cpid(thr_no);
       //int evid=par.gr.get_tailw_index( ev->ml(), ii, key[thr_no]);
       const ZEvent* ev1= par.gr.get_tailw(ev->ml(), ii, key[thr_no]);
-      ZEventID idd=ev1->_id;
-      if(par.an.ann(ev->_id).goodwrites.find(idd)==par.an.ann(ev->_id).goodwrites.end())
+      const ZEventID& idd=ev1->id();
+      if(par.an.ann(ev->id()).goodwrites.find(idd)==par.an.ann(ev->id()).goodwrites.end())
         return false;
       // if(thr==2){
       //   ev->dump();
@@ -269,7 +265,7 @@ void ZLinearization::State::force(unsigned thr, std::vector<ZEvent>& res){
   if(ev->is_read_of_atomic_event())
     advance_atomic(thr, res);
   else
-    advance(thr,res);
+    advance(thr, res);
   // if atomic read, then advance nextt atomic write as well, create a dummy write if last in thread
 
 
@@ -282,7 +278,7 @@ void ZLinearization::State::pushUp(std::vector<ZEvent>& res) {
   bool done = false;
   while (!done) {
     done = true;
-    for (unsigned thr = 0; thr < par.gr.size(); thr++) {
+    for (unsigned thr = 0; thr < par.po.threads_spanned().size(); thr++) {
 
         while (currEvent(thr) && currEvent(thr)->kind!=ZEvent::Kind::WRITE &&
          (!currEvent(thr)->is_read_of_atomic_event() || is_failed_cas_read(thr)) && canForce(thr)) {
@@ -316,7 +312,7 @@ bool ZLinearization::linearize(State& curr, std::set<std::vector<int> >& marked,
   bool fl=0;
   vector< pair<int,int> > thr_or;
   // Now we have choices to make (which main?); try them out
-  unsigned n = gr.size();
+  unsigned n = po.threads_spanned().size();
   unsigned orig_size = res.size();
   //unsigned start_thr = trHintPSO(curr);
   for (unsigned d = 0; d < n; d++) {
@@ -361,21 +357,21 @@ std::vector<ZEvent> ZLinearization::linearize() const
 {
   start_err("linearizePSO/0...");
   // po.dump();
-  assert(gr.size() > 0);
+  assert(gr.size() > 0 && po.threads_spanned().size() > 0);
   State start(*this);
   std::set<std::vector<int> > marked;
-  std::vector<ZEvent> res,res2;
+  std::vector<ZEvent> res;
   bool suc=linearize(start, marked, res);
   end_err("finished");
 
   start_err("key"+pr(start.key));
-  // dumpTrace(res);
   if(suc){
+    // dumpTrace(res);
     end_err("succeeded");
-  return res;
+    return res;
   }
-else{
-  end_err("linearisation not found");
-  return res2;
-}
+  else{
+    end_err("linearisation not found");
+    return std::vector<ZEvent>();
+  }
 }

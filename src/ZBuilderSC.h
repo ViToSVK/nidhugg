@@ -34,11 +34,13 @@
 #include "DPORDriver.h"
 #include "TSOTraceBuilder.h"
 #include "Trace.h"
-#include "ZEvent.h"
+#include "ZGraph.h"
 
+class ZExplorer;
 
 class ZBuilderSC : public TSOTraceBuilder {
   friend class ZExplorer;
+  const ZExplorer * const explorer;
 
   /* *************************** */
   /* SCHEDULING                  */
@@ -63,7 +65,7 @@ class ZBuilderSC : public TSOTraceBuilder {
   // The complete sequence of instructions executed since init of this TB
   // Format: vector of events; each event is a sequence of invisible instructions
   // followed by a single visible instruction (if any), all from the same thread
-  std::vector<ZEvent> prefix;
+  std::shared_ptr<std::vector<std::unique_ptr<ZEvent>>> prefix;
 
   // We may have obtained this sequence as a constructor argument,
   // in such a case we first schedule in order to replay this entire sequence
@@ -87,20 +89,41 @@ class ZBuilderSC : public TSOTraceBuilder {
 
   ZEvent& curnode() {
     assert(0 <= prefix_idx);
-    assert(prefix_idx < int(prefix.size()));
-    return prefix[prefix_idx];
+    assert(prefix_idx < int(prefix->size()));
+    return *(*prefix)[prefix_idx];
   };
 
   const ZEvent& curnode() const {
     assert(0 <= prefix_idx);
-    assert(prefix_idx < int(prefix.size()));
-    return prefix[prefix_idx];
+    assert(prefix_idx < int(prefix->size()));
+    return *(*prefix)[prefix_idx];
   };
 
   /* *************************** */
   /* PARAMETER PASSING           */
   /* *************************** */
   bool initial_trace_only = false;
+
+  /* *************************** */
+  /* GRAPH AND PO BUILDING       */
+  /* *************************** */
+
+  std::shared_ptr<ZGraph> graph;
+  std::shared_ptr<ZPartialOrder> po_part;
+  std::shared_ptr<ZPartialOrder> po_full;
+
+  std::unordered_set<CPid> threads_with_unannotated_readlock;
+  std::unordered_set<CPid> threads_past_annotated_region;
+  std::unordered_map<CPid, std::unordered_map
+    <SymAddrSize, const ZEvent *>> last_write_of_thread;
+  std::vector<const ZEvent *> spawns;
+  std::vector<const ZEvent *> joins;
+  std::vector<const ZEvent *> events_to_process_backtrack_points;
+  #ifndef NDEBUG
+  bool graph_po_constructed = false;
+  #endif
+
+  void graph_po_process_event(bool take_last_event);
 
  public:
 
@@ -116,7 +139,9 @@ class ZBuilderSC : public TSOTraceBuilder {
   // (step1) replay the trace tr
   // (step2) get a maximal extension
   ZBuilderSC(const Configuration &conf, llvm::Module *m,
-             std::vector<ZEvent>&& tr);
+             std::vector<ZEvent>&& tr,
+             ZPartialOrder&& mutated_po,
+             const ZExplorer * const our_explorer);
 
   /* *************************** */
   /* CALLED FROM OUTSIDE         */
@@ -208,8 +233,8 @@ class ZBuilderSC : public TSOTraceBuilder {
   }
 
   // Called from ZExplorer on a TB created exclusively for this
-  // Schedule entire replay_trace, then extend it, and return it
-  std::pair<std::vector<ZEvent>, bool> extendGivenTrace();
+  // Schedule entire replay_trace, then extend it
+  void extendGivenTrace();
 
   // We store an error trace (in their format) here
   // Trace *error_trace = nullptr;

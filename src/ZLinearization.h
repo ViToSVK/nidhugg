@@ -304,8 +304,8 @@ class ZLinearization {
 
  public:
   ZLinearization(const ZAnnotation& annotation,
-                 ZPartialOrder& partialOrder,
-                 const std::vector<ZEvent>& trace)
+                 ZPartialOrder& partialOrder)
+                 // const std::vector<ZEvent>& trace)
   : an(annotation), gr(partialOrder.graph),
     po(partialOrder)//, tr(trace)
   {

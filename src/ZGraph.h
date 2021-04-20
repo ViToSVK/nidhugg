@@ -32,6 +32,8 @@ using LinesT = std::vector<LineT>;
 
 class ZGraph {
   friend class ZPartialOrder;
+  friend class ZBuilderSC;
+
   // LINES (changed at recursion child with new ZEvent pointers from new trace)
  private:
   const ZEvent _init; ////
@@ -43,30 +45,26 @@ class ZGraph {
   const ZEvent *event(const CPid& cpid, int event_id) const;
   const ZEvent *event(const ZEventID& id) const;
   const ZEvent *unlock_of_this_lock(const ZEventID& id) const;
+  void add_line(const CPid& cpid);
   void add_line(const ZEvent *ev);
+  void inherit_lines(const ZPartialOrder& po);
   void add_event(const ZEvent *ev);
   void replace_event(const ZEvent *oldEv, const ZEvent *newEv);
   bool has_event(const CPid& cpid, int event_id) const;
+  bool has_event(const ZEventID& id) const;
   bool has_event(const ZEvent *ev) const;
-  std::map<CPid, int> thread_sizes_minus_one() const;
   void shrink();
 
   // CPID->LINE_ID (retained accross recursion children)
  private:
-  std::unordered_map<CPid, unsigned> _cpid_to_line; ////
+  std::map<CPid, unsigned> _cpid_to_line; ////
   std::vector<CPid> _line_to_cpid; ////
   unsigned line_id(const CPid& cpid) const;
   unsigned line_id(const ZEvent *ev) const;
  public:
+  const std::map<CPid, unsigned>& threads() const { return _cpid_to_line; }
   const CPid& line_id_to_cpid(unsigned line_id) const;
-  std::set<CPid> threads() const;
   bool has_thread(const CPid& cpid) const;
-
-  // PO
- private:
-  ZPartialOrder _po; ////
- public:
-  ZPartialOrder copy_po() const { return ZPartialOrder(_po); }
 
   // CACHE
   class Cache {
@@ -78,8 +76,23 @@ class ZGraph {
     // Read -> its local buffer-write
     std::unordered_map
       <const ZEvent *, const ZEvent *> local_write;
+    // Read -> mls with writes after it in its thread
+    std::unordered_map
+      <const ZEvent *, std::unordered_set<SymAddrSize>> read_uncovers_mls;
+    // CPid -> last spawn of that thread
+    std::map<CPid, const ZEvent *> last_spawn;
+    // ML -> CPid -> last unlock of that ml in that thread
+    std::unordered_map
+      <SymAddrSize, std::map<CPid, const ZEvent *>> last_unlock;
+    // CPid -> last lock of that thread (and any ML)
+    std::map<CPid, const ZEvent *> last_lock;
+    // CPid -> last read of that thread (and any ML)
+    std::map<CPid, const ZEvent *> last_read;
     bool empty() const {
-      return (writes.empty() && local_write.empty());
+      return (writes.empty() &&
+              local_write.empty() && read_uncovers_mls.empty() &&
+              last_spawn.empty() && last_unlock.empty() &&
+              last_lock.empty() && last_read.empty());
     }
   };
  private:
@@ -88,8 +101,8 @@ class ZGraph {
   const Cache& cache() const { return _cache; }
 
   bool empty() const {
-    return (_lines.empty() && _cpid_to_line.empty() && _line_to_cpid.empty() &&
-            _po.empty() && _cache.empty());
+    return (_lines.empty() && _cpid_to_line.empty() &&
+            _line_to_cpid.empty() && _cache.empty());
   }
   size_t size() const { return _lines.size(); }
   size_t events_size() const {
@@ -103,45 +116,15 @@ class ZGraph {
   /* CONSTRUCTORS                */
   /* *************************** */
 
-  ~ZGraph() {};
-  // Empty
+  // Empty/Initial
   ZGraph();
-  // Initial
-  ZGraph(const std::vector<ZEvent>& trace);
   // Moving
   ZGraph(ZGraph&& oth) = default;
+  // Copying/Extending
+  ZGraph(const ZGraph& oth);
 
-  // Extending
-  // Partial order that will be moved
-  // Trace and annotation that will extend this copy of the graph
-  ZGraph(const ZGraph& oth,
-         ZPartialOrder&& po,
-         const std::vector<ZEvent>& trace,
-         const ZAnnotation& annotation);
-
-  ZGraph(const ZGraph& oth) = delete;
   ZGraph& operator=(ZGraph&& oth) = delete;
   ZGraph& operator=(const ZGraph& oth) = delete;
-
-  /* *************************** */
-  /* GRAPH EXTENSION             */
-  /* *************************** */
-
- private:
-
-  // At the point of calling the method, this graph
-  // is linked to some 'orig_trace', graph's nodes
-  // point to the events of 'orig_trace'
-  // Argument: 'trace' - extension of 'orig_trace'
-  // The method links this graph with 'trace' as follows:
-  // 1) events of 'trace' that already happened in 'orig_trace'
-  //    replace their corresponding 'orig_trace' pointers
-  // 2) new events of 'trace' extend existing threads / create new threads
-  // 3) partial order is extended to accomodate new
-  //    threads+events while keeping all the original info
-  // Special case: initial trace extends an empty graph
-  void trace_to_po(const std::vector<ZEvent>& trace, const ZAnnotation *annotation_ptr);
-
 
   /* *************************** */
   /* MAIN ALGORITHM              */
@@ -165,25 +148,30 @@ class ZGraph {
   const ZEvent *get_local_write(const ZEvent *read) const;
 
   // Returns events-to-mutate in a specified order
-  std::list<const ZEvent *> events_to_mutate(const ZAnnotation& annotation) const;
+  std::list<const ZEvent *> events_to_mutate
+  (const ZPartialOrder& po, const ZAnnotation& annotation) const;
 
   // Collect all write events visible to the read
   std::set<const ZEvent *> mutation_candidates_collect
   (const ZPartialOrder& po, const ZEvent *read,
-   const std::set<ZEventID>& check_if_any_is_visible) const;
+   const std::set<ZEventID>& check_if_any_is_visible,
+   const ZPartialOrder * stricter_po) const;
 
   // Filter out candidates forbidden to read by negative annotation
   void mutation_candidates_filter_by_negative
   (const ZEvent *read, std::set<const ZEvent *>& candidates,
    const ZAnnotationNeg& negative) const;
 
+  // Filter out candidates spanned by stricter_po
+  void mutation_candidates_filter_by_stricter
+  (std::set<const ZEvent *>& candidates,
+   const ZPartialOrder& stricter_po) const;
+
   // Returns mutation candidates for a read node grouped by value
   std::set<ZAnn> mutation_candidates_grouped
-  (const ZEvent *read, const ZAnnotationNeg& negative) const;
-
-  std::string to_string() const { return _po.to_string(); }
-  void dump() const { _po.dump(); }
+  (const ZPartialOrder& po, const ZEvent *read,
+   const ZAnnotationNeg& negative,
+   const ZPartialOrder * stricter_po) const;
 };
-llvm::raw_ostream& operator<<(llvm::raw_ostream& out, const ZGraph& gr);
 
 #endif // __Z_GRAPH_H__

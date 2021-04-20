@@ -28,10 +28,10 @@ static void start_err(const std::string& str, bool group = DEBUG) {
 
 static void end_err(const std::string& str = "", bool group = DEBUG) {
   if (!group) return;
+  err_level -= 1;
   std::stringstream ss;
   ss << "Done. (" << str << ")";
   err_msg(ss.str());
-  err_level -= 1;
 }
 
 #else

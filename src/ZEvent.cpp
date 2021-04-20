@@ -262,3 +262,14 @@ void dump_trace(const std::vector<ZEvent>& trace)
     ev.dump();
   llvm::errs() << "\n";
 }
+
+
+void dump_trace(const std::vector<std::unique_ptr<ZEvent>>& trace)
+{
+  llvm::errs() << "TRACE::: " << trace.size() << " EVENTS\n";
+  for (const auto& ev : trace) {
+    assert(ev);
+    ev->dump();
+  }
+  llvm::errs() << "\n";
+}

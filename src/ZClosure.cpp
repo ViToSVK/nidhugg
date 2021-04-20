@@ -55,23 +55,23 @@ std::pair<bool, bool> ZClosure::rule_two
   }
 
   // Handle all threads except thread of read and thread of write
-  for (const CPid& cpid : gr.threads()) {
-    if (cpid != read->cpid() && (is_initial(write) || cpid != write->cpid())) {
-      int last_pred = po.pred(read, cpid).second;
-      if (last_pred == -1)
-        continue;
-      const ZEvent *last_conf_pred = gr.get_tailw(read->ml(), cpid, last_pred);
-      if (!last_conf_pred)
-        continue;
-      assert(last_conf_pred && same_ml(read, last_conf_pred) &&
-             po.has_edge(last_conf_pred, read));
-      if (is_initial(write) || po.has_edge(write, last_conf_pred))
-        return {true, false}; // Impossible - reverse edge already present
-      if (!po.has_edge(last_conf_pred, write)) {
-        po.add_edge(last_conf_pred, write);
-        change = true;
-        added_edges++;
-      }
+  for (const CPid& cpid : po.threads_spanned()) {
+    if (cpid == read->cpid() || (!is_initial(write) && cpid == write->cpid()))
+      continue;
+    int last_pred = po.pred(read, cpid).second;
+    if (last_pred == -1)
+      continue;
+    const ZEvent *last_conf_pred = gr.get_tailw(read->ml(), cpid, last_pred);
+    if (!last_conf_pred)
+      continue;
+    assert(last_conf_pred && same_ml(read, last_conf_pred) &&
+           po.has_edge(last_conf_pred, read));
+    if (is_initial(write) || po.has_edge(write, last_conf_pred))
+      return {true, false}; // Impossible - reverse edge already present
+    if (!po.has_edge(last_conf_pred, write)) {
+      po.add_edge(last_conf_pred, write);
+      change = true;
+      added_edges++;
     }
   }
 
@@ -95,6 +95,7 @@ std::pair<bool, bool> ZClosure::rule_three
   bool change = false;
   // Handle thread of read
   const ZEvent * local = gr.get_local_write(read);
+  assert(!local || po.spans_event(local));
   if (local && (*local) != (*write) && po.has_edge(write, local))
     return {true, false}; // Impossible - covered by read-local badwrite
 
@@ -123,7 +124,7 @@ std::pair<bool, bool> ZClosure::rule_three
             res->cpid() == write->cpid());
       if (res->event_id() > write->event_id()) {
         if (po.has_edge(res, read))
-          return {true,false}; // Impossible - reverse edge already present
+          return {true, false}; // Impossible - reverse edge already present
         if (!po.has_edge(read, res)) {
           po.add_edge(read, res);
           change = true;
@@ -134,38 +135,38 @@ std::pair<bool, bool> ZClosure::rule_three
   }
 
   // Handle all threads except thread of read and thread of write
-  for (const CPid& cpid : gr.threads()) {
-    if (cpid != read->cpid() && (is_initial(write) || cpid != write->cpid())) {
-      int idx = gr.get_latest_not_after_index(po, read, cpid);
-      // {0,1,..,idx} in cache at same ml not happening after read
-      if (idx == -1)
-        continue;
-      const auto& wrcache = gr.cache().writes.at(read->ml()).at(cpid);
-      assert(idx < (int) wrcache.size());
+  for (const CPid& cpid : po.threads_spanned()) {
+    if (cpid == read->cpid() || (!is_initial(write) && cpid == write->cpid()))
+      continue;
+    int idx = gr.get_latest_not_after_index(po, read, cpid);
+    // {0,1,..,idx} in cache at same ml not happening after read
+    if (idx == -1)
+      continue;
+    const auto& wrcache = gr.cache().writes.at(read->ml()).at(cpid);
+    assert(idx < (int) wrcache.size());
 
-      // Binary search in cache events to get first badwrite after write
-      int l = 0;
-      int r = idx;
-      while(l<r) {
-        int mid=(l+r)>>1;
-        auto res = wrcache.at(mid);
-        assert(is_write(res) && same_ml(res, read) &&
-               res->cpid() == cpid);
-        if (po.has_edge(write, res)) r=mid;
-        else l=mid+1;
-      } // after the loop, l = r
-      assert(l == r);
-      auto res = wrcache.at(l);
+    // Binary search in cache events to get first badwrite after write
+    int l = 0;
+    int r = idx;
+    while(l<r) {
+      int mid=(l+r)>>1;
+      auto res = wrcache.at(mid);
       assert(is_write(res) && same_ml(res, read) &&
              res->cpid() == cpid);
-      if (po.has_edge(write, res)) {
-        if (po.has_edge(res, read))
-          return {true, false}; // Impossible - reverse edge already present
-        if (!po.has_edge(read, res)) {
-          po.add_edge(read, res);
-          change = true;
-          added_edges++;
-        }
+      if (po.has_edge(write, res)) r=mid;
+      else l=mid+1;
+    } // after the loop, l = r
+    assert(l == r);
+    auto res = wrcache.at(l);
+    assert(is_write(res) && same_ml(res, read) &&
+           res->cpid() == cpid);
+    if (po.has_edge(write, res)) {
+      if (po.has_edge(res, read))
+        return {true, false}; // Impossible - reverse edge already present
+      if (!po.has_edge(read, res)) {
+        po.add_edge(read, res);
+        change = true;
+        added_edges++;
       }
     }
   }
@@ -183,6 +184,7 @@ std::pair<bool, bool> ZClosure::rules
   assert(read && is_read(read));
   assert(ann.goodwrites.size() == 1);
   const ZEvent * write = gr.event(*ann.goodwrites.begin());
+  assert(po.spans_event(write));
   bool change = false;
   // Rule2
   auto res = rule_two(read, write);
@@ -206,9 +208,11 @@ bool ZClosure::close_finish
     assert(read_ann.second.goodwrites.size() >= 2);
     assert(read_ann.first && is_read(read_ann.first));
     std::set<const ZEvent *> any_good_write_visible = (
-      gr.mutation_candidates_collect(po, read_ann.first, read_ann.second.goodwrites));
-    if (any_good_write_visible.empty())
+      gr.mutation_candidates_collect
+      (po, read_ann.first, read_ann.second.goodwrites, nullptr));
+    if (any_good_write_visible.empty()) {
       return false;
+    }
     else {
       assert(any_good_write_visible.size() == 1);
       assert(*(any_good_write_visible.begin()));
@@ -226,7 +230,7 @@ bool ZClosure::close(const ZEvent *newread) {
 
   // Rules for new read
   if (newread) {
-    assert(is_read(newread));
+    assert(is_read(newread) && po.spans_event(newread));
     const ZAnn& newread_ann = an.ann(newread);
     // If 1 good write perform rules, otherwise check at the end
     if (newread_ann.goodwrites.size() != 1) {
@@ -253,6 +257,7 @@ bool ZClosure::close(const ZEvent *newread) {
         return close_finish(reads_with_multiple_good_writes);
       }
       const ZEvent * read = gr.event(read_ann.first);
+      assert(po.spans_event(read));
       if (newread && (*newread) == (*read))
         continue;
       if (po.is_closure_safe(read))
@@ -312,13 +317,14 @@ void ZClosure::rule_one_lock(const ZEvent *lock, const ZEvent *unlock)
 
 void ZClosure::rule_one_multi_good(const ZEvent *read, const ZAnn& ann)
 {
-  assert(is_read(read));
+  assert(is_read(read) && po.spans_event(read));
   assert(ann.goodwrites.size() >= 2);
   // If there is a po-smallest write, it should happen before read
   std::set<const ZEvent *> good;
   const ZEvent * candidate = nullptr;
   for (const auto& goodwrite_id : ann.goodwrites) {
     const ZEvent * write = gr.event(goodwrite_id);
+    assert(po.spans_event(write));
     if (is_initial(write))
       return; // Initial is po-smallest and already happens before read
     assert(is_write(write));
@@ -341,18 +347,22 @@ void ZClosure::rule_one_multi_good(const ZEvent *read, const ZAnn& ann)
     assert(candidate == write || po.has_edge(candidate, write));
   }
   #endif
-  if (!po.has_edge(candidate, read))
+  if (!po.has_edge(candidate, read)) {
     po.add_edge(candidate, read);
+  }
 }
 
 void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
 {
-  assert(is_read(read));
+  assert(is_read(read) && po.spans_event(read));
   if (ann.goodwrites.size() != 1) {
     assert(ann.goodwrites.size() >= 2);
     rule_one_multi_good(read, ann);
+    return;
   }
+  assert(ann.goodwrites.size() == 1);
   const ZEvent * write = gr.event(*ann.goodwrites.begin());
+  assert(po.spans_event(write));
   if (is_initial(write)) {
     assert(!gr.get_local_write(read));
     return;
@@ -372,6 +382,7 @@ void ZClosure::rule_one(const ZEvent *read, const ZAnn& ann)
       if (!po.has_edge(local, write))
         po.add_edge(local, write);
     }
-  } else
+  } else {
     assert(write == gr.get_local_write(read));
+  }
 }

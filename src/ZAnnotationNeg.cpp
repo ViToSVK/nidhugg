@@ -44,7 +44,7 @@ bool ZAnnotationNeg::forbids(const ZEvent *ev, const ZEvent *obs) const
 }
 
 
-void ZAnnotationNeg::update(const ZEvent *ev, NegativeT&& upd)
+void ZAnnotationNeg::update(const ZEvent *ev, const NegativeT& upd)
 {
   assert(is_read(ev) || is_lock(ev));
   auto it = mapping.find(ev->id());
@@ -60,6 +60,13 @@ void ZAnnotationNeg::update(const ZEvent *ev, NegativeT&& upd)
     it->second[cpid_limit.first] = cpid_limit.second;
     assert(it->second.at(cpid_limit.first) == cpid_limit.second);
   }
+}
+
+
+void ZAnnotationNeg::set_mapping(const ZAnnotationNeg& oth)
+{
+  assert(empty());
+  mapping = MappingT(oth.mapping);
 }
 
 
