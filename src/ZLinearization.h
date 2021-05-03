@@ -164,6 +164,9 @@ class ZLinearization {
     const ZEvent * currEvent(unsigned thr) const;
 
     bool canForce(unsigned thr) const;
+
+    bool is_failed_cas_read(unsigned thr);
+
   void force(unsigned thr, std::vector<ZEvent>& res) ;
 
     //bool isClosedVar(SymAddrSize ml) const;
